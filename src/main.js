@@ -1,6 +1,5 @@
 // main.js — entry point: renderer, scene, lights, camera, the frame loop, and the
-// wiring of world + player + input into game. Also the tiny G1 placeholder text in
-// #ui (#g1-hint / #g1-hud) that G12 replaces; the code below skips it if it is gone.
+// wiring of world + player + input + city into game. The #ui overlay belongs to ui.js.
 
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
@@ -8,11 +7,14 @@ import { events } from './events.js';
 import { game } from './game.js';
 import { World, createBlobShadow } from './world.js';
 import { Player } from './player.js';
+import { Obstacles } from './obstacles.js';
 import { createInput } from './input.js';
 import { CameraRig } from './camera.js';
 import { addLights } from './lights.js';
 import { createPlaceholderPlayer } from './models/placeholder.js';
+import { initCity } from './city.js';
 import './audio.js';
+import './ui.js';
 
 // ---------- renderer / scene ----------
 const canvas = document.getElementById('game');
@@ -37,10 +39,14 @@ const shadow = createBlobShadow(0.55);
 scene.add(shadow);
 
 game.init({ world, player });
+const obstacles = new Obstacles(scene, world, player);
+game.addSystem(obstacles);
+game.obstacles = obstacles;
 game.scene = scene;
 game.camera = camera;
 game.cameraRig = cameraRig;
 game.renderer = renderer;
+initCity(game);
 window.game = game; // handy in the console while developing
 
 // ---------- input ----------
@@ -64,29 +70,6 @@ window.addEventListener('orientationchange', resize);
 resize();
 cameraRig.snap(player);
 
-// ---------- G1 placeholder UI (G12 replaces #ui contents) ----------
-const hint = document.getElementById('g1-hint');
-const hud = document.getElementById('g1-hud');
-let lastHudText = '';
-function updatePlaceholderUI() {
-  const st = game.state;
-  if (hint) {
-    let text = '';
-    if (st.mode === 'menu') text = 'Başlamak için dokun';
-    else if (st.mode === 'paused') text = 'Duraklatıldı — devam için dokun';
-    else if (st.mode === 'over') text = 'Oyun bitti — tekrar için dokun';
-    if (hint.textContent !== text) hint.textContent = text;
-    hint.hidden = text === '';
-  }
-  if (hud) {
-    const text = st.mode === 'menu' ? '' : `Skor: ${st.score}   ${st.speed.toFixed(1)} m/sn`;
-    if (text !== lastHudText) {
-      hud.textContent = text;
-      lastHudText = text;
-    }
-  }
-}
-
 // ---------- frame loop ----------
 let last = performance.now();
 renderer.setAnimationLoop((now) => {
@@ -103,6 +86,5 @@ renderer.setAnimationLoop((now) => {
   shadow.scale.set(s, s, 1);
   shadow.material.opacity = s;
 
-  updatePlaceholderUI();
   renderer.render(scene, camera);
 });

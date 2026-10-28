@@ -81,4 +81,40 @@ export const CONFIG = {
   },
 
   dtCap: 1 / 20,           // longest frame step in seconds
+
+  // --- Obstacles (G2). Sizes in metres; "length" runs along the track. ---
+  obstacles: {
+    stepUp: 0.4,           // ledges this much above the feet are stepped onto, not crashed into
+    stumbleTime: 0.6,      // seconds of the 'stumble' model state after a side hit
+    sideHitCooldown: 0.35, // ignore further side hits for this long
+    low:  { width: 1.9, height: 0.8, depth: 0.35 },              // jump over
+    high: { width: 1.9, bottom: 0.95, top: 2.5, depth: 0.35 },   // slide under (gap > slideHeight)
+    car:  { width: 1.6, length: 3.2, height: 1.13, hoodHeight: 0.78, hood: 0.75, trunk: 0.5 },
+    wagon: { width: 2.05, height: 2.88, length: 9, gap: 0.5 },  // gap < playerDepth: roofs join
+    rampLength: 6,
+    trainSpeedMin: 6,      // own speed of oncoming trains (m/s, added to the run speed)
+    trainSpeedMax: 11,
+    spawnDistance: 160,    // oncoming trains appear this far ahead
+  },
+
+  // --- Coins (G2) ---
+  coins: {
+    spacing: 2.4,          // metres between coins in a row
+    height: 0.6,           // coin centre above the feet of a running player
+    pickupSize: 0.4,       // half size of the coin pickup box
+    maxRow: 10,
+  },
+  coinScore: 10,           // score per coin (score = distance * scorePerMeter + coins * coinScore)
+
+  // --- Pattern generator (G2) ---
+  seed: null,              // null = new random track each run; a number = same track every run
+  patterns: {
+    safeStart: 60,         // metres with no obstacles at run start
+    reactionTime: 0.5,     // seconds a player needs to react (used for spacing)
+    blockTimeEasy: 1.5,    // seconds of running per pattern block at the start ...
+    blockTimeHard: 1.05,   // ... and at full difficulty
+    difficultyDistance: 2500, // metres until full difficulty
+    trainStart: 200,       // no oncoming trains before this distance
+    checkGapTime: 0.6,     // tools/check-patterns.mjs: min seconds between two actions in a lane
+  },
 };

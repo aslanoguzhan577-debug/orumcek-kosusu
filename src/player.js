@@ -16,6 +16,8 @@
 //   player.controlsLocked    true ignores all input (G8 caught).
 //   player.setModel(model)   swap the character model (G6).
 //   player.hitbox            THREE.Box3 in world space, updated every frame (G2).
+//   player.lastX / lastY     position before this frame's update (collision side test).
+//   player.bounceBack()      return to the lane we came from (side hit).
 
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
@@ -51,7 +53,10 @@ export class Player {
 
   reset() {
     this.lane = CENTER_LANE;
+    this._prevLane = this.lane;
     this.x = laneX(this.lane);
+    this.lastX = this.x;
+    this.lastY = 0;
     this.y = 0;
     this.vy = 0;
     this.floorY = 0;
@@ -95,10 +100,22 @@ export class Player {
   changeLane(dir) {
     const target = this.lane + dir;
     if (target < 0 || target >= CONFIG.laneCount) return false;
+    this._prevLane = this.lane;
     this.lane = target;
     this._laneFromX = this.x;
     this._laneT = 0;
     emit('lane', { dir, lane: target });
+    return true;
+  }
+
+  // Side hit: head back to the lane we came from. Returns false if not changing lanes.
+  bounceBack() {
+    if (this._laneT >= 1 || this._prevLane === this.lane) return false;
+    const from = this.lane;
+    this.lane = this._prevLane;
+    this._prevLane = from;
+    this._laneFromX = this.x;
+    this._laneT = 0;
     return true;
   }
 
@@ -158,6 +175,9 @@ export class Player {
   }
 
   update(dt, running) {
+    this.lastX = this.x;
+    this.lastY = this.y;
+
     // --- lane movement ---
     if (this._laneT < 1) {
       this._laneT = Math.min(1, this._laneT + dt / CONFIG.laneSwitchTime);
@@ -178,7 +198,9 @@ export class Player {
     if (!this.grounded) {
       this.vy -= CONFIG.gravity * this.gravityScale * dt;
       this.y += this.vy * dt;
-      if (this.y <= this.floorY) {
+      if (this.y <= this.floorY && this.vy > 0) {
+        this.y = this.floorY;   // stepped onto a low ledge while rising: keep the jump going
+      } else if (this.y <= this.floorY) {
         this.y = this.floorY;
         this.vy = 0;
         this.grounded = true;

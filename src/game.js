@@ -3,8 +3,9 @@
 // main.js wires the world, player and render objects in with game.init().
 //
 // Systems (G2 obstacles, G8 chaser, G9 web, G10 iron spider ...) plug in with
-//   game.addSystem({ update(dt) {...}, reset() {...} })
-// update(dt) runs every frame while running (after world + player);
+//   game.addSystem({ beforePlayer(dt) {...}, update(dt) {...}, reset() {...} })  (all optional)
+// Each frame while running: world.update -> beforePlayer(dt) of every system (move things,
+// set player.floorY) -> player.update -> update(dt) of every system (collisions, pickups).
 // reset() runs at every run start, after the core state has been reset.
 
 import { CONFIG } from './config.js';
@@ -24,6 +25,8 @@ const state = {
 
 export const game = {
   state,
+
+  obstacles: null,  // G2 obstacle system (main.js)
 
   // Placeholder control: while true, a tap / any key starts the run from the menu,
   // a tap resumes from pause and restarts after game over.
@@ -118,14 +121,15 @@ export const game = {
       state.time += dt;
       state.speed = Math.min(CONFIG.maxSpeed, state.speed + CONFIG.acceleration * dt);
       state.distance += state.speed * dt;
-      state.score = Math.floor(state.distance * CONFIG.scorePerMeter);
       this.world.update(dt, state.speed);
+      for (const s of this.systems) if (s.beforePlayer) s.beforePlayer(dt);
     }
 
     this.player.update(dt, running);
 
     if (running) {
       for (const s of this.systems) if (s.update) s.update(dt);
+      state.score = Math.floor(state.distance * CONFIG.scorePerMeter) + state.coins * CONFIG.coinScore;
     }
   },
 
