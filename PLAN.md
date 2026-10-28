@@ -155,7 +155,7 @@ Aynı koda dokunan görevler aynı ajanda toplanır. Ajan bir görevi bitirince 
 - **G8:** Tökezleme süresi config'te. Venom yaklaşınca ekranda görünmeli. Yakalanınca kontroller kilitlenir.
 - **G9:** İkinci yukarı sadece havadayken ve şarj > 0 iken. İniş noktası, hareketli trenin iniş anındaki konumuna göre. Yay sırasında tren biterse yere iniş. Kayarken ağ atılmaz.
 - **G10:** Çift dokunuş kaydırmayla karışmasın. Temizlenecek bölge her engelin kendi yaklaşma hızına göre (gelen tren daha hızlı yaklaşır), tüm şeritlerde. Envanter localStorage'da, hata yakalamalı. Açıkken tekrar açılamaz.
-- **G11:** Olaylara abone ol, oyun mantığına dokunma. Parçacık havuzu. Kamera sarsıntısı hafif. Ağ şarjı ve Iron Spider süre göstergeleri de burada.
-- **G12:** Sadece `ui.js`, `ui.css` ve `index.html`'deki `#ui` katmanı; oyuna game API'si ve olaylarla bağlanır (G8–G10 ile aynı anda çalışır). Sekme değişince oyun dursun. Paylaş butonu (`navigator.share`, yoksa panoya kopyala). İsim ve en iyi skor cihazda.
+- **G11:** Olaylara abone ol, oyun mantığına dokunma. Parçacık havuzu. Kamera sarsıntısı hafif.
+- **G12:** Sadece `ui.js`, `ui.css` ve `index.html`'deki `#ui` katmanı; oyuna game API'si ve olaylarla bağlanır (G2 ile aynı anda çalışır). Ağ şarjı ve Iron Spider süre göstergeleri de burada. Sekme değişince oyun dursun. Paylaş butonu (`navigator.share`, yoksa panoya kopyala). İsim ve en iyi skor cihazda.
 - **G13:** Telefon boyutunda akıcılık, konsol hataları, 10+ dakikalık koşu, adalet ve zorluk eğrisi.
 - **G14:** Kullanıcının hesabıyla yapılır (GitHub veya Netlify); online skor tablosu kararı o zaman verilir.

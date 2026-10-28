@@ -8,7 +8,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Örümcek Koşusu</title>
   <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bangers&family=Baloo+2:wght@600;800&display=swap">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="ui.css">
   <script type="importmap">
   {
     "imports": {
@@ -21,12 +25,124 @@
 <body>
   <canvas id="game"></canvas>
 
-  <!-- UI layer (G12 owns its contents). pointer-events are off on #ui itself;
-       give interactive children pointer-events: auto. -->
+  <!-- UI layer (G12: src/ui.js + ui.css own everything inside #ui). pointer-events are off
+       on #ui itself; interactive children switch them back on in ui.css. -->
   <div id="ui">
-    <!-- G1 placeholder, replace in G12 -->
-    <div id="g1-hint" class="g1-hint">Başlamak için dokun</div>
-    <div id="g1-hud" class="g1-hud"></div>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-web" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 2.5V21.5M2.5 12H21.5M5.3 5.3L18.7 18.7M18.7 5.3L5.3 18.7"/><circle cx="12" cy="12" r="3.6"/><circle cx="12" cy="12" r="7.4"/></g></symbol>
+        <symbol id="i-spider" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 9L4 4.5M9.5 11L3 11M9.5 13L4 17M10.5 15L7 21M14.5 9L20 4.5M14.5 11L21 11M14.5 13L20 17M13.5 15L17 21"/></g><ellipse cx="12" cy="9" rx="2.4" ry="2.2" fill="currentColor"/><ellipse cx="12" cy="14.6" rx="3.2" ry="4" fill="currentColor"/></symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 3L21 13H15.5V21H8.5V13H3Z" fill="currentColor" stroke="#0d0d14" stroke-width="2" stroke-linejoin="round"/></symbol>
+      </defs>
+    </svg>
+
+    <!-- HUD (oyun sırasında) -->
+    <div id="hud" class="hud" hidden>
+      <div class="hud-top">
+        <div class="pill score"><span class="lbl">SKOR</span><b id="h-score">0</b></div>
+        <div class="pill coin"><i class="coin-ico"></i><b id="h-coins">0</b></div>
+        <button id="h-pause" class="round-btn" type="button" tabindex="-1" aria-label="Duraklat"><i class="pause-ico"></i></button>
+      </div>
+      <div class="hud-pow">
+        <div class="web-gauge" id="h-web" aria-label="Ağ şarjı">
+          <span class="lbl">AĞ</span>
+          <i class="slot"><svg><use href="#i-web"/></svg></i>
+          <i class="slot"><svg><use href="#i-web"/></svg></i>
+          <i class="slot"><svg><use href="#i-web"/></svg></i>
+        </div>
+        <div class="iron-badge" id="h-iron" hidden>
+          <i class="iron-ico"><svg><use href="#i-spider"/></svg></i>
+          <b id="h-iron-n">0</b>
+          <span class="hint" id="h-iron-hint">çift dokun</span>
+        </div>
+      </div>
+      <div class="ironbar" id="h-ironbar" hidden>
+        <span class="lbl">IRON SPIDER</span>
+        <div class="track"><div class="fill" id="h-ironfill"></div></div>
+      </div>
+    </div>
+
+    <!-- Ana menü -->
+    <section id="scr-menu" class="screen" hidden>
+      <div class="stack">
+        <h1 class="logo"><span class="l1">ÖRÜMCEK</span><span class="l2">KOŞUSU</span></h1>
+        <div class="card menu-card">
+          <label class="namebox" id="m-namebox">
+            <span class="lbl">OYUNCU ADI</span>
+            <input id="m-name" type="text" maxlength="12" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="Adını yaz">
+          </label>
+          <div class="bestline">EN İYİ SKOR <b id="m-best">0</b><small id="m-bestname"></small></div>
+          <button id="b-play" class="btn big" type="button">OYNA!</button>
+          <div class="row">
+            <button id="b-help" class="btn small blue" type="button">NASIL OYNANIR?</button>
+            <button class="btn small yellow" type="button" data-mute>SES: AÇIK</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Kontroller kartı -->
+    <section id="scr-help" class="screen" hidden>
+      <div class="stack">
+        <h2 class="title">NASIL OYNANIR?</h2>
+        <div class="card help-card">
+          <ul class="help-list">
+            <li><span class="chip"><svg class="arr l"><use href="#i-arrow"/></svg><svg class="arr r"><use href="#i-arrow"/></svg></span><span class="what"><b>Kaydır: şerit değiştir</b><small>← → veya A D</small></span></li>
+            <li><span class="chip"><svg class="arr u"><use href="#i-arrow"/></svg></span><span class="what"><b>Yukarı: zıpla</b><small>↑ veya W</small></span></li>
+            <li><span class="chip"><svg class="arr d"><use href="#i-arrow"/></svg></span><span class="what"><b>Aşağı: kay</b><small>↓ veya S</small></span></li>
+            <li><span class="chip"><svg class="arr u"><use href="#i-arrow"/></svg><svg class="arr u"><use href="#i-arrow"/></svg></span><span class="what"><b>Havada tekrar yukarı: ağ at</b><small>1 ağ şarjı harcar</small></span></li>
+            <li><span class="chip"><i class="tap-ico"></i></span><span class="what"><b>Çift dokun: Iron Spider</b><small>Bilgisayarda Space</small></span></li>
+          </ul>
+          <p class="help-note">P veya Esc: duraklat</p>
+        </div>
+        <button id="b-help-ok" class="btn big" type="button">TAMAM!</button>
+      </div>
+    </section>
+
+    <!-- Duraklatma menüsü -->
+    <section id="scr-pause" class="screen dim" hidden>
+      <div class="stack">
+        <h2 class="title">DURAKLATILDI</h2>
+        <div class="card pause-card">
+          <button id="b-resume" class="btn big" type="button">DEVAM</button>
+          <button id="b-restart" class="btn blue" type="button">YENİDEN BAŞLA</button>
+          <button class="btn yellow" type="button" data-mute>SES: AÇIK</button>
+          <button id="b-pause-menu" class="btn ghost" type="button">ANA MENÜ</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Oyun sonu -->
+    <section id="scr-over" class="screen dim" hidden>
+      <div class="stack over">
+        <h2 class="title burst">OYUN BİTTİ!</h2>
+        <div class="card over-card">
+          <div class="o-main">
+            <div class="o-score">
+              <span class="lbl">SKOR</span>
+              <b id="o-score">0</b>
+              <span class="badge" id="o-record" hidden>YENİ REKOR!</span>
+            </div>
+            <div class="o-stats">
+              <div><i class="coin-ico"></i><b id="o-coins">0</b><span>altın</span></div>
+              <div><b id="o-dist">0</b><span>metre</span></div>
+              <div><b id="o-best">0</b><span>en iyi</span></div>
+            </div>
+          </div>
+          <div class="o-board">
+            <h3>EN İYİ 5</h3>
+            <ol class="top5" id="o-list"></ol>
+          </div>
+        </div>
+        <div class="btns">
+          <button id="b-again" class="btn big" type="button">TEKRAR OYNA</button>
+          <div class="row">
+            <button id="b-share" class="btn small yellow" type="button">SKORU PAYLAŞ</button>
+            <button id="b-over-menu" class="btn small ghost" type="button">ANA MENÜ</button>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 
   <script type="module" src="src/main.js"></script>
