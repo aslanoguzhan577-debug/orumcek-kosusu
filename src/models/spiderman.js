@@ -26,7 +26,7 @@ export const SPIDER_DIM = {
 };
 const D = SPIDER_DIM;
 
-export const OUTLINE = 0.021;
+export const OUTLINE = 0.024;
 export const OUTLINE_COLOR = 0x1c1016;
 const LINE = '#16121c';
 
@@ -278,7 +278,7 @@ const SPIDER_LOOK = {
     // white spider: big on the chest, smaller on the back
     paintSpider(g, (x, y) => [W / 2 + x * kx, chestY + y * ky], 0.2, '#ffffff', '#15121a', { edge: 2.5 });
     for (const cx of [0, W]) {
-      paintSpider(g, (x, y) => [cx + x * kx, yToPx(0.25) + y * ky], 0.13, '#ffffff', '#15121a', { edge: 2 });
+      paintSpider(g, (x, y) => [cx + x * kx, yToPx(0.25) + y * ky], 0.17, '#ffffff', '#15121a', { edge: 2.5 });
     }
   },
   arm(g, W, H, info) {
@@ -527,8 +527,8 @@ function spiderPose(state, P, { t, st, phase }) {
       P.kneeR = -0.2 - 1.35 * Math.max(0, -c);
       P.armLX = -1.0 * s;
       P.armRX = 1.0 * s;
-      P.armLZ = -0.32;
-      P.armRZ = 0.32;
+      P.armLZ = -0.48;
+      P.armRZ = 0.48;
       P.armLY = 0.25;
       P.armRY = -0.25;
       break;

@@ -32,8 +32,8 @@ const BLACK = 0x1b1b26;
 const WHITE = '#f4f3f7';
 
 const GLOSS = {
-  gloss: { color: 0xe6ecff, threshold: 0.975, strength: 0.9 },
-  rim: { color: 0x5568b0, threshold: 0.68, strength: 0.5 },
+  gloss: { color: 0xe6ecff, threshold: 0.97, strength: 0.9 },
+  rim: { color: 0x6f86e8, threshold: 0.6, strength: 0.75 },
 };
 
 // Venom's head: a little taller, with a wider jaw for the grin.
@@ -48,7 +48,8 @@ function deformHead(v) {
 
 // ------------------------------------------------------------------ face texture
 
-const FACE = { a0: -1.3, a1: 1.3, b0: -1.02, b1: 0.6 };
+// wide enough for the eye tips to sweep round the sides of the head (seen from behind)
+const FACE = { a0: -2.45, a1: 2.45, b0: -1.02, b1: 0.68 };
 
 function paintFace(g, W, H) {
   const k = W / (FACE.a1 - FACE.a0);
@@ -137,8 +138,12 @@ function paintFace(g, W, H) {
     let p = E(0.06, -0.16); g.moveTo(p[0], p[1]);
     let c = E(0.12, 0.2); p = E(0.5, 0.42);
     g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
-    c = E(0.85, 0.58); p = E(1.18, 0.4);
+    c = E(0.85, 0.6); p = E(1.25, 0.54);
     g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+    c = E(1.8, 0.62); p = E(2.32, 0.34);
+    g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+    const back = [[2.05, 0.26], [1.95, 0.1], [1.78, 0.22], [1.62, 0.04], [1.5, 0.2], [1.36, 0.02], [1.24, 0.16]];
+    for (const [a, b] of back) { p = E(a, b); g.lineTo(p[0], p[1]); }
     const jag = [[1.0, 0.22], [0.98, 0.06], [0.86, 0.14], [0.78, -0.06], [0.68, 0.06], [0.56, -0.13], [0.47, -0.02], [0.36, -0.2], [0.27, -0.1], [0.17, -0.26]];
     for (const [a, b] of jag) { p = E(a, b); g.lineTo(p[0], p[1]); }
     g.closePath();
@@ -272,9 +277,9 @@ export function createVenom() {
   const headMesh = mesh(headGeo, black, OUTLINE * 1.1);
   headMesh.position.y = V.headUp;
   head.add(headMesh);
-  const faceTex = canvasTexture(512, Math.round(512 * (FACE.b1 - FACE.b0) / (FACE.a1 - FACE.a0)), paintFace);
+  const faceTex = canvasTexture(1024, Math.round(1024 * (FACE.b1 - FACE.b0) / (FACE.a1 - FACE.a0)), paintFace);
   const face = new THREE.Mesh(
-    facePatch(V.headR, FACE.a0, FACE.a1, FACE.b0, FACE.b1, 0.007, { segX: 20, segY: 12, deform: deformHead }),
+    facePatch(V.headR, FACE.a0, FACE.a1, FACE.b0, FACE.b1, 0.007, { segX: 34, segY: 12, deform: deformHead }),
     toonMaterial(0xffffff, { map: faceTex, alphaTest: 0.5, emissive: 0x6a6a6a, emissiveMap: faceTex })
   );
   face.position.y = V.headUp;
@@ -349,7 +354,7 @@ export function createVenom() {
     armLX: 0, armLY: 0, armLZ: -0.3, elbowL: 0.3,
     armRX: 0, armRY: 0, armRZ: 0.3, elbowR: 0.3,
     legLX: 0, legLZ: -0.08, legRX: 0, legRZ: 0.08, kneeL: 0, kneeR: 0,
-    tongueOut: 0.3, tongueWiggle: 1,
+    tongueOut: 0.3, tongueWiggle: 1, tongueSwing: 0,
   };
   const blend = new PoseBlend(defaults, 0.13);
   let state = 'run';
@@ -392,8 +397,8 @@ export function createVenom() {
       const f = i / 9;
       const s = f * len;
       tonguePts[i].set(
-        Math.sin(t * 7 * wig - f * 5) * 0.07 * f * f * (0.6 + wig * 0.4),
-        -s * (0.55 - 0.25 * out) - 0.25 * f * f * len * (1 - 0.5 * out) + Math.sin(t * 9 * wig - f * 4) * 0.035 * f * f,
+        Math.sin(t * 7 * wig - f * 5) * 0.07 * f * f * (0.6 + wig * 0.4) + p.tongueSwing * Math.sin(t * 3.4) * 0.85 * f * Math.sqrt(f),
+        -s * (0.55 - 0.25 * out) - (0.25 * len * (1 - 0.5 * out) + 0.18 * p.tongueSwing * Math.abs(Math.sin(t * 3.4))) * f * f + Math.sin(t * 9 * wig - f * 4) * 0.035 * f * f,
         -s * (0.75 + 0.3 * out) + 0.12 * f * f * len,
       );
     }
@@ -436,6 +441,7 @@ function venomPose(state, P, t, st, phase) {
       P.elbowL = 0.7 + 0.25 * s;
       P.tongueOut = 1;
       P.tongueWiggle = 1.6;
+      P.tongueSwing = 0.35;
       break;
     }
     case 'catch': { // lunge: claws thrown wide, then snap shut
@@ -448,7 +454,7 @@ function venomPose(state, P, t, st, phase) {
       P.pelvisRY = 0;
       P.pelvisRZ = 0;
       P.spineRX = -0.45;
-      P.headRX = 0.25;
+      P.headRX = 0.7;
       P.armLX = 1.3 + snap;
       P.armRX = 1.3 + snap;
       P.armLZ = -0.9 + 1.15 * k;
@@ -464,22 +470,23 @@ function venomPose(state, P, t, st, phase) {
       break;
     }
     case 'run':
-    default: { // lumbering, hunched, arms swinging wide
-      P.spineRX = -0.38;
+    default: { // lumbering, hunched, arms swinging wide so the claws show from behind
+      P.spineRX = -0.5;
       P.spineRY = 0.25 * s;
-      P.spineRZ = -0.07 * s;
-      P.headRX = 0.36;
-      P.headRY = -0.12 * s;
-      P.headRZ = 0.06 * s;
-      P.armLX = -0.85 * s + 0.15;
-      P.armRX = 0.85 * s + 0.15;
-      P.armLZ = -0.55;
-      P.armRZ = 0.55;
-      P.armLY = 0.3;
-      P.armRY = -0.3;
-      P.elbowL = 0.65 + 0.35 * s;
-      P.elbowR = 0.65 - 0.35 * s;
-      P.tongueOut = 0.3;
+      P.spineRZ = -0.08 * s;
+      P.headRX = 0.45;
+      P.headRY = -0.14 * s;
+      P.headRZ = 0.07 * s;
+      P.armLX = -0.8 * s + 0.25;
+      P.armRX = 0.8 * s + 0.25;
+      P.armLZ = -0.85 - 0.15 * c;
+      P.armRZ = 0.85 + 0.15 * c;
+      P.armLY = 0.35;
+      P.armRY = -0.35;
+      P.elbowL = 0.85 + 0.35 * s;
+      P.elbowR = 0.85 - 0.35 * s;
+      P.tongueSwing = 1;
+      P.tongueOut = 0.75;
       P.tongueWiggle = 1;
       break;
     }

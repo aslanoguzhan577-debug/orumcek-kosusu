@@ -169,9 +169,9 @@ const ARM_SIDE = [-1, 1, -1, 1];
 const ARM_TIER = [0, 0, 1, 1];
 
 function mechGeometries() {
-  const seg = new THREE.CylinderGeometry(0.022, 0.029, SEG, 8, 1, true);
+  const seg = new THREE.CylinderGeometry(0.027, 0.034, SEG, 8, 1, true);
   seg.translate(0, SEG / 2, 0);
-  const knuckle = new THREE.SphereGeometry(0.04, 10, 7);
+  const knuckle = new THREE.SphereGeometry(0.046, 10, 7);
   const segGeo = mergeGeos([seg, knuckle]);
 
   // curved claw blade (curls toward local -X), with a knuckle at its root
