@@ -2,6 +2,9 @@
 // Follows the player's lane x and floor height with damping. On resize it widens the
 // FOV and pulls back so all lanes stay on screen in portrait.
 // rig.shake(strength, seconds) gives a small decaying shake (for G11 effects).
+// rig.setTilt(on) lifts the view a little (G9 web zip).
+// rig.setShot(position, lookAt) blends to a fixed shot (G8 catch cam); rig.clearShot()
+// blends back. snap() drops both instantly (run start / menu).
 
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
@@ -19,6 +22,28 @@ export class CameraRig {
     this._shakeTime = 0;
     this._shakeDuration = 0;
     this._shakeStrength = 0;
+    this.tilt = 0;
+    this._tiltOn = false;
+    this.shotBlend = 0;
+    this._shotOn = false;
+    this._shotPos = new THREE.Vector3();
+    this._shotLook = new THREE.Vector3();
+    this._pos = new THREE.Vector3();
+    this._look = new THREE.Vector3();
+  }
+
+  setTilt(on) {
+    this._tiltOn = on;
+  }
+
+  setShot(position, lookAt) {
+    this._shotOn = true;
+    this._shotPos.copy(position);
+    this._shotLook.copy(lookAt);
+  }
+
+  clearShot() {
+    this._shotOn = false;
   }
 
   resize(width, height) {
@@ -58,6 +83,10 @@ export class CameraRig {
   snap(player) {
     this.x = player.x * this.follow;
     this.refY = player.floorY;
+    this.tilt = 0;
+    this._tiltOn = false;
+    this.shotBlend = 0;
+    this._shotOn = false;
     this._place();
   }
 
@@ -74,6 +103,8 @@ export class CameraRig {
     this.x += (player.x * this.follow - this.x) * kx;
     const targetY = player.floorY + (player.y - player.floorY) * c.jumpFollow;
     this.refY += (targetY - this.refY) * ky;
+    this.tilt += ((this._tiltOn ? 1 : 0) - this.tilt) * (1 - Math.exp(-c.tiltRate * dt));
+    this.shotBlend += ((this._shotOn ? 1 : 0) - this.shotBlend) * (1 - Math.exp(-c.shotRate * dt));
     this._place();
 
     if (this._shakeTime > 0) {
@@ -88,7 +119,13 @@ export class CameraRig {
   _place() {
     const c = CONFIG.camera;
     const s = this.scale;
-    this.camera.position.set(this.x, this.refY + c.height * s, c.distance * s);
-    this.camera.lookAt(this.x, this.refY + c.lookHeight, -c.lookAhead);
+    this._pos.set(this.x, this.refY + c.height * s, c.distance * s);
+    this._look.set(this.x, this.refY + c.lookHeight + this.tilt * c.zipLookUp, -c.lookAhead);
+    if (this.shotBlend > 0.001) {
+      this._pos.lerp(this._shotPos, this.shotBlend);
+      this._look.lerp(this._shotLook, this.shotBlend);
+    }
+    this.camera.position.copy(this._pos);
+    this.camera.lookAt(this._look);
   }
 }

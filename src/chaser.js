@@ -4,8 +4,12 @@
 //   away   fallen back off screen (hidden)
 //   intro  right behind at run start, then falls back
 //   near   after a stumble: close behind for CONFIG.chaser.nearTime s ('reach')
-//   catch  rushing in after a crash or a 2nd stumble (world is halted)
-//   caught grabbed: emits 'caught', game over after CONFIG.chaser.catchBeat s
+//   catch  rushing in after a crash or a 2nd stumble (world is halted, catch cam blends in)
+//   lunge  grabbing, catch cam on his face for CONFIG.chaser.lungeTime s
+//   caught emits 'caught' (fx ink splash), game over after CONFIG.chaser.afterCaught s
+// Catch cam: a front three-quarter shot from beside and ahead of the player, looking
+// back at Venom's face (his face is on his -Z side). Pausing freezes it; snap() on
+// restart / menu removes it.
 // Hooks it takes over in obstacles.hooks: onSideHit (stumble) and onCrash (front crash).
 // onFrontHit stays first in line, so G10 can still absorb a crash before any of this.
 // Events: venomNear (he has arrived close), venomFar (he falls back), caught.
@@ -23,7 +27,10 @@ import { game } from './game.js';
 import { createBlobShadow } from './world.js';
 
 const C = CONFIG.chaser;
+const CATCHING = new Set(['catch', 'lunge', 'caught']);
 const _box = new THREE.Box3();
+const _shotPos = new THREE.Vector3();
+const _shotLook = new THREE.Vector3();
 const _size = new THREE.Vector3();
 
 function damp(current, target, rate, dt) {
@@ -33,6 +40,7 @@ function damp(current, target, rate, dt) {
 export class Chaser {
   constructor(scene, player, obstacles, model) {
     this.player = player;
+    this.obstacles = obstacles;
     this.root = new THREE.Group();
     this.root.name = 'chaser';
     scene.add(this.root);
@@ -70,11 +78,13 @@ export class Chaser {
     this.timer = 0;
     this.arrived = false;
     this._snapNear = false;
+    this.knockback = 0;
+    if (game.cameraRig) game.cameraRig.clearShot();
     this._place();
   }
 
   get isNear() {
-    return this.mode === 'near' || this.mode === 'catch' || this.mode === 'caught';
+    return this.mode === 'near' || CATCHING.has(this.mode);
   }
 
   _startIntro() {
@@ -85,7 +95,7 @@ export class Chaser {
 
   // Side hit (called by obstacles after the stumble itself).
   onStumble() {
-    if (this.mode === 'catch' || this.mode === 'caught') return;
+    if (CATCHING.has(this.mode)) return;
     if (this.mode === 'near') {
       this.catchPlayer();
       return;
@@ -97,7 +107,7 @@ export class Chaser {
 
   // Front crash or second stumble: halt the world, rush in, grab.
   catchPlayer() {
-    if (this.mode === 'catch' || this.mode === 'caught') return;
+    if (CATCHING.has(this.mode)) return;
     game.halt();
     this.player.setOverride('caught', Infinity);
     this.player.controlsLocked = true;
@@ -105,15 +115,46 @@ export class Chaser {
     this.arrived = true;
     this.mode = 'catch';
     this.gap = Math.min(this.gap, C.catchStartGap);
+    this.shotSide = this._pickShotSide();
+    this.knockback = C.knockback;
+  }
+
+  // Outer lane: film from outside the track (nothing there). Middle lane: the side whose
+  // neighbouring lane has nothing next to the player.
+  _pickShotSide() {
+    const px = this.player.x;
+    if (Math.abs(px) > 0.5) return Math.sign(px);
+    for (const side of [1, -1]) {
+      let blocked = false;
+      for (const o of this.obstacles.active) {
+        if (Math.abs(o.x - (px + side * CONFIG.laneWidth)) > 0.6) continue;
+        if (o.z > -4 && o.z - o.length < 2) blocked = true;
+      }
+      if (!blocked) return side;
+    }
+    return 1;
+  }
+
+  // Catch cam: beside and ahead of the player, above roof height, looking at Venom's head.
+  _aimShot() {
+    const rig = game.cameraRig;
+    if (!rig) return;
+    const p = this.player;
+    const floor = Math.max(p.floorY, this.floor);
+    _shotPos.set(p.x + this.shotSide * C.shotSide, floor + C.shotHeight, -C.shotAhead);
+    _shotLook.set((p.x + this.x) / 2, this.y + this.height * 0.68, this.gap * 0.5);
+    rig.setShot(_shotPos, _shotLook);
   }
 
   // Gap at which Venom's head sits just below the player's feet on screen.
   _nearGap() {
-    const cam = game.camera ? game.camera.position : null;
-    if (!cam) return C.minGap;
-    const camUp = Math.max(0.5, cam.y - this.player.floorY);
-    const gap = ((this.height + C.screenMargin) * cam.z) / camUp;
-    return THREE.MathUtils.clamp(gap, C.minGap, Math.max(C.minGap, cam.z - 1));
+    const rig = game.cameraRig;
+    if (!rig) return C.minGap;
+    // the chase camera's offsets (camera.position may be blended toward the catch cam)
+    const camUp = Math.max(0.5, CONFIG.camera.height * rig.scale);
+    const camZ = CONFIG.camera.distance * rig.scale;
+    const gap = ((this.height + C.screenMargin) * camZ) / camUp;
+    return THREE.MathUtils.clamp(gap, C.minGap, Math.max(C.minGap, camZ - 1));
   }
 
   update(dt) {
@@ -147,8 +188,15 @@ export class Chaser {
         this.gap -= C.catchSpeed * dt;
         if (this.gap <= C.catchGap) {
           this.gap = C.catchGap;
+          this.mode = 'lunge';
+          this.timer = C.lungeTime;
+        }
+        break;
+      case 'lunge':
+        this.timer -= dt;
+        if (this.timer <= 0) {
           this.mode = 'caught';
-          this.timer = C.catchBeat;
+          this.timer = C.afterCaught;
           emit('caught');
         }
         break;
@@ -163,18 +211,20 @@ export class Chaser {
         break;
     }
 
-    if (this.mode !== 'catch' && this.mode !== 'caught') {
+    if (!CATCHING.has(this.mode)) {
       const rate = target < this.gap ? C.approachRate : C.retreatRate;
       this.gap = damp(this.gap, target, rate, dt);
     }
 
     const p = this.player;
-    this.x = damp(this.x, p.x, C.followRate, dt);
+    // while catching, lunge in on the camera's side so his face is not behind Spider-Man
+    const tx = CATCHING.has(this.mode) ? p.x + this.shotSide * C.catchSide : p.x;
+    this.x = damp(this.x, tx, C.followRate, dt);
     this.y = damp(this.y, p.y, C.followRate, dt);
     this.floor = damp(this.floor, p.floorY, C.followRate, dt);
 
     let state = 'run';
-    if (this.mode === 'catch' || this.mode === 'caught') state = 'catch';
+    if (CATCHING.has(this.mode)) state = 'catch';
     else if ((this.mode === 'near' || this.mode === 'intro') && this.gap < near + 1.5) state = 'reach';
     if (state !== this._modelState) {
       this._modelState = state;
@@ -182,11 +232,21 @@ export class Chaser {
     }
     this.model.update(dt);
     this._place();
+    if (CATCHING.has(this.mode)) {
+      // Yanked back: the halted world slides ahead, clearing the view of what was hit.
+      if (this.knockback > 0) {
+        const step = Math.min(this.knockback, C.knockbackSpeed * dt);
+        this.knockback -= step;
+        this.obstacles.shift(-step);
+      }
+      this._aimShot();
+    }
   }
 
   _place() {
-    const camZ = game.camera ? game.camera.position.z : 20;
-    const visible = this.gap < camZ + 1;
+    // the chase camera's own distance (not camera.position: the catch cam moves it)
+    const camZ = game.cameraRig ? CONFIG.camera.distance * game.cameraRig.scale : 20;
+    const visible = CATCHING.has(this.mode) || this.gap < camZ + 1;
     this.root.visible = visible;
     this.shadow.visible = visible;
     this.root.position.set(this.x, this.y, this.gap);

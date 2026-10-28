@@ -52,6 +52,9 @@ export const CONFIG = {
     dampX: 8,              // follow speed (higher = snappier)
     dampY: 5,
     jumpFollow: 0.25,      // how much of a jump the camera follows
+    zipLookUp: 2.2,        // web zip: look this much higher (G9)
+    tiltRate: 4,
+    shotRate: 7,           // blend speed into / out of the catch cam (G8)
   },
 
   // --- World / track ---
@@ -118,9 +121,39 @@ export const CONFIG = {
     followRate: 6,         // how fast he follows the lane and height
     catchStartGap: 11,     // a catch starts at most this far back ...
     catchSpeed: 22,        // ... and rushes in at this speed (m/s)
-    catchGap: 0.9,         // where he grabs the player
-    catchBeat: 0.8,        // seconds between 'caught' and game over
+    catchGap: 1.1,         // where he grabs the player
+    lungeTime: 0.7,        // catch cam on Venom's face before 'caught' (ink splash)
+    afterCaught: 0.35,     // seconds between 'caught' and game over
+    knockback: 3,          // metres the player is yanked back during a catch ...
+    knockbackSpeed: 9,     // ... at this speed (m/s)
+    catchSide: 0.75,       // Venom lunges in this far toward the catch cam's side
+    shotSide: 3.2,         // catch cam: metres to the side of the player ...
+    shotHeight: 2.8,       // ... above the floor ...
+    shotAhead: 1.6,        // ... and in front (-Z), looking back at Venom's face
+                           // (small enough that the view passes in front of whatever he hit)
     heightFactor: 1.3,     // assumed size vs playerHeight if the model cannot be measured
+  },
+
+  // --- Web cartridge and web zip (G9) ---
+  web: {
+    maxCharges: 3,
+    pickupChance: 0.22,    // per pattern block with a free stretch on the route lane
+    pickupChanceFull: 0.04, // ... while already holding maxCharges
+    pickupMinGap: 180,     // metres between two cartridges at least
+    pickupY: 0.15,         // height of the cartridge's bottom above the track
+    pickupScale: 1.3,
+    hangHeight: 6,         // nothing ahead: rise to this height above the floor ...
+    hangGravityScale: 0.3, // ... and float down with this much gravity
+    roofLookTime: 2.6,     // look for a train / wagon roof arriving within this many seconds
+    roofClear: 0.35,       // feet this far above the roof when its front reaches the player
+    maxRiseSpeed: 34,      // fastest upward speed of a zip (m/s)
+    minGravityScale: 0.12, // gentlest gravity while rising toward a far roof
+    lineMaxTime: 1.6,      // the web line disappears after this long (or on landing)
+    lineRadius: 0.03,
+    anchorHeight: 45,      // anchor high on a building: above the player ...
+    anchorAhead: 24,       // ... ahead (-Z) ...
+    anchorSide: 8,         // ... and to the side (facades at |x| 7-9 m), always out of frame
+    handOffset: [0.32, 1.72, -0.05], // raised right hand in the 'web' pose, from the feet
   },
 
   // --- Pattern generator (G2) ---

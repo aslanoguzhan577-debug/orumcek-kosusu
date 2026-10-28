@@ -13,6 +13,11 @@
 //   obstacles.hooks.onSideHit(hit)  -> after a stumble (G8 Venom closes in)
 //   hit = { kind: 'front'|'side', obstacle, position: THREE.Vector3 }
 // Helpers for G10: obstacles.active (list), obstacles.remove(obstacle).
+//
+// Pickups (G9 web cartridge, G10 Iron Spider core):
+//   obstacles.registerPickup(kind, { create: () => ({ root, update(dt) }), onCollect() })
+// Pattern descriptors { type: 'pickup', kind, lane, d, y } then spawn pooled instances
+// (built once, reused). Collecting calls onCollect() and emits pickup {type: kind}.
 
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
@@ -100,6 +105,7 @@ function rampTop(p, f) {
 
 export class Obstacles {
   constructor(scene, world, player) {
+    this.scene = scene;
     this.world = world;
     this.player = player;
     this.art = createObstacleArt(scene);
@@ -112,6 +118,8 @@ export class Obstacles {
     this.pendingTrains = []; // oncoming train descriptors waiting to appear
     this.coins = [];         // coins in play
     this._coinPool = [];
+    this.pickupKinds = {};   // kind -> { create, onCollect, pool }
+    this.pickups = [];       // pickups in play: { kind, x, y, z, item }
     this._time = 0;
     this._sideHitTimer = 0;
     this._hitPos = new THREE.Vector3();
@@ -143,6 +151,7 @@ export class Obstacles {
     for (const c of this.coins) this._coinPool.push(c);
     this.coins.length = 0;
     this.pendingTrains.length = 0;
+    for (let i = this.pickups.length - 1; i >= 0; i--) this._releasePickup(i);
     this._sideHitTimer = 0;
 
     this.seed = this.fixedSeed != null ? this.fixedSeed : randomSeed();
@@ -171,7 +180,7 @@ export class Obstacles {
     } else if (desc.type === 'train') {
       this.pendingTrains.push(desc);
     } else if (desc.type === 'pickup') {
-      // G9 / G10 add pickups here.
+      this._addPickup(desc.kind, laneX(desc.lane), desc.y, -(desc.d - ground));
     } else {
       this._addObstacle(desc, -(desc.d - ground), 0);
     }
@@ -209,6 +218,44 @@ export class Obstacles {
     }
   }
 
+  // ---------- pickups ----------
+
+  registerPickup(kind, def) {
+    this.pickupKinds[kind] = { create: def.create, onCollect: def.onCollect || (() => {}), pool: [] };
+  }
+
+  _addPickup(kind, x, y, z) {
+    const def = this.pickupKinds[kind];
+    if (!def) return;
+    let item = def.pool.pop();
+    if (!item) {
+      item = def.create();
+      this.scene.add(item.root);
+    }
+    item.root.visible = true;
+    item.root.position.set(x, y, z);
+    this.pickups.push({ kind, x, y, z, item });
+  }
+
+  _releasePickup(i) {
+    const pk = this.pickups[i];
+    pk.item.root.visible = false;
+    this.pickupKinds[pk.kind].pool.push(pk.item);
+    this.pickups.splice(i, 1);
+  }
+
+  // Move everything along the track by dz (negative = further ahead). Used by the catch
+  // knockback (G8) while the world is halted.
+  shift(dz) {
+    for (const o of this.active) o.z += dz;
+    for (const c of this.coins) c.z += dz;
+    for (const pk of this.pickups) {
+      pk.z += dz;
+      pk.item.root.position.z = pk.z;
+    }
+    this._draw();
+  }
+
   remove(o) {
     const i = this.active.indexOf(o);
     if (i >= 0) {
@@ -243,6 +290,11 @@ export class Obstacles {
         this._coinPool.push(c);
       }
     }
+    for (let i = this.pickups.length - 1; i >= 0; i--) {
+      const pk = this.pickups[i];
+      pk.z += v * dt;
+      if (pk.z > backZ) this._releasePickup(i);
+    }
     this._spawnTrains(Math.max(v, 1));
 
     this.player.floorY = this._floorUnder(this.player, v, dt);
@@ -252,7 +304,29 @@ export class Obstacles {
     if (game.halted) return; // catch sequence: everything stands still
     this._collide();
     this._collectCoins();
+    this._collectPickups();
     this._draw();
+    for (const pk of this.pickups) {
+      pk.item.root.position.set(pk.x, pk.y, pk.z);
+      pk.item.update(dt);
+    }
+  }
+
+  _collectPickups() {
+    const p = this.player;
+    const h = p.sliding ? CONFIG.slideHeight : CONFIG.playerHeight;
+    const hw = CONFIG.playerWidth / 2;
+    const hd = CONFIG.playerDepth / 2;
+    const s = 0.55; // pickups are about 1 m tall, origin at the bottom
+    for (let i = this.pickups.length - 1; i >= 0; i--) {
+      const pk = this.pickups[i];
+      if (pk.z - s > hd || pk.z + s < -hd) continue;
+      if (pk.x - s > p.x + hw || pk.x + s < p.x - hw) continue;
+      if (pk.y > p.y + h || pk.y + 1.1 < p.y) continue;
+      this.pickupKinds[pk.kind].onCollect();
+      emit('pickup', { type: pk.kind, position: new THREE.Vector3(pk.x, pk.y + 0.5, pk.z) });
+      this._releasePickup(i);
+    }
   }
 
   // Highest surface under the player that it is standing on or above (within stepUp).
