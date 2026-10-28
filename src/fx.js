@@ -516,29 +516,49 @@ export function initFx(game) {
   });
   on('slide', () => { slideUntil = simTime + (CONFIG.slideDuration || 0.7); slideAcc = 0; });
 
-  on('stumble', () => {
-    const pl = player();
-    const x = pl.x, y = pl.y + 0.8;
-    puffBurst(x, y - 0.3, 0.1, 6, 0xf4efe6, 2.8, 1.5, 0.5, 1.1, 0.4);
-    sparkBurst(glow, x, y, 0.2, 6, [0xffd23a, 0xffffff], 4.2, 0.36, 0.35);
-    showText('pat', x, y + 1.1, 0, 0.3, 0.6, true);
-    shake(0.08, 0.22);
+  // Catch cam: crash / 2nd stumble emit their event first and the chaser halts the world
+  // right afterwards (same synchronous call). A microtask therefore sees game.halted already
+  // set, without waiting a frame. While halted the shot must stay clear: only a few small
+  // sparks ahead of the player (where the hit happened), no text, ring, smoke, flash or shake.
+  let lastSaveMs = -1e9;
+  const microtask = typeof queueMicrotask === 'function' ? queueMicrotask : (fn) => Promise.resolve().then(fn);
+
+  function catchSparks(p) {
+    sparkBurst(glow, p.x, p.y - 0.2, p.z - 0.7, 6, [0xffd23a, 0xffffff], 3, 0.22, 0.3);
+  }
+
+  on('stumble', (d) => {
+    const p = posOf(d, 0.8);
+    microtask(() => {
+      if (game.halted) { catchSparks(p); return; }
+      const pl = player();
+      const x = pl.x, y = pl.y + 0.8;
+      puffBurst(x, y - 0.3, 0.1, 6, 0xf4efe6, 2.8, 1.5, 0.5, 1.1, 0.4);
+      sparkBurst(glow, x, y, 0.2, 6, [0xffd23a, 0xffffff], 4.2, 0.36, 0.35);
+      showText('pat', x, y + 1.1, 0, 0.3, 0.6, true);
+      shake(0.08, 0.22);
+    });
   });
 
   on('crash', (d) => {
     const p = posOf(d, 0.9);
-    sparkBurst(glow, p.x, p.y, p.z, 18, [0xffd23a, 0xff8a1f, 0xffffff, 0xe0262c], 9, 0.7, 0.65);
-    glow.spawn(p.x, p.y, p.z, 0, 0, 0, 0.22, 1.2, 4.2, SHAPE.ring, 0xffe27a, 0.95, 0, 0, true);
-    puffBurst(p.x, p.y, p.z, 8, 0x6b6670, 4.5, 2.5, 0.7, 1.6, 0.7);
-    debris(p.x, p.y, p.z, 12, 0);
-    const key = ['gum', 'cat', 'bam'][(Math.random() * 3) | 0];
-    showText(key, p.x, p.y + 2.0, p.z, 0.46, 0.85, true);
-    shake(0.4, 0.55);
-    flash('white', 0.45, 220);
+    microtask(() => {
+      // Iron Spider absorbed it: ironSave draws its own (bigger) effects
+      if (performance.now() - lastSaveMs < 150) return;
+      if (game.halted) { catchSparks(p); return; }
+      sparkBurst(glow, p.x, p.y, p.z, 18, [0xffd23a, 0xff8a1f, 0xffffff, 0xe0262c], 9, 0.7, 0.65);
+      glow.spawn(p.x, p.y, p.z, 0, 0, 0, 0.22, 1.2, 4.2, SHAPE.ring, 0xffe27a, 0.95, 0, 0, true);
+      puffBurst(p.x, p.y, p.z, 8, 0x6b6670, 4.5, 2.5, 0.7, 1.6, 0.7);
+      debris(p.x, p.y, p.z, 12, 0);
+      const key = ['gum', 'cat', 'bam'][(Math.random() * 3) | 0];
+      showText(key, p.x, p.y + 2.0, p.z, 0.46, 0.85, true);
+      shake(0.4, 0.55);
+      flash('white', 0.45, 220);
+    });
   });
 
   on('caught', () => {
-    shake(0.3, 0.45);
+    shake(0.1, 0.3);
     splashOn();
   });
 
@@ -609,6 +629,7 @@ export function initFx(game) {
   });
 
   on('ironSave', (d) => {
+    lastSaveMs = performance.now();
     const pl = player();
     ringT = 0;
     ring.visible = true;
@@ -665,7 +686,7 @@ export function initFx(game) {
     const st = game.state;
     if (st.mode === 'paused') return;
     const running = st.mode === 'running';
-    const dz = running ? st.speed * dt : 0;
+    const dz = running && !game.halted ? st.speed * dt : 0;
     const pl = player();
     simTime += dt;
 
@@ -722,7 +743,7 @@ export function initFx(game) {
     if (speedAcc > 0.12) {
       speedAcc = 0;
       let o = 0;
-      if (running && !reduceMotion) {
+      if (running && !game.halted && !reduceMotion) {
         const k = THREE.MathUtils.clamp((st.speed - CONFIG.startSpeed) / Math.max(1, CONFIG.maxSpeed - CONFIG.startSpeed), 0, 1);
         o = k < 0.06 ? 0 : 0.1 + 0.4 * k * k;
       }
