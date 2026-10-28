@@ -11,12 +11,14 @@
 // back at Venom's face (his face is on his -Z side). Pausing freezes it; snap() on
 // restart / menu removes it.
 // Hooks it takes over in obstacles.hooks: onSideHit (stumble) and onCrash (front crash).
+// Its own hook: chaser.hooks.absorbCatch() -> return true to cancel a catch from a 2nd
+// stumble (G10 Iron Spider); Venom then drops back.
 // onFrontHit stays first in line, so G10 can still absorb a crash before any of this.
 // Events: venomNear (he has arrived close), venomFar (he falls back), caught.
 //
-// Readability: when close, Venom stands where his head shows just BELOW Spider-Man's
-// feet on screen (computed from the camera each frame), so he never hides the player or
-// the lanes ahead.
+// Readability: when close, Venom stands where only his head and shoulders show at the
+// bottom edge of the screen (CONFIG.chaser.headScreenY, computed from the chase camera),
+// so he never hides the player or the lanes ahead.
 //
 // The model is passed in (main.js is the single creation point); setModel() swaps it.
 
@@ -41,6 +43,7 @@ export class Chaser {
   constructor(scene, player, obstacles, model) {
     this.player = player;
     this.obstacles = obstacles;
+    this.hooks = { absorbCatch: () => false };
     this.root = new THREE.Group();
     this.root.name = 'chaser';
     scene.add(this.root);
@@ -97,12 +100,22 @@ export class Chaser {
   onStumble() {
     if (CATCHING.has(this.mode)) return;
     if (this.mode === 'near') {
+      if (this.hooks.absorbCatch()) {
+        this._dropBack();
+        return;
+      }
       this.catchPlayer();
       return;
     }
     this.mode = 'near';
     this.timer = C.nearTime;
     this.arrived = false;
+  }
+
+  _dropBack() {
+    if (this.arrived) emit('venomFar');
+    this.arrived = false;
+    this.mode = 'away';
   }
 
   // Front crash or second stumble: halt the world, rush in, grab.
@@ -146,15 +159,21 @@ export class Chaser {
     rig.setShot(_shotPos, _shotLook);
   }
 
-  // Gap at which Venom's head sits just below the player's feet on screen.
+  // Gap at which the top of Venom's head sits at headScreenY (fraction of the screen
+  // height, from the bottom), using the chase camera's own pose (not camera.position,
+  // which the catch cam may move).
   _nearGap() {
     const rig = game.cameraRig;
-    if (!rig) return C.minGap;
-    // the chase camera's offsets (camera.position may be blended toward the catch cam)
-    const camUp = Math.max(0.5, CONFIG.camera.height * rig.scale);
-    const camZ = CONFIG.camera.distance * rig.scale;
-    const gap = ((this.height + C.screenMargin) * camZ) / camUp;
-    return THREE.MathUtils.clamp(gap, C.minGap, Math.max(C.minGap, camZ - 1));
+    if (!rig || !game.camera) return C.minGap;
+    const cam = CONFIG.camera;
+    const camUp = cam.height * rig.scale;                       // above the floor
+    const camZ = cam.distance * rig.scale;
+    const lookY = cam.lookHeight + rig.tilt * cam.zipLookUp;
+    const pitch = Math.atan2(camUp - lookY, camZ + cam.lookAhead); // looking down
+    const halfFov = THREE.MathUtils.degToRad(game.camera.fov) / 2;
+    const below = pitch + Math.atan((1 - 2 * C.headScreenY) * Math.tan(halfFov));
+    const gap = camZ - Math.max(0.1, camUp - this.height) / Math.tan(below);
+    return THREE.MathUtils.clamp(gap, C.minGap, Math.max(C.minGap, camZ - 0.8));
   }
 
   update(dt) {

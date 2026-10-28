@@ -115,7 +115,8 @@ export const CONFIG = {
     nearTime: 4.5,         // seconds he stays close after a stumble; a 2nd stumble inside = caught
     farGap: 30,            // where he waits when he has fallen back (off screen)
     minGap: 2.6,           // closest he gets while chasing (catching goes closer)
-    screenMargin: 0.3,     // keep his head this much below Spider-Man's feet on screen
+    headScreenY: 0.11,     // when close, the top of his head sits this high on screen
+                           // (fraction from the bottom): only head + shoulders show
     approachRate: 3.5,     // how fast he closes in (damping rate)
     retreatRate: 1.4,      // how fast he falls back
     followRate: 6,         // how fast he follows the lane and height
@@ -154,6 +155,20 @@ export const CONFIG = {
     anchorAhead: 24,       // ... ahead (-Z) ...
     anchorSide: 8,         // ... and to the side (facades at |x| 7-9 m), always out of frame
     handOffset: [0.32, 1.72, -0.05], // raised right hand in the 'web' pose, from the feet
+  },
+
+  // --- Iron Spider (G10) ---
+  iron: {
+    duration: 22,          // seconds the suit lasts
+    maxCount: 5,           // most cores you can hold
+    pickupChance: 0.16,    // per pattern block with a free stretch on the route lane
+    pickupChanceFull: 0.04, // ... while holding maxCount
+    pickupMinGap: 500,     // metres between two cores at least (about 1 per 900-1200 m)
+    pickupY: 0.15,
+    pickupScale: 1.3,
+    clearTime: 2,          // a save clears everything reaching the player within this many s
+    graceTime: 0.5,        // no collisions for this long after a save
+    storageKey: 'spidey.iron',
   },
 
   // --- Pattern generator (G2) ---

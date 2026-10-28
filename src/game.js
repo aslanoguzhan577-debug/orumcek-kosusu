@@ -29,6 +29,7 @@ export const game = {
   obstacles: null,  // G2 obstacle system (main.js)
   chaser: null,     // G8 Venom (main.js)
   web: null,        // G9 web cartridge / zip (main.js)
+  iron: null,       // G10 Iron Spider (main.js)
 
   // True during the catch sequence (G8): mode stays 'running', but the world, speed and
   // distance stop; the player and systems' update(dt) still run so the catch can play.

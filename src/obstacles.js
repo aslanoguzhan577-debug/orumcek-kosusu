@@ -12,7 +12,8 @@
 //                                      (G8 may play a "caught" sequence instead)
 //   obstacles.hooks.onSideHit(hit)  -> after a stumble (G8 Venom closes in)
 //   hit = { kind: 'front'|'side', obstacle, position: THREE.Vector3 }
-// Helpers for G10: obstacles.active (list), obstacles.remove(obstacle).
+// Helpers for G10: obstacles.active (list), obstacles.remove(obstacle),
+//   obstacles.grace(seconds) = no collisions for a moment.
 //
 // Pickups (G9 web cartridge, G10 Iron Spider core):
 //   obstacles.registerPickup(kind, { create: () => ({ root, update(dt) }), onCollect() })
@@ -122,6 +123,7 @@ export class Obstacles {
     this.pickups = [];       // pickups in play: { kind, x, y, z, item }
     this._time = 0;
     this._sideHitTimer = 0;
+    this._graceTimer = 0;
     this._hitPos = new THREE.Vector3();
 
     this.hooks = {
@@ -153,6 +155,7 @@ export class Obstacles {
     this.pendingTrains.length = 0;
     for (let i = this.pickups.length - 1; i >= 0; i--) this._releasePickup(i);
     this._sideHitTimer = 0;
+    this._graceTimer = 0;
 
     this.seed = this.fixedSeed != null ? this.fixedSeed : randomSeed();
     this.generator.reset(this.seed);
@@ -256,6 +259,10 @@ export class Obstacles {
     this._draw();
   }
 
+  grace(seconds) {
+    this._graceTimer = Math.max(this._graceTimer, seconds);
+  }
+
   remove(o) {
     const i = this.active.indexOf(o);
     if (i >= 0) {
@@ -272,6 +279,7 @@ export class Obstacles {
     const backZ = CONFIG.world.backZ;
     this._time += dt;
     this._sideHitTimer -= dt;
+    this._graceTimer -= dt;
 
     for (let i = this.active.length - 1; i >= 0; i--) {
       const o = this.active[i];
@@ -356,6 +364,7 @@ export class Obstacles {
   }
 
   _collide() {
+    if (this._graceTimer > 0) return;
     const p = this.player;
     const h = p.sliding ? CONFIG.slideHeight : CONFIG.playerHeight;
     const hw = CONFIG.playerWidth / 2 - 0.08;

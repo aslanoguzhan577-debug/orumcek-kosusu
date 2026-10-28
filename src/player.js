@@ -15,6 +15,8 @@
 //                            seconds = Infinity keeps it until reset / clearOverride().
 //   player.controlsLocked    true ignores all input (G8 caught).
 //   player.setModel(model)   swap the character model (G6).
+//   player.useModel(model)   switch to another (pre-built) model, keeping the state (G10).
+//                            Both roots stay children; only the active one is visible.
 //   player.hitbox            THREE.Box3 in world space, updated every frame (G2).
 //   player.lastX / lastY     position before this frame's update (collision side test).
 //   player.bounceBack()      return to the lane we came from (side hit).
@@ -49,6 +51,17 @@ export class Player {
     this.model = model;
     this.root.add(model.root);
     this._modelState = null; // force setState on next update
+  }
+
+  useModel(model) {
+    if (model === this.model) return;
+    if (model.root.parent !== this.root) this.root.add(model.root);
+    if (this.model) this.model.root.visible = false;
+    model.root.visible = true;
+    this.model = model;
+    model.setState(this.state);
+    this._modelState = this.state;
+    model.update(0);
   }
 
   reset() {
