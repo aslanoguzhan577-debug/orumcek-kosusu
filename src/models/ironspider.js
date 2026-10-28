@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { toonMaterial, addOutline, mergeGeos, TubeShape } from './toon.js';
 import {
-  createSpiderCharacter, paintPolarWeb, paintRadialWeb, paintWebGrid, paintSpider, paintEyes,
+  createSpiderCharacter, keyframes, paintPolarWeb, paintRadialWeb, paintWebGrid, paintSpider, paintEyes,
   OUTLINE_COLOR,
 } from './spiderman.js';
 
@@ -195,26 +195,38 @@ const MECH_DEFAULTS = {
   mSway: 0.06, mFlail: 0,
 };
 
+const MECH_FLARE = {
+  mUpT: 1.1, mUpB: 0.1, mUpK1: 0.15, mUpK2: 0.1, mUpC: 0.0,
+  mLoT: 2.0, mLoB: 0.1, mLoK1: 0.15, mLoK2: 0.1, mLoC: 0.1, mSway: 0,
+};
+const MECH_FOLD = {
+  mUpT: 0.4, mUpB: 1.0, mUpK1: 1.4, mUpK2: 1.3, mUpC: 0.8,
+  mLoT: 1.2, mLoB: 1.1, mLoK1: 1.4, mLoK2: 1.2, mLoC: 0.8, mSway: 0,
+};
+const MECH_PEAK = {
+  mUpT: 0.6, mUpB: 0.25, mUpK1: 0.45, mUpK2: 0.4, mUpC: 0.3,
+  mLoT: 1.75, mLoB: 0.3, mLoK1: 0.4, mLoK2: 0.35, mLoC: 0.4, mSway: 0.05,
+};
+
 function mechPose(state, P, { t, st }) {
   switch (state) {
     case 'run':
       P.mSway = 0.14;
       P.mUpB = 0.7; P.mLoB = 0.9;
       break;
-    case 'jump': // spread wide and reach out
-      P.mUpT = 0.6; P.mUpB = 0.25; P.mUpK1 = 0.45; P.mUpK2 = 0.4; P.mUpC = 0.3;
-      P.mLoT = 1.75; P.mLoB = 0.3; P.mLoK1 = 0.4; P.mLoK2 = 0.35; P.mLoC = 0.4;
-      P.mSway = 0.05;
+    case 'jump': // flare out straight on take-off, fold in for the flip, spread wide at the top
+      keyframes(P, st, [[0, MECH_FLARE], [0.08, MECH_FLARE], [0.14, MECH_FOLD], [0.24, MECH_FOLD], [0.32, MECH_PEAK]]);
       break;
     case 'web': // upper pair thrown up high, lower pair spread
       P.mUpT = 0.3; P.mUpB = 0.15; P.mUpK1 = 0.35; P.mUpK2 = 0.3; P.mUpC = 0.2;
       P.mLoT = 1.6; P.mLoB = 0.2; P.mLoK1 = 0.5; P.mLoK2 = 0.45; P.mLoC = 0.5;
       P.mSway = 0.05;
       break;
-    case 'slide': // spread flat to the sides, skidding along like extra legs
-      P.mUpT = 1.25; P.mUpB = -0.5; P.mUpK1 = 0.35; P.mUpK2 = 0.3; P.mUpC = 0.3;
-      P.mLoT = 1.75; P.mLoB = 0.1; P.mLoK1 = 0.35; P.mLoK2 = 0.3; P.mLoC = 0.3;
-      P.mSway = 0.02;
+    case 'slide': // braced low: planted on the track both sides like skids, buzzing
+      P.mUpT = 1.5; P.mUpB = -0.35; P.mUpK1 = 0.3; P.mUpK2 = 0.9; P.mUpC = 0.5;
+      P.mLoT = 1.95; P.mLoB = -0.05; P.mLoK1 = 0.3; P.mLoK2 = 0.9; P.mLoC = 0.5;
+      P.mSway = 0;
+      P.mFlail = 0.04;
       break;
     case 'stumble':
       P.mFlail = 0.45 * Math.max(0.4, 1 - st);

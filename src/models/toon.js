@@ -221,6 +221,34 @@ export function smoothNormals(geo) {
   return geo;
 }
 
+// Funko-style shaping. roundCube(v, n): pushes a point of a sphere (centred at the origin)
+// out toward a rounded cube; n = 2 keeps the sphere, higher n = boxier (3 = soft cube).
+export function roundCube(v, n = 3) {
+  const len = v.length();
+  if (len < 1e-9) return v;
+  const k = Math.pow(
+    Math.pow(Math.abs(v.x) / len, n) + Math.pow(Math.abs(v.y) / len, n) + Math.pow(Math.abs(v.z) / len, n),
+    -1 / n
+  );
+  return v.multiplyScalar(k);
+}
+
+// Squares off the round cross-section of a lathe (around Y) into a rounded box, keeping
+// its UVs. n as in roundCube. Call smoothNormals() afterwards.
+export function boxify(geo, n = 3.5) {
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i);
+    const r = Math.hypot(x, z);
+    if (r < 1e-9) continue;
+    const k = Math.pow(Math.pow(Math.abs(x) / r, n) + Math.pow(Math.abs(z) / r, n), -1 / n);
+    p.setX(i, x * k);
+    p.setZ(i, z * k);
+  }
+  p.needsUpdate = true;
+  return geo;
+}
+
 // Merges indexed geometries that have position, normal and uv into one (fewer draw calls).
 export function mergeGeos(list) {
   let vCount = 0, iCount = 0;
@@ -351,15 +379,17 @@ export class PoseBlend {
     this.goal = { ...defaults };
     this.w = 1;
   }
-  start() {
+  // time (optional): blend length for this change only (e.g. a snappy drop into a slide)
+  start(time = this.time) {
     Object.assign(this.from, this.out);
     this.w = 0;
+    this.cur = time;
   }
   target() {
     return Object.assign(this.goal, this.defaults);
   }
   finish(dt) {
-    this.w = Math.min(1, this.w + dt / this.time);
+    this.w = Math.min(1, this.w + dt / (this.cur || this.time));
     const s = this.w * this.w * (3 - 2 * this.w);
     for (const k in this.out) this.out[k] = this.from[k] + (this.goal[k] - this.from[k]) * s;
     return this.out;

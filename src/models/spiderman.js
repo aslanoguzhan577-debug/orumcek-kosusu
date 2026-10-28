@@ -11,20 +11,22 @@ import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import {
   toonMaterial, addOutline, canvasTexture, smoothLathe, facePatch, mergeGeos, smoothNormals, PoseBlend,
+  roundCube, boxify,
 } from './toon.js';
 
 // ------------------------------------------------------------------ proportions
-// Designed at 1.6 m and scaled to CONFIG.playerHeight. Head ≈ 46 % of the height.
+// Designed at 1.6 m and scaled to CONFIG.playerHeight. Funko-style: a big rounded-cube
+// head (≈ 45 % of the height) sitting straight on a compact boxy torso, no neck.
 const DESIGN_H = 1.6;
 export const SPIDER_DIM = {
   hipY: 0.36,          // hip joint height
   hipX: 0.088,
   thighLen: 0.15,      // hip -> knee
-  headR: 0.37,
-  neckY: 0.50,         // neck pivot above the hips
-  headUp: 0.37,        // head centre above the neck pivot (top of head = 1.6 m)
+  headR: 0.38,         // head "radius" (half width); half height = 0.95 x this
+  neckY: 0.54,         // head pivot above the hips (= bottom of the head, inside the shoulders)
+  headUp: 0.339,       // head centre above the pivot (top of head = 1.6 m)
   shoulderX: 0.15,
-  shoulderY: 0.355,    // above the hips
+  shoulderY: 0.41,     // above the hips
   elbowY: 0.16,        // elbow below the shoulder
 };
 const D = SPIDER_DIM;
@@ -33,13 +35,23 @@ export const OUTLINE = 0.024;
 export const OUTLINE_COLOR = 0x1c1016;
 const LINE = '#16121c';
 
-// Chibi head: slightly wide, chin narrowed a little.
+// How much of the pose's head nod / tilt is used: the head sits on the shoulders, so it
+// only nods a little (big nods would open a gap under it).
+const HEAD_NOD = 0.45;
+const SPIN_Y = 0.8;      // flip / twist pivot above the feet
+const LAND_T = 0.2;     // landing squash after a jump (s)
+const POP_T = 0.18;     // stretch when popping up out of a slide (s)
+
+// Funko head: a rounded cube, a bit flatter front to back, chin slightly narrower.
 export function deformHead(v, R = D.headR) {
-  const t = v.y < 0 ? Math.min(1, -v.y / R) : 0;
-  const f = 1 - 0.13 * t * t;
-  v.x *= 1.04 * f;
+  roundCube(v, 3);
+  v.x *= 1.0;
+  v.y *= 0.95;
+  v.z *= 0.92;
+  const t = v.y < 0 ? Math.min(1, -v.y / (R * 0.95)) : 0;
+  const f = 1 - 0.1 * t * t;
+  v.x *= f;
   v.z *= f;
-  if (v.y < 0) v.y *= 0.97;
   return v;
 }
 
@@ -357,19 +369,27 @@ export function createSpiderCharacter(look, extras = {}) {
   scaler.scale.setScalar(CONFIG.playerHeight / DESIGN_H);
   root.add(scaler);
 
+  // flips / twists turn the whole body around its middle (SPIN_Y above the feet)
+  const spin = new THREE.Group();
+  spin.position.y = SPIN_Y;
+  scaler.add(spin);
+  const spinIn = new THREE.Group();
+  spinIn.position.y = -SPIN_Y;
+  spin.add(spinIn);
   const pelvis = new THREE.Group();
   pelvis.rotation.order = 'YXZ'; // yaw last = turn around the world up axis
   pelvis.position.y = D.hipY;
-  scaler.add(pelvis);
+  spinIn.add(pelvis);
   const spine = new THREE.Group();
   pelvis.add(spine);
   const mo = look.matOpts || {};
 
-  // --- torso
+  // --- torso: compact rounded box; its top reaches up inside the head (no neck)
   const torsoGeo = smoothLathe([
-    [0, -0.075], [0.12, -0.06], [0.175, 0.0], [0.19, 0.09], [0.18, 0.2],
-    [0.16, 0.3], [0.13, 0.40], [0.075, 0.49], [0, 0.54],
-  ], { segments: 18, samples: 18, scaleZ: 0.86 });
+    [0, -0.08], [0.12, -0.07], [0.165, -0.02], [0.172, 0.1], [0.17, 0.25],
+    [0.166, 0.4], [0.142, 0.5], [0.08, 0.56], [0, 0.575],
+  ], { segments: 20, samples: 18, scaleZ: 0.82 });
+  smoothNormals(boxify(torsoGeo, 3.5));
   const torso = mesh(torsoGeo, texMat(look.torso, 512, 256, infoFor(torsoGeo, 1.05), mo.torso));
   spine.add(torso);
 
@@ -385,7 +405,7 @@ export function createSpiderCharacter(look, extras = {}) {
     }
     smoothNormals(headGeo);
   }
-  const neck = new THREE.Group();
+  const neck = new THREE.Group(); // head pivot at the bottom of the head, inside the shoulders
   neck.position.y = D.neckY;
   spine.add(neck);
   const head = new THREE.Group();
@@ -401,11 +421,11 @@ export function createSpiderCharacter(look, extras = {}) {
     ...(mo.eyes || {}),
   });
   const eyes = new THREE.Mesh(
-    facePatch(D.headR, EYE_PATCH.a0, EYE_PATCH.a1, EYE_PATCH.b0, EYE_PATCH.b1, 0.006, { segX: 18, segY: 9, deform: deformHead }),
+    // patch shifted 0.1 rad down: the eyes sit a touch low on the face
+    facePatch(D.headR, EYE_PATCH.a0, EYE_PATCH.a1, EYE_PATCH.b0 - 0.1, EYE_PATCH.b1 - 0.1, 0.006, { segX: 18, segY: 9, deform: deformHead }),
     eyeMat
   );
   eyes.position.y = D.headUp;
-  eyes.rotation.x = -0.1; // eyes sit a touch low on the face
   head.add(eyes);
 
   // --- arms: upper arm (pivot at the shoulder) + forearm with the mitten hand (pivot at
@@ -480,7 +500,7 @@ export function createSpiderCharacter(look, extras = {}) {
   // ---------------------------------------------------------------- animation
   const defaults = {
     pelvisX: 0, pelvisY: 0, pelvisZ: 0, pelvisRX: 0, pelvisRY: 0, pelvisRZ: 0,
-    spineRX: 0, spineRY: 0, spineRZ: 0, squash: 1, rootSquash: 1,
+    spineRX: 0, spineRY: 0, spineRZ: 0, squash: 1, rootSquash: 1, flip: 0, twist: 0,
     headRX: 0, headRY: 0, headRZ: 0,
     armLX: 0, armLY: 0, armLZ: -0.12, armRX: 0, armRY: 0, armRZ: 0.12, elbowL: 0.12, elbowR: 0.12,
     legLX: 0, legLZ: 0, legRX: 0, legRZ: 0, kneeL: 0, kneeR: 0,
@@ -488,13 +508,19 @@ export function createSpiderCharacter(look, extras = {}) {
   };
   const blend = new PoseBlend(defaults, 0.13);
   let state = 'idle';
-  const ctx = { t: 0, st: 0, phase: 0, dt: 0, speed: CONFIG.startSpeed };
+  const ctx = { t: 0, st: 0, phase: 0, dt: 0, speed: CONFIG.startSpeed, land: 9, pop: 9 };
 
   function setState(name) {
     if (name === state) return;
+    const prev = state;
     state = name;
     ctx.st = 0;
-    blend.start();
+    let time = 0.13;
+    if (name === 'jump') time = 0.06;          // the take-off squash must show at once
+    else if (name === 'slide') time = 0.07;    // quick drop
+    else if (prev === 'slide') { time = 0.09; ctx.pop = 0; } // snappy pop back up
+    if ((prev === 'jump' || prev === 'web') && (name === 'run' || name === 'idle')) ctx.land = 0;
+    blend.start(time);
   }
 
   // speed (optional, m/s): game speed, drives the run cadence. update(dt) alone keeps
@@ -514,15 +540,35 @@ export function createSpiderCharacter(look, extras = {}) {
     spiderPose(state, P, ctx);
     if (extras.pose) extras.pose(state, P, ctx);
     const pose = blend.finish(dt);
+    ctx.land += dt;
+    ctx.pop += dt;
+    if (ctx.land < LAND_T) { // landing: squash down into bent knees, arms out for balance
+      const e = Math.sin(Math.PI * ctx.land / LAND_T);
+      pose.rootSquash *= 1 - 0.16 * e;
+      pose.pelvisY -= 0.07 * e;
+      pose.kneeL -= 0.7 * e;
+      pose.kneeR -= 0.7 * e;
+      pose.legLX += 0.4 * e;
+      pose.legRX += 0.4 * e;
+      pose.spineRX -= 0.15 * e;
+      pose.armLZ -= 0.45 * e;
+      pose.armRZ += 0.45 * e;
+    }
+    if (ctx.pop < POP_T) { // popping up out of the slide: a quick stretch
+      const e = Math.sin(Math.PI * ctx.pop / POP_T);
+      pose.rootSquash *= 1 + 0.1 * e;
+      pose.pelvisY += 0.06 * e;
+    }
 
     pelvis.position.set(pose.pelvisX, D.hipY + pose.pelvisY, pose.pelvisZ);
     pelvis.rotation.set(pose.pelvisRX, pose.pelvisRY, pose.pelvisRZ);
     spine.rotation.set(pose.spineRX, pose.spineRY, pose.spineRZ);
     const base = CONFIG.playerHeight / DESIGN_H, rs = pose.rootSquash;
     scaler.scale.set(base / Math.sqrt(rs), base * rs, base / Math.sqrt(rs));
+    spin.rotation.set(pose.flip, pose.twist, 0);
     const sq = pose.squash;
     spine.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
-    head.rotation.set(pose.headRX, pose.headRY, pose.headRZ);
+    head.rotation.set(pose.headRX * HEAD_NOD, pose.headRY, pose.headRZ * HEAD_NOD);
     shoulderL.rotation.set(pose.armLX, pose.armLY, pose.armLZ);
     shoulderR.rotation.set(pose.armRX, pose.armRY, pose.armRZ);
     armL.elbow.rotation.x = pose.elbowL;
@@ -543,6 +589,54 @@ export function createSpiderCharacter(look, extras = {}) {
 export function runCadence(speed) {
   const f = THREE.MathUtils.clamp((speed - CONFIG.startSpeed) / (CONFIG.maxSpeed - CONFIG.startSpeed), 0, 1);
   return 13 + 8 * f;
+}
+
+// Jump key poses (st = time since take-off). Keys not listed keep their default.
+const JUMP_SQUASH = {
+  rootSquash: 0.86, pelvisY: -0.06, kneeL: -0.9, kneeR: -0.9, legLX: 0.5, legRX: 0.5, spineRX: -0.3,
+  armLX: -0.6, armRX: -0.6, armLZ: -0.3, armRZ: 0.3, elbowL: 0.4, elbowR: 0.4,
+};
+const JUMP_STRETCH = {
+  rootSquash: 1.12, pelvisY: 0.04, legLX: -0.15, legRX: -0.1, kneeL: -0.15, kneeR: -0.2, spineRX: 0.05,
+  headRX: 0.4, armLZ: -2.8, armRZ: 2.8, armLX: 0.2, armRX: 0.2, elbowL: 0.1, elbowR: 0.1,
+};
+const JUMP_TUCK = {
+  rootSquash: 0.95, pelvisY: 0.12, legLX: 1.9, legRX: 1.9, kneeL: -2.4, kneeR: -2.4, legLZ: -0.2, legRZ: 0.2,
+  spineRX: -0.45, headRX: -0.4, armLX: 1.0, armRX: 1.0, armLZ: -0.35, armRZ: 0.35, elbowL: 2.0, elbowR: 2.0,
+};
+// 5.png: arms up and out with bent elbows, knees tucked to the belly, crouched in the air
+const _peak = {};
+function jumpPeak(t) {
+  const f = Math.sin(t * 4) * 0.05;
+  return Object.assign(_peak, {
+    // arms out wide just under the big head so they read from the front and from behind
+    pelvisY: 0.08, pelvisRX: -0.12, spineRX: -0.22, headRX: 0.3, headRZ: 0.06,
+    armLZ: -1.75 - f, armRZ: 1.85 + f, armLX: 0.25, armRX: 0.15, elbowL: 0.55, elbowR: 0.55,
+    legLX: 1.0, legLZ: -1.1, kneeL: -2.1, legRX: 1.3, legRZ: 0.8, kneeR: -1.8, squash: 1,
+  });
+}
+
+// Fills P from timed key poses [[time, pose], ...]: smooth (smoothstep) between keys,
+// holds the last one. Keys a pose does not list stay at P's current value.
+const _base = {};
+export function keyframes(P, st, keys) {
+  let i = 0;
+  while (i < keys.length - 1 && st >= keys[i + 1][0]) i++;
+  const A = keys[i][1];
+  const next = keys[i + 1];
+  const B = next ? next[1] : A;
+  let w = next ? (st - keys[i][0]) / (next[0] - keys[i][0]) : 1;
+  w = Math.min(1, Math.max(0, w));
+  w = w * w * (3 - 2 * w);
+  for (const k in A) if (!(k in _base)) _base[k] = 0;
+  for (const k in B) if (!(k in _base)) _base[k] = 0;
+  for (const k in _base) {
+    if (!(k in A) && !(k in B)) continue;
+    const d = P[k];
+    const a = k in A ? A[k] : d;
+    const b = k in B ? B[k] : d;
+    P[k] = a + (b - a) * w;
+  }
 }
 
 // Target pose for each state. Angles in radians. Arms hang down at 0; armZ moves an arm
@@ -580,52 +674,41 @@ function spiderPose(state, P, { t, st, phase }) {
       P.elbowR = 1.5 + 0.4 * s;
       break;
     }
-    case 'jump': { // 5.png: arms up and out, knees tucked to the belly, crouched in the air
-      const f = Math.sin(t * 4) * 0.05;
-      P.pelvisY = 0.08;
-      P.pelvisRX = -0.12;
-      P.spineRX = -0.22;
-      P.headRX = 0.3;
-      P.headRZ = 0.06;
-      P.armLZ = -2.15 - f;
-      P.armRZ = 2.25 + f;
-      P.armLX = 0.35;
-      P.armRX = 0.2;
-      P.elbowL = 0.6;
-      P.elbowR = 0.6;
-      P.legLX = 1.25;
-      P.legLZ = -0.95;
-      P.kneeL = -2.2;
-      P.legRX = 1.45;
-      P.legRZ = 0.55;
-      P.kneeR = -1.7;
-      P.squash = 1 + Math.min(st * 4, 1) * 0.02 - 0.02;
+    case 'jump': { // squash -> stretch -> fast tucked front flip -> opens into the 5.png pose
+      keyframes(P, st, [[0, JUMP_SQUASH], [0.05, JUMP_STRETCH], [0.12, JUMP_TUCK], [0.22, JUMP_TUCK], [0.3, jumpPeak(t)]]);
+      if (st > 0.07 && st < 0.29) { // one full forward flip; ends at 0 (= 2 pi) so blending never unwinds it
+        const u = (st - 0.07) / 0.22;
+        P.flip = -Math.PI * 2 * u * u * (3 - 2 * u);
+      }
       break;
     }
-    case 'slide': { // baseball slide: lying back, leading leg out front, other leg folded
-      const w = Math.sin(t * 30) * 0.012;
-      P.rootSquash = 0.85;
-      P.pelvisY = -0.2 + w;
-      P.pelvisRX = 1.0;
-      P.pelvisRY = 0.65;
-      P.pelvisX = -0.28;
+    case 'slide': { // power slide: quick drop, nearly flat, trailing hand drags, buzzing
+      const imp = Math.max(0, 1 - st / 0.12);  // impact right after the drop
+      const buzz = Math.min(1, st / 0.1);
+      P.rootSquash = 0.84 - 0.08 * imp;
+      P.pelvisY = -0.21 - 0.03 * imp + 0.012 * Math.sin(t * 62) * buzz;
+      P.pelvisRX = 1.1;
+      P.pelvisRY = 0.9;
+      P.pelvisX = -0.36;
       P.pelvisZ = -0.15;
-      P.pelvisRZ = -0.12;
+      P.pelvisRZ = -0.12 + 0.035 * Math.sin(t * 47) * buzz;
       P.spineRX = 0.2;
       P.spineRY = 0.1;
-      P.headRX = -0.12;
-      P.headRY = -0.5;
-      P.headRZ = 0.08;
-      P.legRX = 0.45;
-      P.kneeR = -0.1;
+      P.headRX = -0.3;
+      P.headRY = -0.7;
+      P.headRZ = 0.08 + 0.06 * Math.sin(t * 53) * buzz;
+      P.legRX = 0.4;
+      P.kneeR = -0.05;
       P.legRZ = 0.1;
       P.legLX = 0.75;
       P.legLZ = -0.7;
       P.kneeL = -1.3;
-      P.armLX = -0.85;
-      P.armLZ = -0.75;
-      P.armRX = 1.2;
-      P.armRZ = 0.55;
+      P.armLX = -1.05;     // trailing hand dragging on the ground behind
+      P.armLZ = -0.5;
+      P.elbowL = 0.05;
+      P.armRX = 1.5;       // front fist up
+      P.armRZ = 0.5;
+      P.elbowR = 1.4;
       break;
     }
     case 'web': { // right arm shoots up (past the head), left arm out, legs tucked

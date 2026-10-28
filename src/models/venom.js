@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import {
   toonMaterial, addOutline, canvasTexture, smoothLathe, facePatch, mergeGeos, smoothNormals,
-  TubeShape, PoseBlend,
+  TubeShape, PoseBlend, roundCube, boxify,
 } from './toon.js';
 
 // Designed at 2.24 m (1.4 x 1.6) and scaled with CONFIG.playerHeight.
@@ -36,9 +36,14 @@ const GLOSS = {
   rim: { color: 0x6f86e8, threshold: 0.6, strength: 0.75 },
 };
 
-// Venom's head: a little taller, with a wider jaw for the grin.
+// Only part of the pose's head nod is used: the head sits right on the shoulders (Funko
+// style, no neck), so big nods would open a gap under it.
+const HEAD_NOD = 0.5;
+
+// Venom's head: a rounded cube (Funko style), a little taller, wider jaw for the grin.
 function deformHead(v) {
   const R = V.headR;
+  roundCube(v, 3);
   const t = v.y < 0 ? Math.min(1, -v.y / R) : 0;
   v.x *= 1.03 + 0.07 * t;
   v.z *= 1 + 0.04 * t;
@@ -251,8 +256,9 @@ export function createVenom() {
   // --- torso: barrel chest, narrow waist
   const torsoGeo = smoothLathe([
     [0, -0.13], [0.17, -0.1], [0.22, 0.0], [0.23, 0.14], [0.29, 0.33], [0.335, 0.5],
-    [0.3, 0.64], [0.18, 0.76], [0, 0.82],
-  ], { segments: 18, samples: 18, scaleZ: 0.76 });
+    [0.31, 0.66], [0.21, 0.79], [0, 0.85],
+  ], { segments: 20, samples: 18, scaleZ: 0.76 });
+  smoothNormals(boxify(torsoGeo, 3.2)); // boxy chest, its top hidden inside the head
   const torsoInfo = { yToPx: (y) => (1 - torsoGeo.userData.vOfY(y)) * 256, C: 1.75, L: torsoGeo.userData.arcLength };
   const torsoTex = canvasTexture(512, 256, (g, W, H) => paintTorso(g, W, H, torsoInfo));
   const torsoMat = toonMaterial(0xffffff, { map: torsoTex, emissive: 0x4a4a4a, emissiveMap: torsoTex, ...GLOSS });
@@ -379,7 +385,7 @@ export function createVenom() {
     pelvis.position.set(p.pelvisX, V.hipY + p.pelvisY, p.pelvisZ);
     pelvis.rotation.set(p.pelvisRX, p.pelvisRY, p.pelvisRZ);
     spine.rotation.set(p.spineRX, p.spineRY, p.spineRZ);
-    head.rotation.set(p.headRX, p.headRY, p.headRZ);
+    head.rotation.set(p.headRX * HEAD_NOD, p.headRY, p.headRZ * HEAD_NOD);
     armL.shoulder.rotation.set(p.armLX, p.armLY, p.armLZ);
     armR.shoulder.rotation.set(p.armRX, p.armRY, p.armRZ);
     armL.elbow.rotation.x = p.elbowL;
@@ -453,7 +459,7 @@ function venomPose(state, P, t, st, phase) {
       P.pelvisRX = -0.22;
       P.pelvisRY = 0;
       P.pelvisRZ = 0;
-      P.spineRX = -0.45;
+      P.spineRX = -0.3;
       P.headRX = 0.7;
       P.armLX = 1.3 + snap;
       P.armRX = 1.3 + snap;
