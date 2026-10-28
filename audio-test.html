@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ses testi</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #12141c; color: #eee; margin: 0; padding: 16px; max-width: 640px; margin-inline: auto; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  button { font: inherit; padding: 10px 14px; border: 0; border-radius: 8px; background: #2b6cff; color: #fff; cursor: pointer; }
+  button:active { transform: scale(.96); }
+  button.alt { background: #c0392b; }
+  button.mute { background: #444; }
+  h2 { font-size: 14px; color: #9aa; margin: 14px 0 6px; font-weight: 600; }
+  #log { font: 12px monospace; color: #8c8; min-height: 1.4em; }
+  #note { font-size: 12px; color: #fc6; }
+</style>
+<!-- src/events.js henuz yoksa (sadece bu test sayfasi icin) kucuk bir EventTarget taklidi kullan -->
+<script>
+(function () {
+  var missing = false;
+  try {
+    var x = new XMLHttpRequest();
+    x.open('HEAD', 'src/events.js', false);
+    x.send();
+    missing = x.status === 404;
+  } catch (e) { missing = true; }
+  if (!missing) return;
+  window.__eventsStub = true;
+  var code = 'export const events = new EventTarget(); export function emit(n, d) { events.dispatchEvent(new CustomEvent(n, { detail: d })); }';
+  var s = document.createElement('script');
+  s.type = 'importmap';
+  s.textContent = JSON.stringify({ imports: { [new URL('src/events.js', location.href).href]: 'data:text/javascript,' + encodeURIComponent(code) } });
+  document.head.appendChild(s);
+})();
+</script>
+</head>
+<body>
+<h1>Ses testi</h1>
+<div class="row"><button id="mute" class="mute">Sesi kapat</button></div>
+<div id="note"></div>
+<div id="groups"></div>
+<div id="log">Bir dugmeye bas (ilk dokunus sesi acar).</div>
+
+<script type="module">
+import { events } from './src/events.js';
+import { setMuted, isMuted } from './src/audio.js';
+
+const groups = [
+  ['Hareket', [
+    ['Zipla', 'jump'], ['Inis', 'land'], ['Kay', 'slide'],
+    ['Serit (sol)', 'lane', { dir: -1 }], ['Serit (sag)', 'lane', { dir: 1 }],
+  ]],
+  ['Toplama', [
+    ['Para', 'coin', { position: {} }],
+    ['Para x8 (hizli)', '__coins'],
+    ['Ag doldurucu al', 'pickup', { type: 'web' }],
+    ['Iron cekirdegi al', 'pickup', { type: 'iron' }],
+  ]],
+  ['Guc', [
+    ['Ag at (thwip)', 'web', { from: {}, to: {} }],
+    ['Iron Spider ac', 'ironOn'], ['Iron Spider bitti', 'ironOff'],
+    ['Iron kurtardi', 'ironSave', { positions: [] }],
+  ]],
+  ['Tehlike', [
+    ['Tokezle', 'stumble'], ['Carpma', 'crash', { position: {} }],
+    ['Venom yakin', 'venomNear'], ['Yakalandi', 'caught'],
+  ]],
+  ['Oyun', [
+    ['Basla', 'start'], ['Oyun bitti', 'gameover', { score: 0, coins: 0, distance: 0 }],
+    ['Duraklat', 'pause'], ['Devam', 'resume'],
+  ]],
+];
+
+const log = document.getElementById('log');
+const root = document.getElementById('groups');
+if (window.__eventsStub) {
+  document.getElementById('note').textContent = 'Not: src/events.js bulunamadi, sayfa ici EventTarget taklidi kullaniliyor.';
+}
+
+function fire(name, detail) {
+  events.dispatchEvent(new CustomEvent(name, { detail }));
+  log.textContent = 'olay: ' + name + (detail && detail.type ? ' (' + detail.type + ')' : '');
+}
+
+for (const [title, items] of groups) {
+  const h = document.createElement('h2');
+  h.textContent = title;
+  const row = document.createElement('div');
+  row.className = 'row';
+  for (const [label, name, detail] of items) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (name === 'crash' || name === 'caught') b.className = 'alt';
+    b.addEventListener('click', () => {
+      if (name === '__coins') {
+        for (let i = 0; i < 8; i++) setTimeout(() => fire('coin', { position: {} }), i * 90);
+      } else fire(name, detail);
+    });
+    row.appendChild(b);
+  }
+  root.append(h, row);
+}
+
+const muteBtn = document.getElementById('mute');
+function paintMute() { muteBtn.textContent = isMuted() ? 'Sesi ac' : 'Sesi kapat'; }
+muteBtn.addEventListener('click', () => { setMuted(!isMuted()); paintMute(); });
+paintMute();
+</script>
+</body>
+</html>
