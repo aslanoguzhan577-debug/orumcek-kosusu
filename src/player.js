@@ -25,6 +25,7 @@ import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { emit } from './events.js';
 import { laneX } from './world.js';
+import { game } from './game.js';
 
 const CENTER_LANE = Math.floor(CONFIG.laneCount / 2);
 
@@ -263,7 +264,7 @@ export class Player {
     this.root.rotation.z += (-lean - this.root.rotation.z) * Math.min(1, dt * 14);
     this.root.rotation.y += (-lean * 0.8 - this.root.rotation.y) * Math.min(1, dt * 14);
 
-    this.model.update(dt);
+    this.model.update(dt, game.state.speed); // speed drives the run cadence
     this._updateHitbox();
   }
 

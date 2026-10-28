@@ -1,6 +1,7 @@
 // spiderman.js — chibi Spider-Man, built from smooth primitives + canvas-painted textures.
-//   createSpiderman() -> { root, setState(name), update(dt), hand }  (hand: empty marker in the
-//   right mitten, where the web line starts)
+//   createSpiderman() -> { root, setState(name), update(dt, speed?), setSpeed(v), hand }
+//   (hand: empty marker in the right mitten, where the web line starts; speed: game speed in
+//   m/s, optional, makes the run cadence faster - see runCadence)
 //   root origin at the feet, facing -Z, about CONFIG.playerHeight tall.
 //   States: idle, run, jump, slide, web, stumble, caught (blend ~0.12 s).
 // The body builder (createSpiderCharacter) and the painting helpers are shared with
@@ -24,6 +25,7 @@ export const SPIDER_DIM = {
   headUp: 0.37,        // head centre above the neck pivot (top of head = 1.6 m)
   shoulderX: 0.15,
   shoulderY: 0.355,    // above the hips
+  elbowY: 0.16,        // elbow below the shoulder
 };
 const D = SPIDER_DIM;
 
@@ -406,24 +408,41 @@ export function createSpiderCharacter(look, extras = {}) {
   eyes.rotation.x = -0.1; // eyes sit a touch low on the face
   head.add(eyes);
 
-  // --- arms (pivot at the shoulder, hanging down, mitten hand at the end)
-  const armGeo = smoothLathe([
-    [0, -0.39], [0.056, -0.372], [0.072, -0.322], [0.06, -0.272], [0.046, -0.22],
-    [0.049, -0.11], [0.057, 0], [0.05, 0.03], [0, 0.055],
-  ], { segments: 12, samples: 16 });
-  const armMat = texMat(look.arm, 256, 256, infoFor(armGeo, 0.35), mo.arm);
-  const armGeoL = armGeo.clone().rotateY(Math.PI); // inside of the arm faces the body
-  const shoulderL = new THREE.Group();
-  const shoulderR = new THREE.Group();
-  shoulderL.position.set(-D.shoulderX, D.shoulderY, 0);
-  shoulderR.position.set(D.shoulderX, D.shoulderY, 0);
-  shoulderL.add(mesh(armGeoL, armMat, OUTLINE * 0.9));
-  shoulderR.add(mesh(armGeo, armMat, OUTLINE * 0.9));
-  spine.add(shoulderL, shoulderR);
+  // --- arms: upper arm (pivot at the shoulder) + forearm with the mitten hand (pivot at
+  // the elbow). One paint job covers the whole arm: arm-space y is measured from the shoulder.
+  const upperGeo = smoothLathe([
+    [0, -D.elbowY - 0.045], [0.045, -D.elbowY - 0.03], [0.049, -D.elbowY], [0.05, -0.08],
+    [0.057, 0], [0.05, 0.03], [0, 0.055],
+  ], { segments: 12, samples: 12 });
+  const foreGeo = smoothLathe([
+    [0, -0.23], [0.056, -0.212], [0.072, -0.162], [0.06, -0.112], [0.046, -0.065],
+    [0.047, 0], [0.042, 0.03], [0, 0.045],
+  ], { segments: 12, samples: 14 });
+  const upperMat = texMat(look.arm, 256, 256, infoFor(upperGeo, 0.35), mo.arm);
+  const foreInfo = infoFor(foreGeo, 0.35);
+  const foreMat = texMat(look.arm, 256, 256, { ...foreInfo, yToPx: (y) => foreInfo.yToPx(y + D.elbowY) }, mo.arm);
+  // left side turned half round so the inside of the arm faces the body
+  const upperGeoL = upperGeo.clone().rotateY(Math.PI);
+  const foreGeoL = foreGeo.clone().rotateY(Math.PI);
+  function arm(side) {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(side * D.shoulderX, D.shoulderY, 0);
+    shoulder.add(mesh(side < 0 ? upperGeoL : upperGeo, upperMat, OUTLINE * 0.9));
+    const elbow = new THREE.Group();
+    elbow.position.y = -D.elbowY;
+    elbow.add(mesh(side < 0 ? foreGeoL : foreGeo, foreMat, OUTLINE * 0.9));
+    shoulder.add(elbow);
+    spine.add(shoulder);
+    return { shoulder, elbow };
+  }
+  const armL = arm(-1);
+  const armR = arm(1);
+  const shoulderL = armL.shoulder;
+  const shoulderR = armR.shoulder;
   // empty marker in the right mitten: where the web line starts (G9)
   const handR = new THREE.Object3D();
-  handR.position.y = -0.35;
-  shoulderR.add(handR);
+  handR.position.y = -0.19;
+  armR.elbow.add(handR);
 
   // --- legs: thigh + shin with a little foot
   const thighGeo = smoothLathe([
@@ -455,7 +474,7 @@ export function createSpiderCharacter(look, extras = {}) {
   const legL = leg(-1);
   const legR = leg(1);
 
-  const parts = { root, scaler, pelvis, spine, neck, head, headMesh, eyes, torso, shoulderL, shoulderR, handR, legL, legR };
+  const parts = { root, scaler, pelvis, spine, neck, head, headMesh, eyes, torso, shoulderL, shoulderR, armL, armR, handR, legL, legR };
   if (extras.build) extras.build(parts);
 
   // ---------------------------------------------------------------- animation
@@ -463,13 +482,13 @@ export function createSpiderCharacter(look, extras = {}) {
     pelvisX: 0, pelvisY: 0, pelvisZ: 0, pelvisRX: 0, pelvisRY: 0, pelvisRZ: 0,
     spineRX: 0, spineRY: 0, spineRZ: 0, squash: 1, rootSquash: 1,
     headRX: 0, headRY: 0, headRZ: 0,
-    armLX: 0, armLY: 0, armLZ: -0.12, armRX: 0, armRY: 0, armRZ: 0.12,
+    armLX: 0, armLY: 0, armLZ: -0.12, armRX: 0, armRY: 0, armRZ: 0.12, elbowL: 0.12, elbowR: 0.12,
     legLX: 0, legLZ: 0, legRX: 0, legRZ: 0, kneeL: 0, kneeR: 0,
     ...(extras.defaults || {}),
   };
   const blend = new PoseBlend(defaults, 0.13);
   let state = 'idle';
-  const ctx = { t: 0, st: 0, phase: 0, dt: 0 };
+  const ctx = { t: 0, st: 0, phase: 0, dt: 0, speed: CONFIG.startSpeed };
 
   function setState(name) {
     if (name === state) return;
@@ -478,12 +497,19 @@ export function createSpiderCharacter(look, extras = {}) {
     blend.start();
   }
 
-  function update(dt) {
+  // speed (optional, m/s): game speed, drives the run cadence. update(dt) alone keeps
+  // the last speed (CONFIG.startSpeed until one is given).
+  function setSpeed(v) {
+    if (Number.isFinite(v)) ctx.speed = v;
+  }
+
+  function update(dt, speed) {
     dt = Math.min(Math.max(dt, 0), CONFIG.dtCap);
+    setSpeed(speed);
     ctx.dt = dt;
     ctx.t += dt;
     ctx.st += dt;
-    ctx.phase += dt * (state === 'stumble' ? 11 : 13.5);
+    ctx.phase += dt * (state === 'stumble' ? 11 : runCadence(ctx.speed));
     const P = blend.target();
     spiderPose(state, P, ctx);
     if (extras.pose) extras.pose(state, P, ctx);
@@ -499,6 +525,8 @@ export function createSpiderCharacter(look, extras = {}) {
     head.rotation.set(pose.headRX, pose.headRY, pose.headRZ);
     shoulderL.rotation.set(pose.armLX, pose.armLY, pose.armLZ);
     shoulderR.rotation.set(pose.armRX, pose.armRY, pose.armRZ);
+    armL.elbow.rotation.x = pose.elbowL;
+    armR.elbow.rotation.x = pose.elbowR;
     legL.hip.rotation.set(pose.legLX, 0, pose.legLZ);
     legR.hip.rotation.set(pose.legRX, 0, pose.legRZ);
     legL.knee.rotation.x = pose.kneeL;
@@ -507,7 +535,14 @@ export function createSpiderCharacter(look, extras = {}) {
   }
 
   update(0);
-  return { root, setState, update, parts };
+  return { root, setState, update, setSpeed, parts };
+}
+
+// Run cycle speed (rad/s of the stride phase; one stride = 2 steps) from game speed:
+// CONFIG.startSpeed (11 m/s) -> 13 rad/s (~2.1 strides/s), CONFIG.maxSpeed (28) -> 21 rad/s (~3.3/s).
+export function runCadence(speed) {
+  const f = THREE.MathUtils.clamp((speed - CONFIG.startSpeed) / (CONFIG.maxSpeed - CONFIG.startSpeed), 0, 1);
+  return 13 + 8 * f;
 }
 
 // Target pose for each state. Angles in radians. Arms hang down at 0; armZ moves an arm
@@ -516,26 +551,33 @@ export function createSpiderCharacter(look, extras = {}) {
 function spiderPose(state, P, { t, st, phase }) {
   const s = Math.sin(phase), c = Math.cos(phase);
   switch (state) {
-    case 'run': {
-      P.pelvisY = 0.045 * Math.abs(c) - 0.01;
-      P.pelvisRX = -0.1;
-      P.pelvisRY = -0.12 * s;
-      P.pelvisRZ = 0.04 * s;
-      P.spineRX = -0.14;
-      P.spineRY = 0.22 * s;
-      P.headRX = 0.16;
-      P.headRY = -0.12 * s;
-      P.headRZ = -0.04 * s;
-      P.legLX = 0.95 * s;
-      P.legRX = -0.95 * s;
-      P.kneeL = -0.2 - 1.35 * Math.max(0, c);
-      P.kneeR = -0.2 - 1.35 * Math.max(0, -c);
-      P.armLX = -1.0 * s;
-      P.armRX = 1.0 * s;
-      P.armLZ = -0.48;
-      P.armRZ = 0.48;
-      P.armLY = 0.25;
-      P.armRY = -0.25;
+    case 'run': { // superhero sprint: big lean, fists pumping, high knees, bounding stride
+      // bounce peaks mid-flight between two footfalls (twice per cycle)
+      const air = Math.abs(Math.sin(phase + 0.35));
+      P.pelvisY = -0.035 + 0.1 * air;
+      P.squash = 0.95 + 0.08 * air;            // squashed on footfall, stretched in flight
+      P.pelvisRX = -0.24;
+      P.pelvisRY = -0.06 * s;
+      P.spineRX = -0.3 - 0.04 * air;           // ~31 degrees forward in total, chest out front
+      P.spineRY = 0.16 * s;                    // shoulders drive against the hips
+      P.headRX = 0.3;                          // head down-forward, eyes on the road
+      P.headRY = -0.14 * s;                    // ...and kept steady
+      // legs: high front knee, heel kicks up behind, then a long reach
+      P.legLX = 0.5 + 1.05 * s;
+      P.legRX = 0.5 - 1.05 * s;
+      P.kneeL = -0.3 - 1.9 * Math.pow(Math.max(0, Math.cos(phase - 0.35)), 0.7);
+      P.kneeR = -0.3 - 1.9 * Math.pow(Math.max(0, -Math.cos(phase - 0.35)), 0.7);
+      P.legLZ = -0.03;
+      P.legRZ = 0.03;
+      // arms: fists pump hard, close to the body, elbows ~90 degrees
+      P.armLX = 0.15 - 1.05 * s;
+      P.armRX = 0.15 + 1.05 * s;
+      P.armLZ = -0.38 - 0.1 * Math.max(0, s);  // elbows flare a touch on the back swing (shows from behind)
+      P.armRZ = 0.38 + 0.1 * Math.max(0, -s);
+      P.armLY = 0.28;                          // fists drive toward the centre line
+      P.armRY = -0.28;
+      P.elbowL = 1.5 - 0.4 * s;                // tighter when the fist comes forward
+      P.elbowR = 1.5 + 0.4 * s;
       break;
     }
     case 'jump': { // 5.png: arms up and out, knees tucked to the belly, crouched in the air
@@ -549,6 +591,8 @@ function spiderPose(state, P, { t, st, phase }) {
       P.armRZ = 2.25 + f;
       P.armLX = 0.35;
       P.armRX = 0.2;
+      P.elbowL = 0.6;
+      P.elbowR = 0.6;
       P.legLX = 1.25;
       P.legLZ = -0.95;
       P.kneeL = -2.2;
@@ -594,7 +638,7 @@ function spiderPose(state, P, { t, st, phase }) {
       P.headRX = 0.3;
       P.headRY = 0.2;
       P.headRZ = 0.22;
-      P.armRX = 0.45 + pull;
+      P.armRX = -0.4 + pull;                   // up and a little forward
       P.armRZ = 2.65;
       P.armRY = -0.3;
       P.armLX = 0.35;
@@ -672,5 +716,5 @@ function spiderPose(state, P, { t, st, phase }) {
 export function createSpiderman() {
   const m = createSpiderCharacter(SPIDER_LOOK);
   m.root.name = 'spiderman';
-  return { root: m.root, setState: m.setState, update: m.update, hand: m.parts.handR };
+  return { root: m.root, setState: m.setState, update: m.update, setSpeed: m.setSpeed, hand: m.parts.handR };
 }

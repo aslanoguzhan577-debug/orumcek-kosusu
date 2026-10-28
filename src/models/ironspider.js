@@ -1,7 +1,8 @@
 // ironspider.js — chibi Iron Spider: the Spider-Man body (shared builder in spiderman.js)
 // with a red / gold / black armour paint job, softly glowing eyes and four golden
 // mechanical arms on the back (instanced: 4 draw calls for all of them).
-//   createIronSpider() -> { root, setState(name), update(dt), hand }  (hand: web line start)
+//   createIronSpider() -> { root, setState(name), update(dt, speed?), setSpeed(v), hand }
+//   (hand: web line start; speed: game speed in m/s for the run cadence, optional)
 //   States: idle, run, jump, slide, web, stumble, caught.
 
 import * as THREE from 'three';
@@ -302,5 +303,5 @@ export function createIronSpider() {
     apply(pose, ctx) { applyMech(mech, pose, ctx); },
   });
   m.root.name = 'ironspider';
-  return { root: m.root, setState: m.setState, update: m.update, hand: m.parts.handR };
+  return { root: m.root, setState: m.setState, update: m.update, setSpeed: m.setSpeed, hand: m.parts.handR };
 }
