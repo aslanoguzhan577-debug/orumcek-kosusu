@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Model Önizleme</title>
+  <link rel="icon" href="data:,">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    body { background: #8fd0ff; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    .panel {
+      position: fixed; left: 8px; right: 8px; top: 8px;
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+      padding: 8px; border-radius: 10px;
+      background: rgba(15, 20, 30, 0.72); color: #fff; font-size: 14px;
+    }
+    .panel .label { opacity: 0.75; margin-right: 2px; }
+    .panel .sep { width: 100%; height: 0; }
+    .panel a, .panel button {
+      font: inherit; color: #fff; text-decoration: none; cursor: pointer;
+      padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.08);
+    }
+    .panel a.on, .panel button.on { background: #e23b3b; border-color: #e23b3b; }
+    .info {
+      position: fixed; left: 8px; bottom: 8px; padding: 6px 10px; border-radius: 8px;
+      background: rgba(15, 20, 30, 0.72); color: #fff; font-size: 13px; white-space: pre;
+    }
+    .message {
+      position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      max-width: min(90vw, 460px); padding: 18px 22px; border-radius: 12px;
+      background: rgba(15, 20, 30, 0.85); color: #fff; font-size: 16px; line-height: 1.45; text-align: center;
+    }
+    .message code { background: rgba(255,255,255,0.12); padding: 1px 5px; border-radius: 4px; }
+    .info:empty, [hidden] { display: none !important; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="panel">
+    <span class="label">Model:</span>
+    <span id="models"></span>
+    <div class="sep"></div>
+    <span class="label">Durum:</span>
+    <span id="states"></span>
+    <div class="sep"></div>
+    <button id="bg">Arka plan: Açık</button>
+    <button id="hitbox">Çarpışma kutusu</button>
+    <button id="spin">Döndür</button>
+  </div>
+  <div class="info" id="info"></div>
+  <div class="message" id="message" hidden></div>
+
+  <script type="module">
+    // viewer.html — preview one model at a time: viewer.html?model=placeholder|spiderman|ironspider|venom
+    // Same toon lighting as the game (src/lights.js). Checks the model interface
+    // { root, setState(name), update(dt) } and shows its height against CONFIG.playerHeight.
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { CONFIG } from './src/config.js';
+    import { addLights } from './src/lights.js';
+    import { createPlaceholderPlayer, createPlaceholderVenom } from './src/models/placeholder.js';
+
+    const PLAYER_STATES = ['idle', 'run', 'jump', 'slide', 'web', 'stumble', 'caught'];
+    const VENOM_STATES = ['run', 'reach', 'catch'];
+
+    const MODELS = {
+      placeholder:   { label: 'Yer tutucu',       states: PLAYER_STATES, load: async () => createPlaceholderPlayer },
+      placeholdervenom: { label: 'Yer tutucu Venom', states: VENOM_STATES, load: async () => createPlaceholderVenom },
+      spiderman:     { label: 'Spider-Man',  file: 'src/models/spiderman.js',  fn: 'createSpiderman',  states: PLAYER_STATES },
+      ironspider:    { label: 'Iron Spider', file: 'src/models/ironspider.js', fn: 'createIronSpider', states: PLAYER_STATES },
+      venom:         { label: 'Venom',       file: 'src/models/venom.js',      fn: 'createVenom',      states: VENOM_STATES },
+    };
+
+    const params = new URLSearchParams(location.search);
+    const modelKey = MODELS[params.get('model')] ? params.get('model') : 'placeholder';
+    const def = MODELS[modelKey];
+
+    // ---------- scene ----------
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, CONFIG.render.maxPixelRatio));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.prepend(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const BG_LIGHT = new THREE.Color(CONFIG.render.skyColor);
+    const BG_DARK = new THREE.Color(0x1b1e26);
+    scene.background = BG_LIGHT.clone();
+    addLights(scene);
+
+    const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 100);
+    // In front of the model (it faces -Z); further back on tall phone screens.
+    const far = window.innerWidth < window.innerHeight ? 1.7 : 1;
+    const target = new THREE.Vector3(0, CONFIG.playerHeight * 0.5, 0);
+    camera.position.set(2.4 * far, 0.9 * far, -3.6 * far).add(target);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.copy(target);
+    controls.enableDamping = true;
+    controls.update();
+
+    // Floor disc, height marker and a "front" arrow
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(1.6, 40),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.12, depthWrite: false })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+    const grid = new THREE.GridHelper(3.2, 8, 0x333333, 0x666666);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.3;
+    scene.add(grid);
+    const marker = new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, 0.01, 0.01),
+      new THREE.MeshBasicMaterial({ color: 0xff3355 })
+    );
+    marker.position.set(0.9, CONFIG.playerHeight, 0);
+    scene.add(marker);
+    const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0.01, -0.6), 0.8, 0xffcc00, 0.2, 0.12);
+    scene.add(arrow);
+
+    const hitbox = new THREE.Mesh(
+      new THREE.BoxGeometry(CONFIG.playerWidth, CONFIG.playerHeight, CONFIG.playerDepth),
+      new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true })
+    );
+    hitbox.position.y = CONFIG.playerHeight / 2;
+    hitbox.visible = false;
+    scene.add(hitbox);
+
+    // ---------- UI ----------
+    const modelsEl = document.getElementById('models');
+    for (const [key, m] of Object.entries(MODELS)) {
+      const a = document.createElement('a');
+      a.href = '?model=' + key;
+      a.textContent = m.label;
+      if (key === modelKey) a.className = 'on';
+      modelsEl.append(a, ' ');
+    }
+
+    const infoEl = document.getElementById('info');
+    const messageEl = document.getElementById('message');
+    function showMessage(html) {
+      messageEl.innerHTML = html;
+      messageEl.hidden = false;
+    }
+
+    let dark = false;
+    const bgBtn = document.getElementById('bg');
+    bgBtn.onclick = () => {
+      dark = !dark;
+      scene.background.copy(dark ? BG_DARK : BG_LIGHT);
+      document.body.style.background = dark ? '#1b1e26' : '#8fd0ff';
+      bgBtn.textContent = 'Arka plan: ' + (dark ? 'Koyu' : 'Açık');
+    };
+    const hitBtn = document.getElementById('hitbox');
+    hitBtn.onclick = () => {
+      hitbox.visible = !hitbox.visible;
+      hitBtn.classList.toggle('on', hitbox.visible);
+    };
+    const spinBtn = document.getElementById('spin');
+    spinBtn.onclick = () => {
+      controls.autoRotate = !controls.autoRotate;
+      spinBtn.classList.toggle('on', controls.autoRotate);
+    };
+
+    // ---------- load model ----------
+    let model = null;
+    let currentState = def.states[0];
+
+    async function getFactory() {
+      if (def.load) return def.load();
+      let mod;
+      try {
+        mod = await import('./' + def.file);
+      } catch (err) {
+        console.warn('Model yüklenemedi:', def.file, err);
+        showMessage(`<b>${def.label}</b> modeli henüz yok.<br><code>${def.file}</code> eklendiğinde burada görünecek.<br><br>Şimdilik <a href="?model=placeholder" style="color:#ffcc00">yer tutucuya</a> bakabilirsin.`);
+        return null;
+      }
+      if (typeof mod[def.fn] !== 'function') {
+        showMessage(`<code>${def.file}</code> bulundu ama <code>${def.fn}()</code> dışa aktarılmıyor.`);
+        return null;
+      }
+      return mod[def.fn];
+    }
+
+    function buildStateButtons() {
+      const el = document.getElementById('states');
+      el.textContent = '';
+      for (const s of def.states) {
+        const b = document.createElement('button');
+        b.textContent = s;
+        b.dataset.state = s;
+        b.onclick = () => setState(s);
+        el.append(b, ' ');
+      }
+      highlight();
+    }
+    function highlight() {
+      for (const b of document.querySelectorAll('#states button')) {
+        b.classList.toggle('on', b.dataset.state === currentState);
+      }
+    }
+    function setState(s) {
+      currentState = s;
+      if (model) model.setState(s);
+      highlight();
+      hitbox.scale.y = s === 'slide' ? CONFIG.slideHeight / CONFIG.playerHeight : 1;
+      hitbox.position.y = (s === 'slide' ? CONFIG.slideHeight : CONFIG.playerHeight) / 2;
+    }
+
+    function measure() {
+      const box = new THREE.Box3().setFromObject(model.root);
+      const size = box.getSize(new THREE.Vector3());
+      infoEl.textContent =
+        `${def.label}  ·  durum: ${currentState}\n` +
+        `Boy: ${size.y.toFixed(2)} m (hedef ≈ ${CONFIG.playerHeight})  En: ${size.x.toFixed(2)}  Derinlik: ${size.z.toFixed(2)}\n` +
+        `Alt: ${box.min.y.toFixed(2)} m (0 olmalı)  ·  sarı ok = ön (-Z)`;
+    }
+
+    buildStateButtons();
+    const factory = await getFactory();
+    if (factory) {
+      try {
+        model = factory();
+        const ok = model && model.root instanceof THREE.Object3D &&
+          typeof model.setState === 'function' && typeof model.update === 'function';
+        if (!ok) throw new Error('Arayüz eksik: { root, setState(name), update(dt) } bekleniyor.');
+        scene.add(model.root);
+        setState(currentState);
+      } catch (err) {
+        console.error(err);
+        model = null;
+        showMessage(`Model oluşturulurken hata oluştu:<br><code>${String(err.message || err)}</code>`);
+      }
+    }
+
+    // ---------- loop ----------
+    function resize() {
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    const clock = new THREE.Clock();
+    let measureTimer = 0;
+    renderer.setAnimationLoop(() => {
+      const dt = Math.min(clock.getDelta(), CONFIG.dtCap);
+      if (model) {
+        model.update(dt);
+        measureTimer -= dt;
+        if (measureTimer <= 0) { measure(); measureTimer = 0.25; }
+      }
+      controls.update();
+      renderer.render(scene, camera);
+    });
+  </script>
+</body>
+</html>

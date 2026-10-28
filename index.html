@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#8fd0ff">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Örümcek Koşusu</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- UI layer (G12 owns its contents). pointer-events are off on #ui itself;
+       give interactive children pointer-events: auto. -->
+  <div id="ui">
+    <!-- G1 placeholder, replace in G12 -->
+    <div id="g1-hint" class="g1-hint">Başlamak için dokun</div>
+    <div id="g1-hud" class="g1-hud"></div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
