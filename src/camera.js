@@ -1,6 +1,7 @@
 // camera.js — chase camera: behind (+Z) and above the player, looking a little ahead.
-// Follows the player's lane x and floor height with damping. On resize it widens the
-// FOV and pulls back so all lanes stay on screen in portrait.
+// Follows the player's lane x and floor height with damping. On resize it pulls back just
+// enough that all lanes fit a little ahead of the player in portrait (and moves a bit
+// closer on wide screens), so the hero stays as big as the lanes allow.
 // rig.shake(strength, seconds) gives a small decaying shake (for G11 effects).
 // rig.setTilt(on) lifts the view a little (G9 web zip).
 // rig.setShot(position, lookAt) blends to a fixed shot (G8 catch cam); rig.clearShot()
@@ -59,22 +60,27 @@ export class CameraRig {
     this.follow = lerp(c.followX, c.followXPortrait, t);
 
     // Fit: with the player in an outer lane, the opposite outer lane must be visible
-    // at the player's depth. Grow the offsets until it fits.
+    // fitAhead metres in front of the player (where the next obstacles come from), and
+    // the player himself must stay on screen at his own depth. Grow the offsets until
+    // both fit.
     const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) * aspect;
     const outer = ((CONFIG.laneCount - 1) / 2) * CONFIG.laneWidth;
-    const need = outer * (1 + this.follow) + c.sideMargin;
-    let s = 1;
-    for (let i = 0; i < 6; i++) {
+    const needLanes = outer * (1 + this.follow) + c.sideMargin;
+    const needPlayer = outer * (1 - this.follow) + c.playerMargin;
+    const depthAt = (s, z) => {
       const camY = c.height * s;
       const camZ = c.distance * s;
       const fy = c.lookHeight - camY;
       const fz = -c.lookAhead - camZ;
       const len = Math.hypot(fy, fz);
-      const py = CONFIG.playerHeight * 0.5 - camY; // vector camera -> player centre
-      const pz = -camZ;
-      const depth = (py * fy + pz * fz) / len;
-      const have = depth * tanH;
-      s = clamp(s * (need / have), 1, c.maxScale);
+      const py = CONFIG.playerHeight * 0.5 - camY; // vector camera -> point
+      const pz = z - camZ;
+      return (py * fy + pz * fz) / len;
+    };
+    let s = 1;
+    for (let i = 0; i < 8; i++) {
+      const k = Math.max(needLanes / (depthAt(s, -c.fitAhead) * tanH), needPlayer / (depthAt(s, 0) * tanH));
+      s = clamp(s * k, c.minScale, c.maxScale);
     }
     this.scale = s;
   }

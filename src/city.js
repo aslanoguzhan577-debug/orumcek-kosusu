@@ -493,23 +493,46 @@ function makeSkyline() {
     }
   }
 
-  const layer = (top, bot, minH, maxH, minW, maxW) => {
+  const fade = (top) => {
     const grad = g.createLinearGradient(0, H * 0.3, 0, H);
     grad.addColorStop(0, top);
-    grad.addColorStop(1, bot);
-    g.fillStyle = grad;
+    grad.addColorStop(1, sky);
+    return grad;
+  };
+  // faint window rows + a shaded right side, so the blocks read as buildings in the haze
+  const details = (x, y, w, h, win, side) => {
+    g.fillStyle = side;
+    g.fillRect(x + w * 0.72, y, w * 0.28, h);
+    g.fillStyle = win;
+    for (let wy = y + 8; wy < H - 30; wy += 10) {
+      for (let wx = x + 5; wx < x + w * 0.7 - 3; wx += 8) g.fillRect(wx, wy, 4, 5);
+    }
+  };
+  const layer = (top, win, side, minH, maxH, minW, maxW) => {
+    const fill = fade(top);
     let x = -20;
     while (x < W) {
       const w = minW + rng() * (maxW - minW);
       const h = minH + rng() * (maxH - minH);
+      g.fillStyle = fill;
       g.fillRect(x, H - h, w, h);
       if (rng() < 0.25) g.fillRect(x + w * 0.25, H - h - 30 - rng() * 40, w * 0.5, 60); // setback
       if (rng() < 0.12) g.fillRect(x + w * 0.5 - 2, H - h - 70, 4, 70);              // antenna
+      details(x, H - h, w, h, win, side);
       x += w + (rng() < 0.3 ? 8 : 0);
     }
   };
-  layer('#c1d8ee', sky, 90, 300, 40, 90);
-  layer('#abc9e6', sky, 70, 220, 50, 110);
+  layer('#b4cde9', 'rgba(255,255,255,0.22)', 'rgba(60,90,140,0.10)', 90, 300, 40, 90);
+  layer('#97b8de', 'rgba(255,255,255,0.28)', 'rgba(50,80,130,0.14)', 70, 220, 50, 110);
+
+  // a stepped art-deco tower with a spire right at the end of the line (canvas centre =
+  // straight ahead), tall enough to show above the street canyon
+  const cx = W / 2;
+  g.fillStyle = fade('#88aad3');
+  const steps = [[64, 300], [46, 360], [30, 400], [16, 425]]; // [width, height]
+  for (const [w, h] of steps) g.fillRect(cx - w / 2, H - h, w, h);
+  g.fillRect(cx - 2, H - 470, 4, 50);
+  details(cx - 32, H - 300, 64, 300, 'rgba(255,255,255,0.3)', 'rgba(50,80,130,0.14)');
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;

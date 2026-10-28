@@ -8,9 +8,8 @@
 // Markup lives in index.html (#ui), styling in ui.css. All DOM is built once; the frame
 // loop only touches an element when its value changed.
 //
-// "Ana menü" from pause / game over only shows the menu overlay (game.state.mode stays
-// 'paused' / 'over' underneath); OYNA then calls game.restart(). If the game ever gets a
-// game.toMenu(), call it from goMenu().
+// "Ana menü" from pause / game over calls game.toMenu() (mode 'menu', start layout) and
+// shows the menu overlay; OYNA then calls game.start().
 
 import { game } from './game.js';
 import { events } from './events.js';
@@ -72,7 +71,7 @@ let overAt = Infinity;     // time (ms) from which the game-over card may show
 let lastResult = null;     // { name, score, coins, distance, record, entry }
 let ironMax = 1;
 let prevIronTime = 0;
-const cache = { score: -1, coins: -1, web: -1, ironN: -1, ironShow: null, ironBar: null, barScale: -1, low: null };
+const cache = { score: -1, coins: -1, web: -1, ironN: -1, ironShow: null, ironBar: null, barScale: -1, low: null, hint: null };
 
 game.tapToStart = false;
 
@@ -313,7 +312,7 @@ window.addEventListener('pagehide', () => {
 // ---------- HUD ----------
 function resetHudCache() {
   cache.score = cache.coins = cache.web = cache.ironN = cache.barScale = -1;
-  cache.ironShow = cache.ironBar = cache.low = null;
+  cache.ironShow = cache.ironBar = cache.low = cache.hint = null;
   prevIronTime = 0;
 }
 

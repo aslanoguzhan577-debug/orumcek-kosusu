@@ -82,6 +82,7 @@ export class Player {
     this._prevX = this.x;
     this._jumpQueued = false;
     this._slideQueued = false;
+    this._coyote = 0;
     this.override = null;
     this.overrideTimer = 0;
     this.controlsLocked = false;
@@ -136,6 +137,7 @@ export class Player {
     if (this.sliding) this._endSlide();
     this.vy = Math.sqrt(2 * CONFIG.gravity * height);
     this.grounded = false;
+    this._coyote = 0;
     this._jumpQueued = false;
     this._slideQueued = false;
     emit('jump');
@@ -152,8 +154,8 @@ export class Player {
   }
 
   _up() {
-    if (this.grounded) {
-      this.jump(); // also cancels a slide
+    if (this.grounded || this._coyote > 0) {
+      this.jump(); // also cancels a slide; just ran off a roof edge = still a normal jump
       return;
     }
     // Falling and almost down: treat as an early press of the next jump.
@@ -203,12 +205,14 @@ export class Player {
       if (this.y > this.floorY + 0.01) {
         this.grounded = false;  // floor fell away (end of a train car)
         this.vy = 0;
+        this._coyote = CONFIG.coyoteTime;
         if (this.sliding) this._endSlide();
       } else {
         this.y = this.floorY;   // follows ramps up
       }
     }
     if (!this.grounded) {
+      this._coyote -= dt;
       this.vy -= CONFIG.gravity * this.gravityScale * dt;
       this.y += this.vy * dt;
       if (this.y <= this.floorY && this.vy > 0) {

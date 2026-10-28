@@ -38,30 +38,3 @@ body {
   pointer-events: none; /* taps fall through to the canvas */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
-
-/* ---- G1 placeholder (G12 removes) ---- */
-.g1-hint {
-  position: absolute;
-  left: 50%;
-  top: 38%;
-  transform: translateX(-50%);
-  padding: 12px 22px;
-  border-radius: 999px;
-  background: rgba(10, 20, 40, 0.65);
-  color: #fff;
-  font-size: 20px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.g1-hint[hidden] { display: none; }
-
-.g1-hud {
-  position: absolute;
-  top: calc(10px + env(safe-area-inset-top));
-  left: 12px;
-  color: #fff;
-  font-size: 18px;
-  font-weight: 700;
-  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.6);
-  white-space: pre;
-}

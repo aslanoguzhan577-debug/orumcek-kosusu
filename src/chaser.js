@@ -82,6 +82,7 @@ export class Chaser {
     this.arrived = false;
     this._snapNear = false;
     this.knockback = 0;
+    this.root.scale.setScalar(C.nearScale);
     if (game.cameraRig) game.cameraRig.clearShot();
     this._place();
   }
@@ -172,7 +173,7 @@ export class Chaser {
     const pitch = Math.atan2(camUp - lookY, camZ + cam.lookAhead); // looking down
     const halfFov = THREE.MathUtils.degToRad(game.camera.fov) / 2;
     const below = pitch + Math.atan((1 - 2 * C.headScreenY) * Math.tan(halfFov));
-    const gap = camZ - Math.max(0.1, camUp - this.height) / Math.tan(below);
+    const gap = camZ - Math.max(0.1, camUp - this.height * C.nearScale) / Math.tan(below);
     return THREE.MathUtils.clamp(gap, C.minGap, Math.max(C.minGap, camZ - 0.8));
   }
 
@@ -250,6 +251,10 @@ export class Chaser {
       this.model.setState(state);
     }
     this.model.update(dt);
+    // a bit smaller while chasing right behind the camera (his head would fill the bottom
+    // of a phone screen); full size for the catch cam
+    const scale = damp(this.root.scale.x, CATCHING.has(this.mode) ? 1 : C.nearScale, C.followRate, dt);
+    this.root.scale.setScalar(scale);
     this._place();
     if (CATCHING.has(this.mode)) {
       // Yanked back: the halted world slides ahead, clearing the view of what was hit.

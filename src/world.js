@@ -42,7 +42,7 @@ function box(w, h, d, x, y, z) {
   return new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 }
 
-// One set of merged geometries, shared by all segments (4 draw calls per segment).
+// One merged geometry, shared by all segments.
 function buildTrackGeometries() {
   const L = CONFIG.world.segmentLength;
   const half = TRACK.halfWidth;
@@ -71,18 +71,28 @@ function buildTrackGeometries() {
     }
   }
 
-  const merge = (list) => {
-    const g = mergeGeometries(list);
-    for (const part of list) part.dispose();
-    return g;
+  // One geometry, colours baked into vertex colours: 1 draw call per segment.
+  const all = [];
+  const paint = (list, hex) => {
+    const c = new THREE.Color(hex);
+    for (const g of list) {
+      const n = g.attributes.position.count;
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      all.push(g);
+    }
   };
-  return {
-    deck: merge(deck),
-    sleepers: merge(sleepers),
-    rails: merge(rails),
-    walls: merge(walls),
-  };
+  paint(deck, TRACK_COLORS.deck);
+  paint(sleepers, TRACK_COLORS.sleepers);
+  paint(rails, TRACK_COLORS.rails);
+  paint(walls, TRACK_COLORS.walls);
+  const g = mergeGeometries(all);
+  for (const part of all) part.dispose();
+  return g;
 }
+
+const TRACK_COLORS = { deck: 0x6f6a64, sleepers: 0x6b4a33, rails: 0xc8ced8, walls: 0xa3a7ae };
 
 export class World {
   constructor(scene) {
@@ -93,22 +103,15 @@ export class World {
     this._nextSerial = 0;
 
     const geo = buildTrackGeometries();
-    const mats = {
-      deck: toonMaterial(0x6f6a64),
-      sleepers: toonMaterial(0x6b4a33),
-      rails: toonMaterial(0xc8ced8),
-      walls: toonMaterial(0xa3a7ae),
-    };
+    const mat = toonMaterial(0xffffff, { vertexColors: true });
 
     for (let i = 0; i < CONFIG.world.segmentCount; i++) {
       const group = new THREE.Group();
       group.name = 'segment';
-      for (const key of ['deck', 'sleepers', 'rails', 'walls']) {
-        const mesh = new THREE.Mesh(geo[key], mats[key]);
-        mesh.matrixAutoUpdate = false; // static inside the segment
-        mesh.updateMatrix();
-        group.add(mesh);
-      }
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.matrixAutoUpdate = false; // static inside the segment
+      mesh.updateMatrix();
+      group.add(mesh);
       const content = new THREE.Group();
       content.name = 'segment-content';
       group.add(content);

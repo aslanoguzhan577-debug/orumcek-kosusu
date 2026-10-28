@@ -80,7 +80,8 @@ function unlock() {
   } catch (e) { /* yoksay */ }
   if (ctx.state === 'running') removeUnlockListeners();
 }
-const UNLOCK_EVENTS = ['pointerdown', 'touchstart', 'keydown'];
+// iOS Safari only unlocks audio on touchend / click, so listen to those too
+const UNLOCK_EVENTS = ['pointerdown', 'touchstart', 'touchend', 'pointerup', 'click', 'keydown'];
 const UNLOCK_OPTS = { capture: true, passive: true };
 function removeUnlockListeners() {
   for (const n of UNLOCK_EVENTS) window.removeEventListener(n, unlock, UNLOCK_OPTS);

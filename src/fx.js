@@ -674,6 +674,7 @@ export function initFx(game) {
   let speedO = -1;
   let speedAcc = 0;
   let raf = 0;
+  let prevMode = game.state.mode;
   const dbg = { timeScale: 1 }; // console testing: slow motion
 
   function tick(now) {
@@ -684,6 +685,9 @@ export function initFx(game) {
     dt = Math.min(dt, 1 / 20) * dbg.timeScale;
     if (document.hidden) return;
     const st = game.state;
+    // game.toMenu() emits no event: clear the ink splash, nano swirl, vignette etc. here
+    if (st.mode === 'menu' && prevMode !== 'menu') clearAll();
+    prevMode = st.mode;
     if (st.mode === 'paused') return;
     const running = st.mode === 'running';
     const dz = running && !game.halted ? st.speed * dt : 0;

@@ -215,7 +215,10 @@ export class WebPowerup {
     }
   }
 
+  // The model's own right-hand marker if it has one, else a fixed offset from the feet.
   _handPosition(out) {
+    const hand = this.player.model.hand;
+    if (hand) return hand.getWorldPosition(out);
     const root = this.player.root;
     root.updateMatrixWorld();
     return root.localToWorld(out.set(W.handOffset[0], W.handOffset[1], W.handOffset[2]));

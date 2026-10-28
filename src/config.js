@@ -25,6 +25,7 @@ export const CONFIG = {
   fastDropSpeed: 28,       // downward speed when "down" is pressed mid-air
   slideAfterDrop: true,    // a fast drop turns into a slide on landing
   jumpBufferHeight: 0.6,   // "up" pressed while falling this close to the floor = jump on landing
+  coyoteTime: 0.12,        // "up" this soon after running off a roof edge = normal jump, not a web
   slideDuration: 0.7,
 
   // --- Input ---
@@ -39,16 +40,20 @@ export const CONFIG = {
   // --- Camera (offsets are relative to the player) ---
   camera: {
     fov: 60,               // vertical FOV in landscape
-    fovPortrait: 72,       // vertical FOV in tall portrait
+    fovPortrait: 60,       // vertical FOV in tall portrait (narrower = flatter, bigger hero)
     portraitAspect: 0.46,  // aspect at which the portrait values fully apply
     height: 3.4,           // above the player's floor
     distance: 6.2,         // behind the player (+Z)
     lookAhead: 7,          // look at a point this far ahead (-Z)
     lookHeight: 0.9,
     followX: 0.55,         // fraction of player x the camera follows (landscape)
-    followXPortrait: 0.15, // ... in portrait (keeps all lanes on screen)
-    sideMargin: 0.7,       // extra metres kept visible beyond the outer lane centre
+    followXPortrait: 0.25, // ... in portrait
+    sideMargin: 0.45,      // extra metres kept visible beyond the outer lane centre ...
+    fitAhead: 4,           // ... this far ahead of the player (where obstacles come from)
+    playerMargin: 0.6,     // the player in an outer lane: this much beyond his lane centre
+                           // stays visible at his own depth
     maxScale: 2.2,         // max factor the offsets may grow to fit a narrow screen
+    minScale: 0.9,         // ... and may shrink to on a wide one (bigger hero in landscape)
     dampX: 8,              // follow speed (higher = snappier)
     dampY: 5,
     jumpFollow: 0.25,      // how much of a jump the camera follows
@@ -117,6 +122,7 @@ export const CONFIG = {
     minGap: 2.6,           // closest he gets while chasing (catching goes closer)
     headScreenY: 0.11,     // when close, the top of his head sits this high on screen
                            // (fraction from the bottom): only head + shoulders show
+    nearScale: 0.8,        // his size while chasing (the catch cam shows him at full size)
     approachRate: 3.5,     // how fast he closes in (damping rate)
     retreatRate: 1.4,      // how fast he falls back
     followRate: 6,         // how fast he follows the lane and height
@@ -154,7 +160,7 @@ export const CONFIG = {
     anchorHeight: 45,      // anchor high on a building: above the player ...
     anchorAhead: 24,       // ... ahead (-Z) ...
     anchorSide: 8,         // ... and to the side (facades at |x| 7-9 m), always out of frame
-    handOffset: [0.32, 1.72, -0.05], // raised right hand in the 'web' pose, from the feet
+    handOffset: [0.32, 1.72, -0.05], // fallback web line start (models without a hand marker)
   },
 
   // --- Iron Spider (G10) ---

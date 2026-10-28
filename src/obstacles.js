@@ -378,11 +378,13 @@ export class Obstacles {
     for (const o of this.active) {
       if (x1 < o.x - o.halfWidth || x0 > o.x + o.halfWidth) continue;
       const fMin = o.z - hz, fMax = o.z + hz;              // player's span in the obstacle's f
-      if (fMax < 0 || fMin > o.length) continue;
       const pfMin = fMin - o.dz, pfMax = fMax - o.dz;       // ... one frame ago
+      // swept span [pfMin, fMax]: a thin bar must not slip through between two frames
+      // (closing speed up to ~40 m/s; at 30 fps that is more than bar + player depth)
+      if (fMax < 0 || pfMin > o.length) continue;
       for (const part of o.parts) {
         const ax0 = o.x + part.x0, ax1 = o.x + part.x1;
-        if (fMax <= part.f0 || fMin >= part.f1 || x1 <= ax0 || x0 >= ax1) continue;
+        if (fMax <= part.f0 || pfMin >= part.f1 || x1 <= ax0 || x0 >= ax1) continue;
         const top = part.ramp ? rampTop(part, Math.min(fMax, part.f1)) : part.y1;
         if (y1 <= part.y0 || y0 >= top) continue;
 

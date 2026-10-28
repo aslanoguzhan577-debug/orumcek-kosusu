@@ -1,5 +1,6 @@
 // spiderman.js — chibi Spider-Man, built from smooth primitives + canvas-painted textures.
-//   createSpiderman() -> { root, setState(name), update(dt) }
+//   createSpiderman() -> { root, setState(name), update(dt), hand }  (hand: empty marker in the
+//   right mitten, where the web line starts)
 //   root origin at the feet, facing -Z, about CONFIG.playerHeight tall.
 //   States: idle, run, jump, slide, web, stumble, caught (blend ~0.12 s).
 // The body builder (createSpiderCharacter) and the painting helpers are shared with
@@ -419,6 +420,10 @@ export function createSpiderCharacter(look, extras = {}) {
   shoulderL.add(mesh(armGeoL, armMat, OUTLINE * 0.9));
   shoulderR.add(mesh(armGeo, armMat, OUTLINE * 0.9));
   spine.add(shoulderL, shoulderR);
+  // empty marker in the right mitten: where the web line starts (G9)
+  const handR = new THREE.Object3D();
+  handR.position.y = -0.35;
+  shoulderR.add(handR);
 
   // --- legs: thigh + shin with a little foot
   const thighGeo = smoothLathe([
@@ -450,7 +455,7 @@ export function createSpiderCharacter(look, extras = {}) {
   const legL = leg(-1);
   const legR = leg(1);
 
-  const parts = { root, scaler, pelvis, spine, neck, head, headMesh, eyes, torso, shoulderL, shoulderR, legL, legR };
+  const parts = { root, scaler, pelvis, spine, neck, head, headMesh, eyes, torso, shoulderL, shoulderR, handR, legL, legR };
   if (extras.build) extras.build(parts);
 
   // ---------------------------------------------------------------- animation
@@ -667,5 +672,5 @@ function spiderPose(state, P, { t, st, phase }) {
 export function createSpiderman() {
   const m = createSpiderCharacter(SPIDER_LOOK);
   m.root.name = 'spiderman';
-  return { root: m.root, setState: m.setState, update: m.update };
+  return { root: m.root, setState: m.setState, update: m.update, hand: m.parts.handR };
 }
