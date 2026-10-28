@@ -23,7 +23,7 @@ const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-re
 const SHAKE_K = reduceMotion ? 0.25 : 1;
 const FLASH_K = reduceMotion ? 0.35 : 1;
 
-const SHAPE = { puff: 0, star: 1, square: 2, ring: 3 };
+const SHAPE = { puff: 0, star: 1, square: 2, ring: 3, flat: 4, streak: 5 };
 
 // ---------- particle system ----------
 const VERT = /* glsl */`
@@ -49,15 +49,19 @@ varying vec4 vColor;
 varying float vShape;
 varying float vRot;
 void main() {
-  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  vec2 p0 = gl_PointCoord * 2.0 - 1.0;
+  vec2 p = p0;
   float c = cos(vRot), s = sin(vRot);
   p = mat2(c, -s, s, c) * p;
   float edge;
   float ink = 0.0;
   vec3 col = vColor.rgb;
   if (vShape < 0.5) {            // puff
-    edge = length(p) - 0.96;
-    ink = smoothstep(-0.28, -0.2, edge);
+    // cloud-like scalloped disc (lobes rotate with the particle), darker towards the rim
+    float lobes = 0.86 + 0.1 * sin(6.0 * atan(p.y, p.x)) + 0.04 * sin(3.0 * atan(p.y, p.x) + 1.0);
+    edge = length(p) - lobes;
+    ink = smoothstep(-0.2, -0.13, edge) * 0.85;
+    col *= mix(1.0, 0.82, smoothstep(-0.55, -0.15, edge));
   } else if (vShape < 1.5) {     // 4-point sparkle
     float k = sqrt(abs(p.x)) + sqrt(abs(p.y));
     edge = (k - 1.0) * 0.5;
@@ -65,9 +69,15 @@ void main() {
   } else if (vShape < 2.5) {     // debris square
     edge = max(abs(p.x), abs(p.y)) - 0.72;
     ink = smoothstep(-0.34, -0.26, edge);
-  } else {                       // ring
+  } else if (vShape < 3.5) {     // ring
     float d = length(p);
     edge = max(d - 0.97, 0.74 - d);
+  } else if (vShape < 4.5) {     // flat ground ring (squashed ellipse)
+    float d = length(vec2(p0.x, p0.y * 2.6));   // not rotated: stays a flat ellipse
+    edge = max(d - 0.97, 0.78 - d);
+  } else {                       // speed streak: tapered line, long axis = local y
+    float ax = abs(p.x), ay = abs(p.y);
+    edge = max(ax - 0.17 * (1.0 - ay), ay - 1.0);
   }
   float w = max(fwidth(edge), 0.001);
   float a = clamp(0.5 - edge / w, 0.0, 1.0) * vColor.a;
@@ -232,6 +242,7 @@ const WORDS = {
   fiss:  { t: 'FİŞŞ!',  burst: null,      fill: '#ffffff', stroke: '#1a3cb0' },
   parca: { t: 'PARAMPARÇA!', burst: '#ff9f1c', fill: '#ffffff' },
   nano:  { t: 'NANO!',  burst: '#ffd23a', fill: '#1a3cb0' },
+  hop:   { t: 'HOP!',   burst: null,      fill: '#ffe14a', stroke: '#e0262c' },
 };
 const FONT = "'Bangers', Impact, 'Arial Black', sans-serif";
 
@@ -493,8 +504,8 @@ export function initFx(game) {
   }
 
   // ----- event handlers -----
-  let slideUntil = 0;
   let slideAcc = 0;
+  let slideStreakAcc = 0;
   let simTime = 0;
   let ironActive = false;
 
@@ -506,15 +517,99 @@ export function initFx(game) {
     glow.spawn(p.x, p.y, p.z, 0, 0, 0, 0.18, 0.9, 1.3, SHAPE.star, 0xfff2a0, 0.9, 0, 0, true, 0, 3);
   });
 
+  // ----- jump / land / slide -----
+  // Streaks are tapered lines (shape 'streak'); rot 0 = vertical, PI/2 = horizontal.
+  const dustCol = 0xe9e3d6;
+  const chunkCols = [0x6b5a48, 0x4d4a50, 0xa08a66, 0xd6c9aa];
+  let airMaxY = 0;
+  let lastHopMs = -1e9;
+  const rm = reduceMotion ? 0.5 : 1;
+
+  function streak(x, y, z, vy, vz, len, life, a, horizontal) {
+    const i = normal.spawn(x, y, z, 0, vy, vz, life, len, len * 0.8, SHAPE.streak, 0xf6fbff, a, 0, 0, true);
+    normal.rot[i] = horizontal ? Math.PI / 2 : 0;
+    normal.spin[i] = 0;
+  }
+  function chunks(x, y, z, n, spread, up, back) {
+    for (let i = 0; i < n; i++) {
+      normal.spawn(x + rnd(-0.3, 0.3), y, z + rnd(0, 0.3),
+        rnd(-1, 1) * spread, rnd(0.4, 1) * up, rnd(0.2, 1) * back,
+        rnd(0.35, 0.6), rnd(0.16, 0.28), 0.08, SHAPE.square, chunkCols[(Math.random() * 4) | 0],
+        1, 22, 0.8, true, 0, rnd(-14, 14));
+    }
+  }
+
   on('jump', () => {
+    if (game.halted) return;
     const pl = player();
-    puffBurst(pl.x, floorY() + 0.1, 0.1, 4, 0xe9e3d6, 1.4, 0.7, 0.3, 0.6, 0.35);
+    const fy = floorY();
+    airMaxY = pl.y;
+    const apex = pl.vy > 0 ? (pl.vy * pl.vy) / (2 * (CONFIG.gravity || 42)) : 1.5;
+    const big = THREE.MathUtils.clamp(apex / 2.4, 0.6, 1.3);
+    // dust kicked off the ground (sideways + backwards) and a flat ring under the feet
+    puffBurst(pl.x, fy + 0.1, 0.25, Math.round(8 * rm), dustCol, 3.2 * big, 1.3, 0.4, 1.0, 0.45);
+    normal.spawn(pl.x, fy + 0.06, 0.1, 0, 0, 0, 0.3, 0.7, 2.6 * big, SHAPE.flat, 0xf4efe6, 0.9, 0, 0, true);
+    chunks(pl.x, fy + 0.12, 0.2, Math.round(5 * rm), 2.6, 4.2 * big, 3);
+    // speed streaks left hanging below him as he rises
+    if (!reduceMotion) {
+      for (const dx of [-0.5, -0.3, 0.3, 0.5]) streak(pl.x + dx, fy + rnd(0.5, 0.9), 0.15, -1.5, 0, 1.5 * big, 0.3, 0.8, false);
+    }
+    // occasional comic word, always off to the side; high jumps get it more often
+    const now = performance.now();
+    const chance = apex > 2.4 ? 0.7 : 0.14;
+    if (now - lastHopMs > 2800 && Math.random() < chance) {
+      lastHopMs = now;
+      const side = pl.x > 0.3 ? -1 : 1;
+      showText('hop', pl.x + side * 1.5, fy + 1.1, 0, 0.2, 0.5, true);
+    }
   });
+
   on('land', () => {
+    if (game.halted) return;
     const pl = player();
-    puffBurst(pl.x, floorY() + 0.1, 0.1, 7, 0xe9e3d6, 2.4, 1.0, 0.45, 0.95, 0.45);
+    const fy = floorY();
+    const drop = Math.max(0, airMaxY - fy);
+    const k = THREE.MathUtils.clamp(drop / 2.4, 0.15, 1);
+    // dust spray out to the sides
+    const n = Math.round((6 + 8 * k) * rm);
+    for (let i = 0; i < n; i++) {
+      const side = i % 2 ? 1 : -1;
+      normal.spawn(pl.x + side * 0.2, fy + 0.1, 0.15 + rnd(0, 0.3),
+        side * rnd(2.2, 4.8) * (0.6 + k * 0.6), rnd(0.4, 1.3), rnd(0.2, 1.5),
+        rnd(0.35, 0.6), 0.4, 0.8 + k * 0.5, SHAPE.puff, dustCol, 0.95, -0.3, 3.4, true);
+    }
+    // impact ring on the ground (+ a second, bigger one for hard landings)
+    normal.spawn(pl.x, fy + 0.06, 0.1, 0, 0, 0, 0.28 + 0.1 * k, 0.8, 2.2 + 2.6 * k, SHAPE.flat, 0xf4efe6, 0.95, 0, 0, true);
+    if (k > 0.55) normal.spawn(pl.x, fy + 0.06, 0.1, 0, 0, 0, 0.4, 0.5, 4.2 + 1.4 * k, SHAPE.flat, 0xffffff, 0.6, 0, 0, true, 0.05);
+    chunks(pl.x, fy + 0.1, 0.1, Math.round((3 + 5 * k) * rm), 3.4, 2.5 + 2.5 * k, 2);
+    if (k > 0.3) sparkBurst(normal, pl.x, fy + 0.25, 0.1, Math.round(4 * k * rm) + 1, [0xffd23a, 0xffffff], 3.2, 0.2, 0.3);
+    // horizontal speed lines flying out sideways along the ground
+    if (!reduceMotion && k > 0.3) {
+      for (const side of [-1, 1]) {
+        const i1 = normal.spawn(pl.x + side * 0.6, fy + 0.2, 0.2, side * 9, 0, 0, 0.2, 1.3, 1.0, SHAPE.streak, 0xffffff, 0.85, 0, 0, true);
+        normal.rot[i1] = Math.PI / 2;
+        normal.spin[i1] = 0;
+      }
+    }
+    if (k > 0.45) shake(0.025 + 0.05 * k, 0.1);
   });
-  on('slide', () => { slideUntil = simTime + (CONFIG.slideDuration || 0.7); slideAcc = 0; });
+
+  on('slide', () => {
+    if (game.halted) return;
+    const pl = player();
+    const fy = floorY();
+    slideAcc = 0;
+    slideStreakAcc = 0;
+    // short whoosh: horizontal lines racing past at the start
+    if (!reduceMotion) {
+      for (const dx of [-0.7, 0.7, 0]) {
+        const i0 = normal.spawn(pl.x + dx, fy + rnd(0.25, 0.9), 0.4, 0, 0, 9, 0.22, 1.4, 1.1, SHAPE.streak, 0xf6fbff, 0.8, 0, 0, true);
+        normal.rot[i0] = Math.PI / 2;
+        normal.spin[i0] = 0;
+      }
+    }
+    puffBurst(pl.x, fy + 0.12, 0.35, Math.round(5 * rm), dustCol, 2.4, 0.9, 0.35, 0.8, 0.35);
+  });
 
   // Catch cam: crash / 2nd stumble emit their event first and the chaser halts the world
   // right afterwards (same synchronous call). A microtask therefore sees game.halted already
@@ -663,7 +758,7 @@ export function initFx(game) {
     ironActive = false;
     venomOn = false;
     dom.venom.hidden = true;
-    slideUntil = 0;
+    slideAcc = 0;
     splashOff();
   }
   on('start', clearAll);
@@ -694,13 +789,32 @@ export function initFx(game) {
     const pl = player();
     simTime += dt;
 
-    // slide dust trail
-    if (running && simTime < slideUntil && pl.y <= floorY() + 0.05) {
+    // track the highest point of the current air time (fall height for the landing effect)
+    if (!pl.grounded && pl.y > airMaxY) airMaxY = pl.y;
+
+    // slide: spark spray under him + dust + ground streaks for as long as the slide lasts
+    if (running && !game.halted && pl.sliding && pl.grounded) {
+      const fy = floorY();
       slideAcc += dt;
-      while (slideAcc > 0.045) {
-        slideAcc -= 0.045;
-        normal.spawn(pl.x + rnd(-0.2, 0.2), floorY() + 0.1, 0.5, rnd(-0.5, 0.5), rnd(0.3, 0.9), rnd(0.5, 1.5),
-          rnd(0.3, 0.45), 0.25, 0.6, SHAPE.puff, 0xe9e3d6, 0.9, -0.4, 2.5, true);
+      while (slideAcc > 0.03) {
+        slideAcc -= 0.03;
+        for (let k = 0; k < 3; k++) {
+          const side = Math.random() < 0.5 ? -1 : 1;
+          normal.spawn(pl.x + side * rnd(0.05, 0.3), fy + 0.12, rnd(-0.1, 0.35),
+            side * rnd(0.6, 2.8), rnd(2, 5), rnd(1.5, 6),
+            rnd(0.25, 0.42), 0.3, 0.1, SHAPE.star, [0xffd23a, 0xffffff, 0xff8a1f][(Math.random() * 3) | 0], 1, 15, 0.5, true, 0, rnd(-8, 8));
+        }
+        if (Math.random() < 0.4) {
+          normal.spawn(pl.x + rnd(-0.25, 0.25), fy + 0.1, 0.35, rnd(-0.6, 0.6), rnd(0.3, 0.9), rnd(1, 2.5),
+            rnd(0.28, 0.42), 0.25, 0.6, SHAPE.puff, dustCol, 0.85, -0.4, 2.5, true);
+        }
+      }
+      if (!reduceMotion) {
+        slideStreakAcc += dt;
+        while (slideStreakAcc > 0.05) {
+          slideStreakAcc -= 0.07;
+          streak(pl.x + (Math.random() < 0.5 ? -1 : 1) * rnd(0.25, 0.5), fy + 0.05, 0.9, 0, 5, 1.1, 0.22, 0.55, false);
+        }
       }
     }
 
