@@ -27,6 +27,12 @@ export const game = {
   state,
 
   obstacles: null,  // G2 obstacle system (main.js)
+  chaser: null,     // G8 Venom (main.js)
+
+  // True during the catch sequence (G8): mode stays 'running', but the world, speed and
+  // distance stop; the player and systems' update(dt) still run so the catch can play.
+  // Systems that move or collide check game.halted.
+  halted: false,
 
   // Placeholder control: while true, a tap / any key starts the run from the menu,
   // a tap resumes from pause and restarts after game over.
@@ -64,6 +70,19 @@ export const game = {
     this._resetRun();
     state.mode = 'running';
     emit('start', { restart: true });
+  },
+
+  // Back to the main menu: start layout, nothing moving, mode 'menu' (G12 "Ana menü").
+  toMenu() {
+    if (state.mode === 'menu') return;
+    this._resetRun();
+    state.mode = 'menu';
+    if (this.cameraRig) this.cameraRig.snap(this.player);
+  },
+
+  // Freeze the world for the catch sequence (see halted).
+  halt() {
+    this.halted = true;
   },
 
   pause() {
@@ -117,7 +136,7 @@ export const game = {
     if (state.mode === 'paused') return;
     const running = state.mode === 'running';
 
-    if (running) {
+    if (running && !this.halted) {
       state.time += dt;
       state.speed = Math.min(CONFIG.maxSpeed, state.speed + CONFIG.acceleration * dt);
       state.distance += state.speed * dt;
@@ -140,6 +159,7 @@ export const game = {
     state.time = 0;
     state.speed = CONFIG.startSpeed;
     state.webCharges = 0;
+    this.halted = false;
     state.ironTime = 0;
     // state.ironCount is persistent inventory (G10 loads/saves it) — left alone.
     this.world.reset();

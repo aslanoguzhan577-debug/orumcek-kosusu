@@ -8,11 +8,14 @@ import { game } from './game.js';
 import { World, createBlobShadow } from './world.js';
 import { Player } from './player.js';
 import { Obstacles } from './obstacles.js';
+import { Chaser } from './chaser.js';
 import { createInput } from './input.js';
 import { CameraRig } from './camera.js';
 import { addLights } from './lights.js';
-import { createPlaceholderPlayer } from './models/placeholder.js';
+import { createSpiderman } from './models/spiderman.js';
+import { createVenom } from './models/venom.js';
 import { initCity } from './city.js';
+import { initFx } from './fx.js';
 import './audio.js';
 import './ui.js';
 
@@ -32,7 +35,8 @@ const cameraRig = new CameraRig(camera);
 
 // ---------- world + player ----------
 const world = new World(scene);
-const player = new Player(createPlaceholderPlayer());
+// The ONE place the player's model is created (G6: swap for createSpiderman()).
+const player = new Player(createSpiderman());
 scene.add(player.root);
 
 const shadow = createBlobShadow(0.55);
@@ -42,11 +46,16 @@ game.init({ world, player });
 const obstacles = new Obstacles(scene, world, player);
 game.addSystem(obstacles);
 game.obstacles = obstacles;
+// The ONE place Venom's model is created (G6: swap for createVenom()).
+const chaser = new Chaser(scene, player, obstacles, createVenom());
+game.addSystem(chaser);
+game.chaser = chaser;
 game.scene = scene;
 game.camera = camera;
 game.cameraRig = cameraRig;
 game.renderer = renderer;
 initCity(game);
+initFx(game);
 window.game = game; // handy in the console while developing
 
 // ---------- input ----------

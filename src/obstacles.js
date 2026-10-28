@@ -249,6 +249,7 @@ export class Obstacles {
   }
 
   update(dt) {
+    if (game.halted) return; // catch sequence: everything stands still
     this._collide();
     this._collectCoins();
     this._draw();

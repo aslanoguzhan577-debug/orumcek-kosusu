@@ -106,6 +106,23 @@ export const CONFIG = {
   },
   coinScore: 10,           // score per coin (score = distance * scorePerMeter + coins * coinScore)
 
+  // --- Venom chase (G8). Gaps are metres behind the player (+Z). ---
+  chaser: {
+    introTime: 1.3,        // seconds Venom stays right behind at run start
+    nearTime: 4.5,         // seconds he stays close after a stumble; a 2nd stumble inside = caught
+    farGap: 30,            // where he waits when he has fallen back (off screen)
+    minGap: 2.6,           // closest he gets while chasing (catching goes closer)
+    screenMargin: 0.3,     // keep his head this much below Spider-Man's feet on screen
+    approachRate: 3.5,     // how fast he closes in (damping rate)
+    retreatRate: 1.4,      // how fast he falls back
+    followRate: 6,         // how fast he follows the lane and height
+    catchStartGap: 11,     // a catch starts at most this far back ...
+    catchSpeed: 22,        // ... and rushes in at this speed (m/s)
+    catchGap: 0.9,         // where he grabs the player
+    catchBeat: 0.8,        // seconds between 'caught' and game over
+    heightFactor: 1.3,     // assumed size vs playerHeight if the model cannot be measured
+  },
+
   // --- Pattern generator (G2) ---
   seed: null,              // null = new random track each run; a number = same track every run
   patterns: {
