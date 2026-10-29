@@ -359,6 +359,36 @@
 }
 #ui .ironbar.low .fill { animation: ui-blink .45s infinite; }
 
+/* Örümcek hissi / Mıknatıs: icon + shrinking bar, blinks in the last 20 % */
+#ui .hud-timers { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+#ui .pgauge {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--navy);
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 3px 3px 0 var(--ink);
+  padding: 2px 10px 2px 4px;
+  transform: rotate(-1deg);
+}
+#ui .pgauge.magnet { transform: rotate(1deg); }
+#ui .pgauge canvas { width: 38px; height: 38px; flex: none; display: block; }
+#ui .pgauge .track {
+  width: 84px; height: 16px;
+  background: #1a2a66;
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  overflow: hidden;
+}
+#ui .pgauge .fill {
+  width: 100%; height: 100%;
+  transform-origin: left center;
+  transform: scaleX(1);
+  will-change: transform;
+}
+#ui .pgauge.sense .fill { background: linear-gradient(180deg, #fff7a8, #ffd400 55%, #ffae00); }
+#ui .pgauge.magnet .fill { background: linear-gradient(180deg, #ff8f8f, #e0262c 55%, #a8141a); }
+#ui .pgauge.low canvas, #ui .pgauge.low .fill { animation: ui-blink .45s infinite; }
+
 /* ---------- landscape / short screens ---------- */
 @media (max-height: 560px) {
   #ui { --pad: 10px; }
@@ -393,6 +423,8 @@
   #ui .pill b { font-size: 24px; }
   #ui .pill.score { min-width: 80px; }
   #ui .round-btn { width: 44px; height: 44px; }
+  #ui .pgauge canvas { width: 30px; height: 30px; }
+  #ui .pgauge .track { width: 72px; height: 13px; }
 }
 @media (max-height: 400px) {
   #ui .o-stats > div { padding: 3px; }

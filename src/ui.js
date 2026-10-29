@@ -1,7 +1,8 @@
 // ui.js (G12) — menu, HUD, pause menu, game-over screen, local scores, sharing.
 //
 // Hooks into the game only through the public API:
-//   reads   game.state (mode, score, coins, distance, webCharges, ironCount, ironTime)
+//   reads   game.state (mode, score, coins, distance, webCharges, ironCount, ironTime,
+//                       senseTime, magnetTime: seconds left, undefined = 0)
 //   calls   game.start() / pause() / resume() / restart()
 //   listens events: start, pause, resume, gameover
 // It sets game.tapToStart = false (the G1 tap-anywhere placeholder is off).
@@ -14,6 +15,7 @@
 import { game } from './game.js';
 import { events } from './events.js';
 import { setMuted, isMuted } from './audio.js';
+import { drawPowerIcon } from './pickup-art.js';
 
 const KEY_NAME = 'spidey.name';
 const KEY_SCORES = 'spidey.scores';
@@ -72,6 +74,12 @@ let overAt = Infinity;     // time (ms) from which the game-over card may show
 let lastResult = null;     // { name, score, coins, distance, record, entry }
 let ironMax = 1;
 let prevIronTime = 0;
+const timers = ['sense', 'magnet'].map((kind) => {
+  const box = $('h-' + kind);
+  const cv = box && box.querySelector('canvas');
+  if (cv) drawPowerIcon(cv, kind);
+  return { box: box || document.createElement('div'), fill: (box && box.querySelector('.fill')) || document.createElement('div'), max: 1, prev: 0, show: null, q: -1, low: null };
+});
 const cache = { score: -1, coins: -1, web: -1, ironN: -1, ironShow: null, ironBar: null, barScale: -1, low: null, hint: null };
 
 game.tapToStart = false;
@@ -315,6 +323,22 @@ function resetHudCache() {
   cache.score = cache.coins = cache.web = cache.ironN = cache.barScale = -1;
   cache.ironShow = cache.ironBar = cache.low = cache.hint = null;
   prevIronTime = 0;
+  for (const g of timers) { g.max = 1; g.prev = 0; g.show = null; g.q = -1; g.low = null; }
+}
+
+// Örümcek hissi / Mıknatıs gauges: value when it switched on = 100 %, blinks in the last 20 %
+function updateTimer(g, t) {
+  const active = t > 0;
+  if (active && g.prev <= 0) g.max = t;
+  if (t > g.max) g.max = t;
+  g.prev = t;
+  if (active !== g.show) { g.show = active; g.box.hidden = !active; }
+  if (!active) return;
+  const k = Math.min(1, Math.max(0, t / g.max));
+  const q = Math.round(k * 200) / 200;
+  if (q !== g.q) { g.q = q; g.fill.style.transform = `scaleX(${q})`; }
+  const low = k < 0.2;
+  if (low !== g.low) { g.low = low; g.box.classList.toggle('low', low); }
 }
 
 function updateHud() {
@@ -347,6 +371,9 @@ function updateHud() {
     const low = k < 0.2;
     if (low !== cache.low) { cache.low = low; el.ironBar.classList.toggle('low', low); }
   }
+
+  updateTimer(timers[0], st.senseTime || 0);
+  updateTimer(timers[1], st.magnetTime || 0);
 }
 
 // ---------- frame loop ----------
