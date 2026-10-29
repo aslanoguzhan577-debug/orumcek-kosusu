@@ -166,15 +166,15 @@ function paintMarket() {
 function heartRain() {
   const layer = document.createElement('div');
   layer.style.cssText = 'position:fixed;inset:0;z-index:60;pointer-events:none;overflow:hidden';
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 400; i++) {
     const h = document.createElement('span');
     h.textContent = '❤';
     h.className = 'heart-fly';
-    h.style.cssText = `left:${Math.random() * 100}%;font-size:${20 + Math.random() * 36}px;animation-delay:${Math.random() * 1.2}s;animation-duration:${1.6 + Math.random() * 0.8}s`;
+    h.style.cssText = `left:${Math.random() * 100}%;font-size:${20 + Math.random() * 36}px;animation-delay:${Math.random() * 2}s;animation-duration:${1.6 + Math.random() * 0.8}s`;
     layer.appendChild(h);
   }
   document.body.appendChild(layer);
-  setTimeout(() => layer.remove(), 3200);
+  setTimeout(() => layer.remove(), 4600);
 }
 
 function refreshMenu() {
