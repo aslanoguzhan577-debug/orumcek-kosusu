@@ -12,13 +12,15 @@ Arkadaşlarla skor yarışı için yapılan, yayınlanmayacak bir hayran oyunu. 
 | Ağ atma | Havadayken **ikinci kez yukarı** kaydır. 1 şarj harcar. Ağ çok dik açıyla kadraj dışına atılır. Önde tren varsa çatısına iner, yoksa uzun süzülen yüksek zıplama yapar. |
 | Ağ doldurucu | Yoldan toplanır, şarjı 3'e doldurur (en fazla 3). |
 | Tren üstü | Gelen trenler hareketli. Bazı yerlerde sabit vagonlar ve rampalar var. |
-| Iron Spider | Yoldan toplanan çekirdekler cihazda birikir. Çift dokunuş (PC: Space) ile açılır, 20–25 sn sürer. Çarpınca etki hemen biter ve önündeki 2 saniyelik yoldaki tüm engeller parçalanır. |
+| Iron Spider | Yoldan toplanan çekirdekler cihazda birikir. Çift dokunuş (PC: Space) ile açılır, 5 sn sürer. Çarpınca etki hemen biter ve önündeki 2 saniyelik yoldaki tüm engeller parçalanır. |
 | Başlangıç klibi | Her koşunun başında ~5 sn, dokununca/tuşla geçilir (Temple Run / Subway Surfers girişi gibi). Kamera önden bakar; Spider-Man ağla sallana sallana Venom'dan kaçar, ağ atıcısı boşalır ("TIK TIK"), yere düşüp yuvarlanır, Venom yaklaşınca "AAA!" diye bağırıp koşmaya başlar, kamera arkaya döner ve oyun başlar. |
 | Kıvrılan sokaklar | Rastgele aralıklarla (çok sık değil) yol uzakta yumuşakça sağa ya da sola kıvrılır; şehir, raylar, trenler birlikte bükülür (görsel "eğik dünya", oyuncunun olduğu yerde bükülme sıfır, oynanış ve adalet değişmez). Kamera ve karakter virajın içine hafifçe yatar. |
 | Trenin arkasında görünürlük | Yan şeride geçince karakter ortadaki trenin arkasında kaybolmaz: kamera yanal takibi artar ve engelin arkasında kalan kısım parlak bir siluet olarak görünür. |
 | Bitmeyen zorluk | Zorluk hiçbir zaman sabitlenmez: hız tavanına kadar yavaşça artmaya, sonra yoğunluk, kombinasyonlar ve tren hızıyla zorlaşmaya devam eder. Her an geçilebilir bir yol vardır ama gittikçe darlaşır; çok uzun hayatta kalmak neredeyse imkânsızlaşır. |
-| Örümcek hissi | Yerden toplanır, otomatik başlar, 12 sn sürer: o sürede kaçamayacağın engellerden karakter kendisi kaçar (zıplar, kayar ya da şerit değiştirir). Logo: bizim Funko Spider-Man kafası ve çevresinde sarı zikzak "his" çizgileri. |
-| Mıknatıs | Yerden toplanır, otomatik başlar, süre boyunca çevredeki altınlar karaktere uçup toplanır. |
+| Örümcek hissi | Yerden toplanır, otomatik başlar, 5 sn sürer: o sürede kaçamayacağın engellerden karakter kendisi kaçar (zıplar, kayar ya da şerit değiştirir). Logo: bizim Funko Spider-Man kafası ve çevresinde sarı zikzak "his" çizgileri. |
+| Mıknatıs | Yerden toplanır, otomatik başlar, 5 sn sürer: süre boyunca çevredeki altınlar karaktere uçup toplanır. |
+| Ağ bekleme süresi | İki ağ atışı arasında en az 1,2 sn (oyun süresi; duraklayınca durur). |
+| Power-up sıklığı | Güçler (ağ, Iron Spider, örümcek hissi, mıknatıs) eskisinin yaklaşık yarısı sıklıkta çıkar; iki güç toplama noktası arasında en az 300 m olur. |
 | Altın dizilimi | Altınlar her zaman en az iki şeritte: paralel sıralar, şerit değiştiren zikzaklar, engellerin üstünden kavisler (Subway Surfers gibi). |
 | Kayma animasyonu | Spider-Man'in ikonik örümcek çömelmesi: eller ve ayaklar yerde, bacaklar açık, alçak ve hızlı kayış; görsel tepe bariyer tahtasının (0,95 m) altında, çarpışma kutusu 0,75 m aynı kalır. |
 | Iron Spider kolları | Zıplarken 4 altın kol yere vurup karakteri havaya iter. Kayarken önde yüksek bariyer varsa kollar ileri fırlar, bariyeri tutar ("ÇANK!") ve karakteri altından fırlatır gibi geçirir. Sadece görsel; oynanışı değiştirmez. |

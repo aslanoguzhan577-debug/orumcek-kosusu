@@ -239,8 +239,9 @@ export class SensePowerup {
     if (ctx.A < this._lastPickupD) this._lastPickupD = -Infinity; // generator was reset
     if (!ctx.routeFree || ctx.pickups > 0) return;
     const [d0, d1] = ctx.routeFree;
-    if (d1 - d0 < 8 || ctx.A - this._lastPickupD < S.pickupMinGap || roll >= S.pickupChance) return;
-    ctx.push({ type: 'pickup', kind: 'sense', lane: ctx.route, d: d0 + (d1 - d0) * 0.75, y: S.pickupY });
+    const d = d0 + (d1 - d0) * 0.75;
+    if (d1 - d0 < 8 || ctx.A - this._lastPickupD < S.pickupMinGap || roll >= S.pickupChance || !ctx.farFromPickup(d)) return;
+    ctx.push({ type: 'pickup', kind: 'sense', lane: ctx.route, d, y: S.pickupY });
     this._lastPickupD = ctx.A;
   }
 

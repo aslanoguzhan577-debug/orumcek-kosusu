@@ -63,8 +63,9 @@ export class MagnetPowerup {
     if (ctx.A < this._lastPickupD) this._lastPickupD = -Infinity; // generator was reset
     if (!ctx.routeFree || ctx.pickups > 0) return;
     const [d0, d1] = ctx.routeFree;
-    if (d1 - d0 < 4 || ctx.A - this._lastPickupD < M.pickupMinGap || roll >= M.pickupChance) return;
-    ctx.push({ type: 'pickup', kind: 'magnet', lane: ctx.route, d: (d0 + d1) / 2, y: M.pickupY });
+    const d = (d0 + d1) / 2;
+    if (d1 - d0 < 4 || ctx.A - this._lastPickupD < M.pickupMinGap || roll >= M.pickupChance || !ctx.farFromPickup(d)) return;
+    ctx.push({ type: 'pickup', kind: 'magnet', lane: ctx.route, d, y: M.pickupY });
     this._lastPickupD = ctx.A;
   }
 

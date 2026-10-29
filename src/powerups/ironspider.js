@@ -95,10 +95,11 @@ export class IronSpiderPowerup {
     if (ctx.A < this._lastPickupD) this._lastPickupD = -Infinity; // generator was reset
     if (!ctx.routeFree) return;
     const [d0, d1] = ctx.routeFree;
-    if (d1 - d0 < 8 || ctx.A - this._lastPickupD < I.pickupMinGap) return;
+    const d = d0 + (d1 - d0) * 0.25;
+    if (d1 - d0 < 8 || ctx.A - this._lastPickupD < I.pickupMinGap || !ctx.farFromPickup(d)) return;
     const full = game.state.ironCount >= I.maxCount;
     if (roll >= (full ? I.pickupChanceFull : I.pickupChance)) return;
-    ctx.push({ type: 'pickup', kind: 'iron', lane: ctx.route, d: d0 + (d1 - d0) * 0.25, y: I.pickupY });
+    ctx.push({ type: 'pickup', kind: 'iron', lane: ctx.route, d, y: I.pickupY });
     this._lastPickupD = ctx.A;
   }
 

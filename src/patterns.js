@@ -138,6 +138,7 @@ export class PatternGenerator {
 
   reset(seed) {
     this.seed = seed >>> 0;
+    this.lastPickupD = -Infinity;            // distance of the last pickup of any kind
     this.rng = createRng(this.seed);
     this.cursor = 0;                         // generated up to here
     this.route = CENTER_LANE;
@@ -287,8 +288,10 @@ export class PatternGenerator {
     if (this.extras.length) {
       const ctx = {
         rng, A, B, speed: v, difficulty: diff, route, routeFree, pickups: 0,
+        // false when a pickup at metre d would sit within CONFIG.pickups.minGapAny of the last
+        farFromPickup: (d) => d - this.lastPickupD >= CONFIG.pickups.minGapAny,
         push: (desc) => {
-          if (desc.type === 'pickup') ctx.pickups++;
+          if (desc.type === 'pickup') { ctx.pickups++; this.lastPickupD = desc.d; }
           out.push(desc);
         },
       };

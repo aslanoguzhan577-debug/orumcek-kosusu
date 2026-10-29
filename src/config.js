@@ -202,12 +202,17 @@ export const CONFIG = {
     heightFactor: 1.3,     // assumed size vs playerHeight if the model cannot be measured
   },
 
+  // --- Power-ups of all kinds (patterns.js keeps the gap between any two pickups) ---
+  pickups: {
+    minGapAny: 300,        // metres between two power-up pickups, whatever their kind
+  },
+
   // --- Web cartridge and web zip (G9) ---
   web: {
     maxCharges: 3,
-    pickupChance: 0.22,    // per pattern block with a free stretch on the route lane
+    pickupChance: 0.11,    // per pattern block with a free stretch on the route lane
     pickupChanceFull: 0.04, // ... while already holding maxCharges
-    pickupMinGap: 180,     // metres between two cartridges at least
+    pickupMinGap: 350,     // metres between two cartridges at least (about 1 per 1400 m)
     pickupY: 0.15,         // height of the cartridge's bottom above the track
     pickupScale: 1.3,
     hangHeight: 6,         // nothing ahead: rise to this height above the floor ...
@@ -216,6 +221,7 @@ export const CONFIG = {
     roofClear: 0.35,       // feet this far above the roof when its front reaches the player
     maxRiseSpeed: 34,      // fastest upward speed of a zip (m/s)
     minGravityScale: 0.12, // gentlest gravity while rising toward a far roof
+    cooldown: 1.2,         // game seconds between two web shots (a refused shot costs nothing)
     lineMaxTime: 1.6,      // the web line disappears after this long (or on landing)
     lineRadius: 0.03,
     anchorHeight: 45,      // anchor high on a building: above the player ...
@@ -226,11 +232,11 @@ export const CONFIG = {
 
   // --- Iron Spider (G10) ---
   iron: {
-    duration: 22,          // seconds the suit lasts
+    duration: 5,           // seconds the suit lasts
     maxCount: 5,           // most cores you can hold
-    pickupChance: 0.16,    // per pattern block with a free stretch on the route lane
+    pickupChance: 0.08,    // per pattern block with a free stretch on the route lane
     pickupChanceFull: 0.04, // ... while holding maxCount
-    pickupMinGap: 500,     // metres between two cores at least (about 1 per 900-1200 m)
+    pickupMinGap: 900,     // metres between two cores at least (about 1 per 1800-2400 m)
     pickupY: 0.15,
     pickupScale: 1.3,
     clearTime: 2,          // a save clears everything reaching the player within this many s
@@ -245,10 +251,10 @@ export const CONFIG = {
 
   // --- Spider-sense (powerups/sense.js) ---
   sense: {
-    duration: 12,          // seconds of auto-dodge after a pickup
-    pickupChance: 0.8,     // per pattern block with a free stretch on the route lane (and no
+    duration: 5,           // seconds of auto-dodge after a pickup
+    pickupChance: 0.4,     // per pattern block with a free stretch on the route lane (and no
                            // other pickup there: web / core go first) ...
-    pickupMinGap: 450,     // ... and this many metres after the last one: ~1 per 1000 m
+    pickupMinGap: 900,     // ... and this many metres after the last one: ~1 per 2000 m
     pickupY: 0.15,
     pickupScale: 1.3,
     lookAhead: 0.7,       // s: obstacles reaching the player within this are simulated
@@ -262,9 +268,9 @@ export const CONFIG = {
 
   // --- Magnet (powerups/magnet.js) ---
   magnet: {
-    duration: 13,          // seconds
-    pickupChance: 0.3,     // like sense: ~1 per 800 m (the web cartridge: ~1 per 700 m)
-    pickupMinGap: 200,
+    duration: 5,           // seconds
+    pickupChance: 0.15,    // like sense: ~1 per 1600 m (the web cartridge: ~1 per 1400 m)
+    pickupMinGap: 400,
     pickupY: 0.15,
     pickupScale: 1.3,
     ahead: 22,             // pull coins this many metres ahead ...

@@ -35,6 +35,7 @@ export class WebPowerup {
     this.zip = null;          // { time, dropped } while zipping
     this.anchor = new THREE.Vector3();
     this._lastPickupD = -Infinity;
+    this._lastShotT = -Infinity; // game.state.time of the last web shot
 
     // --- cartridge pickups ---
     obstacles.registerPickup('web', {
@@ -72,6 +73,7 @@ export class WebPowerup {
 
   reset() {
     this._endZip();
+    this._lastShotT = -Infinity;
   }
 
   get zipping() {
@@ -85,10 +87,11 @@ export class WebPowerup {
     if (ctx.A < this._lastPickupD) this._lastPickupD = -Infinity; // generator was reset
     if (!ctx.routeFree) return;
     const [d0, d1] = ctx.routeFree;
-    if (d1 - d0 < 4 || ctx.A - this._lastPickupD < W.pickupMinGap) return;
+    const d = (d0 + d1) / 2;
+    if (d1 - d0 < 4 || ctx.A - this._lastPickupD < W.pickupMinGap || !ctx.farFromPickup(d)) return;
     const full = game.state.webCharges >= W.maxCharges;
     if (roll >= (full ? W.pickupChanceFull : W.pickupChance)) return;
-    ctx.push({ type: 'pickup', kind: 'web', lane: ctx.route, d: (d0 + d1) / 2, y: W.pickupY });
+    ctx.push({ type: 'pickup', kind: 'web', lane: ctx.route, d, y: W.pickupY });
     this._lastPickupD = ctx.A;
   }
 
@@ -96,7 +99,9 @@ export class WebPowerup {
     const p = this.player;
     const st = game.state;
     if (p.grounded || p.sliding || this.zip || st.webCharges <= 0 || game.halted || p.controlsLocked) return false;
+    if (st.time - this._lastShotT < W.cooldown) return false;
     st.webCharges--;
+    this._lastShotT = st.time;
 
     this.zip = { time: 0, dropped: false };
     p.setOverride('web', Infinity);
