@@ -13,6 +13,20 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bangers&family=Baloo+2:wght@600;800&display=swap">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="ui.css">
+  <!-- Yükleniyor ekranı: JS'ten önce görünsün diye satır içi (kaldırılması src/ui.js'te) -->
+  <style>
+    #loading { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+      background-color: #8fd0ff; background-image: radial-gradient(circle, rgba(255,255,255,.35) 2px, transparent 2.6px); background-size: 16px 16px;
+      transition: opacity .3s; font-family: 'Bangers', Impact, 'Arial Black', sans-serif; }
+    #loading.done { opacity: 0; pointer-events: none; }
+    #loading .web { width: 96px; height: 96px; color: #fff; filter: drop-shadow(3px 4px 0 #0d0d14); animation: ld-spin 1.4s linear infinite; }
+    #loading .txt { font-size: 40px; letter-spacing: .08em; color: #ffd23a; -webkit-text-stroke: 7px #0d0d14; paint-order: stroke fill; text-shadow: 4px 5px 0 #0d0d14; transform: rotate(-3deg); }
+    #loading .txt i { font-style: normal; animation: ld-dot 1.2s infinite; }
+    #loading .txt i:nth-child(2) { animation-delay: .2s; } #loading .txt i:nth-child(3) { animation-delay: .4s; }
+    @keyframes ld-spin { to { transform: rotate(360deg); } }
+    @keyframes ld-dot { 0%, 60%, 100% { opacity: .2; } 30% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { #loading .web { animation-duration: 4s; } }
+  </style>
   <script type="importmap">
   {
     "imports": {
@@ -23,6 +37,17 @@
   </script>
 </head>
 <body>
+  <div id="loading" role="status" aria-live="polite">
+    <svg class="web" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 2.5V21.5M2.5 12H21.5M5.3 5.3L18.7 18.7M18.7 5.3L5.3 18.7"/><circle cx="12" cy="12" r="3.6"/><circle cx="12" cy="12" r="7.4"/></g></svg>
+    <div class="txt">YÜKLENİYOR<i>.</i><i>.</i><i>.</i></div>
+  </div>
+  <script>
+    // modül yüklenemez / hata olursa ekran takılı kalmasın
+    window.addEventListener('error', function () {
+      var t = document.querySelector('#loading .txt');
+      if (t && document.getElementById('loading')) t.textContent = 'BİR HATA OLDU - SAYFAYI YENİLE';
+    });
+  </script>
   <canvas id="game"></canvas>
 
   <!-- UI layer (G12: src/ui.js + ui.css own everything inside #ui). pointer-events are off

@@ -879,7 +879,7 @@ export function initFx(game) {
         shake(0.08, 0.9);
         break;
       case 'scream':
-        showText('aaa', px + _cr.x * 0.9, py + 2.0, pz + _cr.z * 0.9, 0.44, 1.8, false, true);
+        showText('aaa', px + _cr.x * 1.05, py + 2.25, pz + _cr.z * 1.05, 0.44, 1.8, false, true);
         break;
       case 'run':
         hideText('aaa');

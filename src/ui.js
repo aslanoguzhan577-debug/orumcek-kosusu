@@ -350,8 +350,18 @@ function updateHud() {
 }
 
 // ---------- frame loop ----------
+// first frame = everything (models, city, fx) has finished initialising: remove the loader
+function hideLoader() {
+  const l = document.getElementById('loading');
+  if (!l) return;
+  l.classList.add('done');
+  setTimeout(() => l.remove(), 400);
+}
+
+let loaderHidden = false;
 function frame(now) {
   requestAnimationFrame(frame);
+  if (!loaderHidden) { loaderHidden = true; hideLoader(); }
   showScreen(wantScreen(now));
   if (current === 'hud') updateHud();
 }
