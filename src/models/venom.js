@@ -4,7 +4,7 @@
 // spider front and back, thick arms with clawed hands held out, short thick legs.
 //   createVenom() -> { root, setState(name), update(dt) }
 //   root origin at the feet, facing -Z, about 2.15 m tall while running.
-//   States: run, reach, catch (blend ~0.12 s).
+//   States: run, reach, catch; intro clip: roar (blend ~0.12 s).
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
@@ -613,6 +613,38 @@ function venomPose(state, P, t, st, phase) {
       P.tongueOut = 1;
       P.tongueWiggle = 1.6;
       P.tongueSwing = 0.35;
+      break;
+    }
+    case 'roar': { // intro: planted wide, arms flung out, chest out, head back, tongue out, shuddering
+      const sh = Math.sin(t * 46) * 0.025;
+      const rise = Math.min(1, st / 0.25);        // rears up into it
+      P.pelvisY = -0.05 + sh * 0.5;
+      P.pelvisRX = 0.06;
+      P.pelvisRY = 0;
+      P.pelvisRZ = sh;
+      P.legLX = 0.12;
+      P.legRX = -0.08;
+      P.kneeL = -0.35;
+      P.kneeR = -0.3;
+      P.legLZ = -0.3;
+      P.legRZ = 0.3;
+      P.spineRX = 0.28 * rise + sh;
+      P.spineRY = 0;
+      P.spineRZ = sh;
+      P.headRX = 1.1 * rise;
+      P.headRY = 0;
+      P.headRZ = sh * 3;
+      P.armLX = 0.3;
+      P.armRX = 0.3;
+      P.armLZ = -1.5 + sh;
+      P.armRZ = 1.5 - sh;
+      P.armLY = -0.25;
+      P.armRY = 0.25;
+      P.elbowL = 0.75;
+      P.elbowR = 0.75;
+      P.tongueOut = 1;
+      P.tongueWiggle = 2.4;
+      P.tongueSwing = 0.6;
       break;
     }
     case 'catch': { // lunge: claws thrown wide, then snap shut

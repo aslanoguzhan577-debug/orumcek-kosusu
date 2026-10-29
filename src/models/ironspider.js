@@ -2,11 +2,16 @@
 // builder in spiderman.js) with a red / gold / black armour paint job, a glossier metallic
 // finish, softly glowing lenses and four golden mechanical arms on the back (instanced:
 // 6 draw calls for all of them, outlines included).
-//   createIronSpider() -> { root, setState(name), update(dt, speed?), setSpeed(v), hand }
+//   createIronSpider() -> { root, setState(name), update(dt, speed?), setSpeed(v), hand,
+//                           setGrabTarget(worldPos | null) }
 //   (hand: web line start; speed: game speed in m/s for the run cadence, optional)
-//   States: idle, run, jump, slide, web, stumble, caught.
+//   States: idle, run, jump, slide, web, stumble, caught (+ the intro clip states).
+// The gold arms also work: on take-off they slam the ground and push him up (telescoping
+// out to stay planted while he rises); while sliding, setGrabTarget() makes them shoot
+// forward, clamp onto the barrier board and fling him under it as it passes overhead.
 
 import * as THREE from 'three';
+import { CONFIG } from '../config.js';
 import { toonMaterial, addOutline, mergeGeos, TubeShape } from './toon.js';
 import {
   createSpiderCharacter, keyframes, paintLenses, paintSpiderEmblem, paintWebGrid,
@@ -234,8 +239,8 @@ function mechPose(state, P, { t, st }) {
       P.mSway = 0.14;
       P.mUpB = 0.7; P.mLoB = 0.9;
       break;
-    case 'jump': // flare out straight on take-off, fold in for the flip, spread wide at the top
-      keyframes(P, st, [[0, MECH_FLARE], [0.08, MECH_FLARE], [0.14, MECH_FOLD], [0.24, MECH_FOLD], [0.32, MECH_PEAK]]);
+    case 'jump': // (planted by the launch IK first) fold in for the flip, spread wide at the top
+      keyframes(P, st, [[0, MECH_FLARE], [0.12, MECH_FLARE], [0.18, MECH_FOLD], [0.25, MECH_FOLD], [0.33, MECH_PEAK]]);
       break;
     case 'web': // upper pair thrown up high, lower pair spread
       P.mUpT = 0.3; P.mUpB = 0.15; P.mUpK1 = 0.35; P.mUpK2 = 0.3; P.mUpC = 0.2;
@@ -288,18 +293,119 @@ function addMechArms(parts) {
   addOutline(segs, 0.011, OUTLINE_COLOR);
   addOutline(claws, 0.01, OUTLINE_COLOR);
   mech.add(segs, claws);
-  return { segs, claws };
+  return { group: mech, segs, claws };
+}
+
+// ------------------------------------------------------------------ arms at work
+
+const smooth = THREE.MathUtils.smoothstep;
+const CLAW_LEN = 0.12;            // claw beyond the last segment: the arm aims its tip here
+const JUMP_V0 = Math.sqrt(2 * CONFIG.gravity * CONFIG.jumpHeight);
+// take-off: ground points (root space x, z) the tips slam into, around the feet like the
+// fx sparks; upper pair behind him (the vault), lower pair to the front sides
+const JUMP_PLANT = [[-0.6, 0.32], [0.6, 0.32], [-0.58, -0.28], [0.58, -0.28]];
+// barrier grab: where each claw bites along the board (world x from the grab point)
+const GRAB_SPREAD = [-0.3, 0.3, -0.68, 0.68];
+const FLING_T = 0.36;             // the yank after the board passes overhead (s)
+// fling: arm tips thrown out to these points (root space): upper pair up and out over the
+// passing board, lower pair out past its legs
+const FLING_OUT = [[-1.5, 2.1, -0.5], [1.5, 2.1, -0.5], [-2.1, 0.55, 0.1], [2.1, 0.55, 0.1]];
+
+function armBase(i, out) {
+  return out.set(ARM_SIDE[i] * 0.05, ARM_TIER[i] === 0 ? 0.05 : -0.05, 0.02);
+}
+
+const _v = new THREE.Vector3();
+const _b = new THREE.Vector3();
+const launch = Array.from({ length: ARM_COUNT }, () => new THREE.Vector3()); // shared: one suit
+
+// Fills ik[i] = { w, target (mech space), curl, maxK } for the launch and the grab.
+function aimArms(state, ctx, root, mech, grab, ik) {
+  const { st, dt, speed } = ctx;
+  for (const a of ik) a.w = 0;
+  if (grab.has) grab.t += dt;
+  else grab.fling += dt;
+  const jw = state === 'jump' && st < 0.17 ? smooth(st, 0, 0.03) * (1 - smooth(st, 0.11, 0.17)) : 0;
+  const flinging = !grab.has && grab.fling < FLING_T;
+  if (!root || (jw <= 0 && !grab.has && !flinging)) return;
+  mech.group.updateWorldMatrix(true, false);
+  if (jw > 0) {
+    // planted on the ground around the take-off point (world space; the first frame guesses
+    // how far he has already risen), then the world scrolls it back under him
+    for (let i = 0; i < ARM_COUNT; i++) {
+      const w = launch[i];
+      if (st <= dt + 1e-6) {
+        const rise = JUMP_V0 * st - 0.5 * CONFIG.gravity * st * st;
+        root.localToWorld(w.set(JUMP_PLANT[i][0], -rise, JUMP_PLANT[i][1]));
+      } else {
+        w.z += speed * dt;
+      }
+      mech.group.worldToLocal(_v.copy(w));
+      const a = ik[i];
+      a.target.copy(_v);
+      a.w = jw;
+      a.curl = 0.1;
+      a.maxK = 3.2;
+    }
+    return;
+  }
+  if (!grab.has) grab.pos.z += speed * dt;             // released: the board flies on past
+  const reach = 0.85 + 2.4 * smooth(grab.t, 0, 0.2);    // the arms telescope out to it
+  // after the pass: let go and fling the arms out wide past the barrier's legs, where the
+  // chase camera sees them around the board, then fold back into the slide brace
+  const out = flinging ? smooth(grab.fling, 0, 0.06) : 0;
+  const fade = flinging ? 1 - smooth(grab.fling, 0.16, FLING_T) : 1;
+  for (let i = 0; i < ARM_COUNT; i++) {
+    _v.copy(grab.pos);
+    _v.x += GRAB_SPREAD[i];
+    mech.group.worldToLocal(_v);
+    armBase(i, _b);
+    _v.sub(_b);
+    const L = _v.length();
+    const held = L <= reach;
+    if (!held) _v.multiplyScalar(reach / L);
+    const a = ik[i];
+    a.target.copy(_b).add(_v);
+    if (out > 0) {
+      const f = FLING_OUT[i];
+      mech.group.worldToLocal(root.localToWorld(_b.set(f[0], f[1], f[2])));
+      a.target.lerp(_b, out);
+    }
+    a.w = grab.has ? smooth(grab.t, 0, 0.06) : fade;
+    a.curl = held && !flinging ? 1.1 : 0.2;             // claws clamp shut on the board
+    a.maxK = 4.2;
+  }
+}
+
+// body language around the grab: a strain toward the board, then the yank under it
+function grabPose(state, P, grab) {
+  if (grab.has && grab.t > 0.12) P.pelvisY += 0.03;
+  if (grab.fling >= FLING_T) return;
+  const e = grab.fling / FLING_T;
+  const k = Math.sin(Math.PI * Math.min(1, e * 1.4));   // fast in, slower out
+  P.pelvisZ -= 0.45 * k;                                // shot forward out from under it
+  P.pelvisY += 0.08 * k;
+  P.rootSquash *= 1 + 0.16 * k;
+  P.spineRX -= 0.35 * k;
 }
 
 const _m = new THREE.Matrix4();
 const _r = new THREE.Matrix4();
+const _w = new THREE.Matrix4();
+const _sc = new THREE.Matrix4();
 const _e = new THREE.Euler();
 const _p = new THREE.Vector3();
 const _q = new THREE.Quaternion();
+const _qa = new THREE.Quaternion();
+const _d = new THREE.Vector3();
+const _Y = new THREE.Vector3(0, 1, 0);
 const _one = new THREE.Vector3(1, 1, 1);
 const _flip = new THREE.Matrix4().makeRotationY(Math.PI);
 
-function applyMech(mech, pose, { t }) {
+// Pose-driven arms (T: out from vertical, B: swung back, K1/K2: knee bends, C: claw curl),
+// blended per arm toward ik[i]: aimed straight at a target and telescoped (segments
+// stretched by k) so the claw lands on it.
+function applyMech(mech, pose, { t }, ik) {
   for (let i = 0; i < ARM_COUNT; i++) {
     const s = ARM_SIDE[i];
     const upper = ARM_TIER[i] === 0;
@@ -307,19 +413,32 @@ function applyMech(mech, pose, { t }) {
     const flail = pose.mFlail * Math.sin(t * 17 + i * 2.1);
     const T = (upper ? pose.mUpT : pose.mLoT) + sway + flail;
     const B = (upper ? pose.mUpB : pose.mLoB) + sway * 0.6;
-    const K1 = (upper ? pose.mUpK1 : pose.mLoK1) + sway * 1.2 - flail;
-    const K2 = (upper ? pose.mUpK2 : pose.mLoK2) + sway + flail * 0.8;
-    const C = (upper ? pose.mUpC : pose.mLoC) + sway * 0.8;
+    let K1 = (upper ? pose.mUpK1 : pose.mLoK1) + sway * 1.2 - flail;
+    let K2 = (upper ? pose.mUpK2 : pose.mLoK2) + sway + flail * 0.8;
+    let C = (upper ? pose.mUpC : pose.mLoC) + sway * 0.8;
 
-    _p.set(s * 0.05, upper ? 0.05 : -0.05, 0.02);
+    armBase(i, _p);
     _q.setFromEuler(_e.set(0, -s * B, -s * T, 'YZX'));
+    let k = 1;
+    const a = ik[i];
+    if (a.w > 0) {
+      _d.subVectors(a.target, _p);
+      const L = _d.length();
+      _d.divideScalar(L || 1);
+      _q.slerp(_qa.setFromUnitVectors(_Y, _d), a.w);
+      k = 1 + (THREE.MathUtils.clamp((L - CLAW_LEN) / (3 * SEG), 0.6, a.maxK) - 1) * a.w;
+      K1 *= 1 - a.w;
+      K2 *= 1 - a.w;
+      C += (a.curl - C) * a.w;
+    }
+    _sc.makeScale(1, k, 1);
     _m.compose(_p, _q, _one);
-    mech.segs.setMatrixAt(i * 3, _m);
-    _m.multiply(_r.makeTranslation(0, SEG, 0)).multiply(_r.makeRotationZ(-s * K1));
-    mech.segs.setMatrixAt(i * 3 + 1, _m);
-    _m.multiply(_r.makeTranslation(0, SEG, 0)).multiply(_r.makeRotationZ(-s * K2));
-    mech.segs.setMatrixAt(i * 3 + 2, _m);
-    _m.multiply(_r.makeTranslation(0, SEG, 0)).multiply(_r.makeRotationZ(-s * C));
+    mech.segs.setMatrixAt(i * 3, _w.multiplyMatrices(_m, _sc));
+    _m.multiply(_r.makeTranslation(0, SEG * k, 0)).multiply(_r.makeRotationZ(-s * K1));
+    mech.segs.setMatrixAt(i * 3 + 1, _w.multiplyMatrices(_m, _sc));
+    _m.multiply(_r.makeTranslation(0, SEG * k, 0)).multiply(_r.makeRotationZ(-s * K2));
+    mech.segs.setMatrixAt(i * 3 + 2, _w.multiplyMatrices(_m, _sc));
+    _m.multiply(_r.makeTranslation(0, SEG * k, 0)).multiply(_r.makeRotationZ(-s * C));
     if (s < 0) _m.multiply(_flip); // claw curls toward the body on both sides
     mech.claws.setMatrixAt(i, _m);
   }
@@ -328,13 +447,28 @@ function applyMech(mech, pose, { t }) {
 }
 
 export function createIronSpider() {
-  let mech = null;
+  let mech = null, root = null;
+  const ik = Array.from({ length: ARM_COUNT }, () => ({ w: 0, target: new THREE.Vector3(), curl: 0, maxK: 1 }));
+  // barrier to grab (world point, copied: the caller reuses its vector)
+  const grab = { has: false, pos: new THREE.Vector3(), t: 0, fling: 9 };
   const m = createSpiderCharacter(IRON_LOOK, {
     defaults: MECH_DEFAULTS,
-    build(parts) { mech = addMechArms(parts); },
-    pose: mechPose,
-    apply(pose, ctx) { applyMech(mech, pose, ctx); },
+    build(parts) { mech = addMechArms(parts); root = parts.root; },
+    pose(state, P, ctx) { mechPose(state, P, ctx); grabPose(state, P, grab); },
+    apply(pose, ctx, state) {
+      aimArms(state, ctx, root, mech, grab, ik);
+      applyMech(mech, pose, ctx, ik);
+    },
   });
   m.root.name = 'ironspider';
-  return { root: m.root, setState: m.setState, update: m.update, setSpeed: m.setSpeed, hand: m.parts.handR };
+  function setGrabTarget(pos) {
+    if (pos) {
+      if (!grab.has) { grab.has = true; grab.t = 0; }
+      grab.pos.copy(pos);
+    } else if (grab.has) {
+      grab.has = false;
+      grab.fling = 0;
+    }
+  }
+  return { root: m.root, setState: m.setState, update: m.update, setSpeed: m.setSpeed, hand: m.parts.handR, setGrabTarget };
 }
