@@ -570,9 +570,9 @@ export function createSpiderCharacter(look, extras = {}) {
     [0.205, 0.24], [0.2, 0.31], [0.175, 0.37], [0.125, 0.42], [0.05, 0.455], [0, 0.465],
   ], { segments: 22, samples: 20, scaleZ: 0.8 });
   smoothNormals(boxify(torsoGeo, 3.2));
-  // the big baked textures arrive in bake() below; a 1-texel stand-in until then
-  const blank = canvasTexture(1, 1, (g) => { g.fillStyle = '#000'; g.fillRect(0, 0, 1, 1); });
-  const torsoMat = toonMaterial(0xffffff, { map: blank, ...SATIN, ...mo.torso });
+  // All textures are baked here at build time (main.js builds the models behind the loading
+  // screen): nothing may be baked later, in the middle of play.
+  const torsoMat = toonMaterial(0xffffff, { map: bakeTorso(torsoGeo, look), ...SATIN, ...mo.torso });
   const torso = mesh(torsoGeo, torsoMat);
   spine.add(torso);
 
@@ -587,26 +587,12 @@ export function createSpiderCharacter(look, extras = {}) {
     }
     smoothNormals(headGeo);
   }
+  const headMaps = bakeHead(headGeo, look);
   const headMat = toonMaterial(0xffffff, {
-    map: blank, emissive: look.lensGlow, emissiveMap: blank, ...SATIN, ...mo.head,
+    map: headMaps[0], emissive: look.lensGlow, emissiveMap: headMaps[1], ...SATIN, ...mo.head,
   });
-  // Iron Spider (look.lazy) is hidden at start: its textures are baked a little later, or
-  // the first time it is used, so the game starts faster.
-  let baked = false, headMaps = null, shockMaps = null;
-  function bake() {
-    if (baked) return;
-    baked = true;
-    torsoMat.map = bakeTorso(torsoGeo, look);
-    headMaps = bakeHead(headGeo, look);
-    [headMat.map, headMat.emissiveMap] = headMaps;
-  }
-  if (look.lazy) setTimeout(bake, 1500);
-  else {
-    bake();
-    // wide "shocked" lenses for the intro's scared state, baked a moment later (skipped
-    // if it is needed before that)
-    setTimeout(() => { shockMaps = bakeHead(headGeo, look, 1.3); }, 2500);
-  }
+  // wide "shocked" lenses for the intro's scared state (Iron Spider never gets scared)
+  const shockMaps = look.lazy ? null : bakeHead(headGeo, look, 1.3);
   const neck = new THREE.Group(); // head pivot at the bottom of the head, inside the shoulders
   neck.position.y = D.neckY;
   spine.add(neck);
@@ -702,7 +688,6 @@ export function createSpiderCharacter(look, extras = {}) {
   const ctx = { t: 0, st: 0, phase: 0, dt: 0, speed: CONFIG.startSpeed, land: 9, pop: 9 };
 
   function setState(name) {
-    bake();
     if (name === state) return;
     const prev = state;
     state = name;
@@ -781,7 +766,9 @@ export function createSpiderCharacter(look, extras = {}) {
   }
 
   update(0);
-  return { root, setState, update, setSpeed, parts };
+  // textures that are swapped in later (main.js uploads them to the GPU at start-up)
+  const textures = shockMaps || [];
+  return { root, setState, update, setSpeed, parts, textures };
 }
 
 // Run cycle speed (rad/s of the stride phase; one stride = 2 steps) from game speed:
@@ -1106,5 +1093,5 @@ function spiderPose(state, P, { t, st, phase }) {
 export function createSpiderman() {
   const m = createSpiderCharacter(SPIDER_LOOK);
   m.root.name = 'spiderman';
-  return { root: m.root, setState: m.setState, update: m.update, setSpeed: m.setSpeed, hand: m.parts.handR };
+  return { root: m.root, setState: m.setState, update: m.update, setSpeed: m.setSpeed, hand: m.parts.handR, textures: m.textures };
 }

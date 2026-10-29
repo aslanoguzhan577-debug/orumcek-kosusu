@@ -418,7 +418,7 @@ export function initFx(game) {
 
   const texts = [];
   for (let i = 0; i < 5; i++) {
-    const mat = new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false, fog: false });
+    const mat = new THREE.SpriteMaterial({ map: wordTex.pat, transparent: true, depthTest: false, depthWrite: false, fog: false });
     const sprite = new THREE.Sprite(mat);
     sprite.visible = false;
     sprite.renderOrder = 10;
@@ -1039,6 +1039,8 @@ export function initFx(game) {
       for (const t of texts) scene.remove(t.sprite);
       dom.root.remove();
     },
+    // all word textures, for the start-up warm-up (src/warmup.js)
+    textures: Object.values(wordTex),
     // for console testing
     _debug: { dbg, normal, glow, texts, dom, get ironActive() { return ironActive; }, get venomOn() { return venomOn; } },
   };

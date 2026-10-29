@@ -350,10 +350,11 @@ function updateHud() {
 }
 
 // ---------- frame loop ----------
-// first frame = everything (models, city, fx) has finished initialising: remove the loader
+// the loader stays until game.ready (src/warmup.js: shaders compiled, textures uploaded)
 function hideLoader() {
   const l = document.getElementById('loading');
   if (!l) return;
+  performance.mark('spidey-ready');
   l.classList.add('done');
   setTimeout(() => l.remove(), 400);
 }
@@ -361,7 +362,7 @@ function hideLoader() {
 let loaderHidden = false;
 function frame(now) {
   requestAnimationFrame(frame);
-  if (!loaderHidden) { loaderHidden = true; hideLoader(); }
+  if (!loaderHidden && game.ready) { loaderHidden = true; hideLoader(); }
   showScreen(wantScreen(now));
   if (current === 'hud') updateHud();
 }

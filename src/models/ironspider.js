@@ -184,7 +184,7 @@ const IRON_LOOK = {
     goldLine(g, bootPath, 6);
   },
   matOpts: { head: METAL, torso: METAL, arm: METAL, thigh: METAL, shin: METAL },
-  lazy: true,
+  lazy: true, // never "scared": no wide-lens texture is baked
 };
 
 // ------------------------------------------------------------------ mechanical arms

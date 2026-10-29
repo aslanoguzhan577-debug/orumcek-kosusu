@@ -79,6 +79,20 @@ export const CONFIG = {
   // --- Rendering ---
   render: {
     maxPixelRatio: 2,
+    // Adaptive resolution (src/quality.js): starts at min(devicePixelRatio, maxPixelRatio) and
+    // steps down through these values (only those below the start are used) while frames are slow.
+    adaptive: {
+      steps: [2, 1.5, 1.25, 1],
+      slowMs: 17.5,        // smoothed frame time above this for slowTime -> one step down
+      slowTime: 1.5,
+      fastMs: 11,          // below this for fastTime -> one step up
+      fastTime: 6,
+      probeTime: 30,       // 60 Hz screens never show < 11 ms: after this long without being
+                           // slow, try one step up anyway (a failed try locks probing out,
+                           // for longer each time)
+      lockTime: 30,        // no step up for this long after a step down (doubles on every repeat)
+      settle: 1,           // s ignored after a change (the resize itself costs a frame)
+    },
     skyColor: 0x8fd0ff,
     fogNear: 45,
     fogFar: 160,

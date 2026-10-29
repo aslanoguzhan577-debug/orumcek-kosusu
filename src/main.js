@@ -20,13 +20,16 @@ import { createIronSpider } from './models/ironspider.js';
 import { createVenom } from './models/venom.js';
 import { initCity } from './city.js';
 import { initFx } from './fx.js';
+import { createAdaptiveRatio } from './quality.js';
+import { warmUp } from './warmup.js';
 import './audio.js';
 import './ui.js';
 
 // ---------- renderer / scene ----------
 const canvas = document.getElementById('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, CONFIG.render.maxPixelRatio));
+const quality = createAdaptiveRatio(() => resize());
+renderer.setPixelRatio(quality.ratio);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
@@ -66,8 +69,8 @@ game.camera = camera;
 game.cameraRig = cameraRig;
 game.renderer = renderer;
 game.intro = new Intro({ scene, player, chaser, web, cameraRig });
-initCity(game);
-initFx(game);
+game.city = initCity(game);
+const fx = initFx(game);
 window.game = game; // handy in the console while developing
 
 // ---------- input ----------
@@ -83,7 +86,7 @@ events.addEventListener('intro', (e) => { if (e.detail.phase === 'end') input.re
 function resize() {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, CONFIG.render.maxPixelRatio));
+  renderer.setPixelRatio(quality.ratio);
   renderer.setSize(w, h, false);
   cameraRig.resize(w, h);
 }
@@ -96,6 +99,8 @@ cameraRig.snap(player);
 let last = performance.now();
 renderer.setAnimationLoop((now) => {
   const dt = Math.min(Math.max((now - last) / 1000, 0), CONFIG.dtCap);
+  // adaptive resolution: only real, running frames count (not loading, pause or a hidden tab)
+  if (game.ready && game.state.mode !== 'paused' && !document.hidden) quality.tick(now - last);
   last = now;
 
   game.update(dt);
@@ -110,3 +115,6 @@ renderer.setAnimationLoop((now) => {
 
   renderer.render(scene, camera);
 });
+
+// Start-up warm-up (behind the loading screen): shaders, textures, pooled objects.
+warmUp(game, [...fx.textures, ...(player.model.textures || [])]);

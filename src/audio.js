@@ -63,6 +63,10 @@ function ensureContext() {
   return ctx;
 }
 
+// Build the (suspended) context at start-up, behind the loading screen: creating it costs
+// 25-50 ms, which would otherwise land on the first tap. The first gesture only resumes it.
+export function prepareAudio() { ensureContext(); }
+
 function unlock() {
   if (!ensureContext()) return;
   if (!paused && ctx.state !== 'running') {
