@@ -28,47 +28,79 @@ export function getToonGradient() {
   return gradientMap;
 }
 
+// Soft "vinyl toy" ramp for the characters (opts.shade = 'soft'): still a toon terminator,
+// but a smooth one, so rounded vinyl forms read instead of flat bands.
+let softGradientMap = null;
+export function getSoftGradient() {
+  if (softGradientMap) return softGradientMap;
+  const n = 32;
+  const steps = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = i / (n - 1);
+    const s = THREE.MathUtils.smoothstep(x, 0.3, 0.72);
+    steps[i] = Math.round(255 * (0.4 + 0.6 * s));
+  }
+  softGradientMap = new THREE.DataTexture(steps, n, 1, THREE.RedFormat);
+  softGradientMap.minFilter = THREE.LinearFilter;
+  softGradientMap.magFilter = THREE.LinearFilter;
+  softGradientMap.generateMipmaps = false;
+  softGradientMap.needsUpdate = true;
+  return softGradientMap;
+}
+
 // opts: any MeshToonMaterial parameter (map, emissive, transparent, side ...), plus
-//   rim:   { color, threshold = 0.62, strength = 1 }   hard cartoon rim light on the silhouette
-//   gloss: { color, threshold = 0.94, strength = 1 }   hard "wet" highlight (fixed in view space)
+//   shade: 'soft'                                       smooth vinyl ramp instead of 3 hard steps
+//   rim:   { color, threshold = 0.62, strength = 1, soft = 0.03 }   rim light on the silhouette
+//   gloss: { color, threshold = 0.94, strength = 1, soft = 0.008 }  "wet" highlight (fixed in
+//          view space, upper left; mixes toward color, hard edge unless soft is raised)
+//   sheen: { color, threshold = 0.6, strength = 0.3, soft = 0.35 }  broad soft satin highlight
+//          (added, same direction as gloss)
 export function toonMaterial(color = 0xffffff, opts = {}) {
-  const { rim, gloss, ...rest } = opts;
+  const { rim, gloss, sheen, shade, ...rest } = opts;
   const mat = new THREE.MeshToonMaterial({
     color,
-    gradientMap: getToonGradient(),
+    gradientMap: shade === 'soft' ? getSoftGradient() : getToonGradient(),
     ...rest,
   });
-  if (rim || gloss) addToonFx(mat, rim, gloss);
+  if (rim || gloss || sheen) addToonFx(mat, rim, gloss, sheen);
   return mat;
 }
 
 const GLOSS_DIR = new THREE.Vector3(-0.45, 0.65, 0.62).normalize(); // view space, upper left
 
-function addToonFx(mat, rim, gloss) {
+function addToonFx(mat, rim, gloss, sheen) {
   const u = {
     fxRimColor: { value: new THREE.Color(rim ? rim.color ?? 0xffffff : 0x000000) },
     fxRimThreshold: { value: rim ? rim.threshold ?? 0.62 : 2 },
     fxRimStrength: { value: rim ? rim.strength ?? 1 : 0 },
+    fxRimSoft: { value: rim ? rim.soft ?? 0.03 : 0.03 },
     fxGlossColor: { value: new THREE.Color(gloss ? gloss.color ?? 0xffffff : 0xffffff) },
     fxGlossThreshold: { value: gloss ? gloss.threshold ?? 0.94 : 2 },
     fxGlossStrength: { value: gloss ? gloss.strength ?? 1 : 0 },
-    fxGlossDir: { value: GLOSS_DIR },
+    fxGlossSoft: { value: gloss ? gloss.soft ?? 0.008 : 0.008 },
+    fxGlossDir: { value: gloss && gloss.dir ? gloss.dir.clone().normalize() : GLOSS_DIR },
+    fxSheenColor: { value: new THREE.Color(sheen ? sheen.color ?? 0xffffff : 0x000000) },
+    fxSheenThreshold: { value: sheen ? sheen.threshold ?? 0.6 : 2 },
+    fxSheenStrength: { value: sheen ? sheen.strength ?? 0.3 : 0 },
+    fxSheenSoft: { value: sheen ? sheen.soft ?? 0.35 : 0.35 },
   };
   mat.userData.fx = u;
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, u);
     shader.fragmentShader =
-      'uniform vec3 fxRimColor;\nuniform float fxRimThreshold;\nuniform float fxRimStrength;\n' +
-      'uniform vec3 fxGlossColor;\nuniform float fxGlossThreshold;\nuniform float fxGlossStrength;\nuniform vec3 fxGlossDir;\n' +
+      'uniform vec3 fxRimColor;\nuniform float fxRimThreshold;\nuniform float fxRimStrength;\nuniform float fxRimSoft;\n' +
+      'uniform vec3 fxGlossColor;\nuniform float fxGlossThreshold;\nuniform float fxGlossStrength;\nuniform float fxGlossSoft;\nuniform vec3 fxGlossDir;\n' +
+      'uniform vec3 fxSheenColor;\nuniform float fxSheenThreshold;\nuniform float fxSheenStrength;\nuniform float fxSheenSoft;\n' +
       shader.fragmentShader.replace(
         '#include <opaque_fragment>',
         `{
           vec3 fxN = normalize( normal );
           vec3 fxV = normalize( vViewPosition );
           float fxR = 1.0 - clamp( dot( fxN, fxV ), 0.0, 1.0 );
-          outgoingLight += fxRimColor * fxRimStrength * smoothstep( fxRimThreshold, fxRimThreshold + 0.03, fxR );
+          outgoingLight += fxRimColor * fxRimStrength * smoothstep( fxRimThreshold, fxRimThreshold + fxRimSoft, fxR );
           float fxS = dot( fxN, normalize( fxGlossDir + fxV ) );
-          outgoingLight = mix( outgoingLight, fxGlossColor, fxGlossStrength * smoothstep( fxGlossThreshold, fxGlossThreshold + 0.008, fxS ) );
+          outgoingLight += fxSheenColor * fxSheenStrength * smoothstep( fxSheenThreshold, fxSheenThreshold + fxSheenSoft, fxS );
+          outgoingLight = mix( outgoingLight, fxGlossColor, fxGlossStrength * smoothstep( fxGlossThreshold, fxGlossThreshold + fxGlossSoft, fxS ) );
         }
         #include <opaque_fragment>`
       );
@@ -151,6 +183,162 @@ export function canvasTexture(w, h, draw) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   return tex;
+}
+
+// ---------- textures baked from the 3D surface ----------
+// A "grid" reads the surface point under any (u, v) of a lathe or a UV sphere, so a texture
+// can be painted in model space (front / back projections, directions on a head) instead of
+// in the stretched UV space: grid.at(u, v, p, n?) fills position p (and normal n if given).
+
+function makeGrid(geo, cols, rows, idx) {
+  const P = geo.attributes.position.array, N = geo.attributes.normal.array;
+  return {
+    at(u, v, p, n) {
+      const fu = Math.min(Math.max(u, 0), 1) * cols, fv = Math.min(Math.max(v, 0), 1) * rows;
+      const i0 = Math.min(Math.floor(fu), cols - 1), j0 = Math.min(Math.floor(fv), rows - 1);
+      const a = fu - i0, b = fv - j0;
+      const k00 = idx(i0, j0) * 3, k10 = idx(i0 + 1, j0) * 3, k01 = idx(i0, j0 + 1) * 3, k11 = idx(i0 + 1, j0 + 1) * 3;
+      const w00 = (1 - a) * (1 - b), w10 = a * (1 - b), w01 = (1 - a) * b, w11 = a * b;
+      p.set(
+        P[k00] * w00 + P[k10] * w10 + P[k01] * w01 + P[k11] * w11,
+        P[k00 + 1] * w00 + P[k10 + 1] * w10 + P[k01 + 1] * w01 + P[k11 + 1] * w11,
+        P[k00 + 2] * w00 + P[k10 + 2] * w10 + P[k01 + 2] * w01 + P[k11 + 2] * w11
+      );
+      if (n) {
+        n.set(
+          N[k00] * w00 + N[k10] * w10 + N[k01] * w01 + N[k11] * w11,
+          N[k00 + 1] * w00 + N[k10 + 1] * w10 + N[k01 + 1] * w01 + N[k11 + 1] * w11,
+          N[k00 + 2] * w00 + N[k10 + 2] * w10 + N[k01 + 2] * w01 + N[k11 + 2] * w11
+        ).normalize();
+      }
+      return p;
+    },
+  };
+}
+
+// grid for a (smooth)LatheGeometry, also after boxify / scaling / deforming its vertices
+export function latheGrid(geo) {
+  const S = geo.parameters.segments, n = geo.parameters.points.length;
+  return makeGrid(geo, S, n - 1, (i, j) => i * n + j);
+}
+
+// grid for a SphereGeometry (u around, v = 1 at the top), also after reshaping its vertices
+export function sphereGrid(geo) {
+  const W = geo.parameters.widthSegments, H = geo.parameters.heightSegments;
+  return makeGrid(geo, W, H, (i, j) => (H - j) * (W + 1) + i);
+}
+
+// Paints `count` textures of W x H texels at once: paint(outs, u, v) is called for every
+// texel (u, v as in the geometry's UVs) and fills outs[k] = [r, g, b] (0..255, start black).
+// Use a grid (latheGrid / sphereGrid) inside paint to find the surface point under (u, v).
+export function bakeTextures(W, H, paint, count = 1) {
+  const canvases = [], datas = [], imgs = [], outs = [];
+  for (let k = 0; k < count; k++) {
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const img = c.getContext('2d').createImageData(W, H);
+    canvases.push(c);
+    imgs.push(img);
+    datas.push(img.data);
+    outs.push([0, 0, 0]);
+  }
+  for (let y = 0; y < H; y++) {
+    const v = 1 - (y + 0.5) / H;
+    for (let x = 0; x < W; x++) {
+      for (let k = 0; k < count; k++) { const o = outs[k]; o[0] = 0; o[1] = 0; o[2] = 0; }
+      paint(outs, (x + 0.5) / W, v);
+      const i = (y * W + x) * 4;
+      for (let k = 0; k < count; k++) {
+        const d = datas[k], o = outs[k];
+        d[i] = o[0]; d[i + 1] = o[1]; d[i + 2] = o[2]; d[i + 3] = 255;
+      }
+    }
+  }
+  return canvases.map((c, k) => {
+    c.getContext('2d').putImageData(imgs[k], 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    return tex;
+  });
+}
+
+// unit direction from the centre of a UV sphere (pole up) for texture coordinates u, v
+export function sphereDir(u, v, out) {
+  const th = (1 - v) * Math.PI, ph = u * Math.PI * 2, st = Math.sin(th);
+  return out.set(-Math.cos(ph) * st, Math.cos(th), Math.sin(ph) * st);
+}
+
+// A flat picture drawn with the 2D canvas API over the rectangle x0..x1, y0..y1 (model
+// metres) of a front or back view, read back per texel by bakeTextures. draw(g, toPx, k):
+// toPx(x, y) gives canvas pixels for model-space x, y; k = pixels per metre.
+// view 'front' is seen from -Z (model +X on the left), 'back' from +Z.
+export function flatPicture(x0, x1, y0, y1, pxPerM, view, draw) {
+  const W = Math.round((x1 - x0) * pxPerM), H = Math.round((y1 - y0) * pxPerM);
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  const front = view === 'front';
+  const toPx = (x, y) => [front ? (x1 - x) * pxPerM : (x - x0) * pxPerM, (y1 - y) * pxPerM];
+  draw(g, toPx, pxPerM, W, H);
+  const data = g.getImageData(0, 0, W, H).data;
+  return {
+    // blends the picture at model point (x, y) over out (rgb 0..255); returns its alpha
+    over(x, y, out) {
+      const fx = (front ? (x1 - x) : (x - x0)) * pxPerM - 0.5, fy = (y1 - y) * pxPerM - 0.5;
+      const ix = Math.floor(fx), iy = Math.floor(fy);
+      if (ix < -1 || iy < -1 || ix >= W || iy >= H) return 0;
+      const ax = fx - ix, ay = fy - iy;
+      let r = 0, gg = 0, b = 0, a = 0;
+      for (let q = 0; q < 4; q++) {
+        const sx = ix + (q & 1), sy = iy + (q >> 1);
+        if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue;
+        const w = ((q & 1) ? ax : 1 - ax) * ((q >> 1) ? ay : 1 - ay);
+        const i = (sy * W + sx) * 4;
+        const al = data[i + 3] / 255 * w;
+        r += data[i] * al; gg += data[i + 1] * al; b += data[i + 2] * al; a += al;
+      }
+      if (a <= 0) return 0;
+      out[0] = out[0] * (1 - a) + r;
+      out[1] = out[1] * (1 - a) + gg;
+      out[2] = out[2] * (1 - a) + b;
+      return a;
+    },
+  };
+}
+
+// Tapered stroke along a quadratic curve p0 -> (c) -> p2 (pixels), widths w0 -> w1 (pixels).
+export function taperCurve(g, p0, c, p2, w0, w1, n = 28) {
+  const L = [], R = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = 1 - t;
+    const x = u * u * p0[0] + 2 * u * t * c[0] + t * t * p2[0];
+    const y = u * u * p0[1] + 2 * u * t * c[1] + t * t * p2[1];
+    let tx = 2 * u * (c[0] - p0[0]) + 2 * t * (p2[0] - c[0]);
+    let ty = 2 * u * (c[1] - p0[1]) + 2 * t * (p2[1] - c[1]);
+    const l = Math.hypot(tx, ty) || 1;
+    tx /= l; ty /= l;
+    const w = (w0 + (w1 - w0) * t) / 2;
+    L.push([x - ty * w, y + tx * w]);
+    R.push([x + ty * w, y - tx * w]);
+  }
+  g.beginPath();
+  g.moveTo(L[0][0], L[0][1]);
+  for (const p of L) g.lineTo(p[0], p[1]);
+  for (let i = R.length - 1; i >= 0; i--) g.lineTo(R[i][0], R[i][1]);
+  g.closePath();
+  g.fill();
+  g.beginPath();
+  g.arc(p0[0], p0[1], w0 / 2, 0, Math.PI * 2);
+  g.fill();
+}
+
+// '#rrggbb' -> [r, g, b]
+export function rgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 }
 
 // Smooth round body part: profile = [[radius, y], ...] from bottom to top (first and

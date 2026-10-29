@@ -13,6 +13,7 @@ Arkadaşlarla skor yarışı için yapılan, yayınlanmayacak bir hayran oyunu. 
 | Ağ doldurucu | Yoldan toplanır, şarjı 3'e doldurur (en fazla 3). |
 | Tren üstü | Gelen trenler hareketli. Bazı yerlerde sabit vagonlar ve rampalar var. |
 | Iron Spider | Yoldan toplanan çekirdekler cihazda birikir. Çift dokunuş (PC: Space) ile açılır, 20–25 sn sürer. Çarpınca etki hemen biter ve önündeki 2 saniyelik yoldaki tüm engeller parçalanır. |
+| Başlangıç klibi | Her koşunun başında ~5 sn, dokununca/tuşla geçilir (Temple Run / Subway Surfers girişi gibi). Kamera önden bakar; Spider-Man ağla sallana sallana Venom'dan kaçar, ağ atıcısı boşalır ("TIK TIK"), yere düşüp yuvarlanır, Venom yaklaşınca "AAA!" diye bağırıp koşmaya başlar, kamera arkaya döner ve oyun başlar. |
 | Iron Spider kolları | Zıplarken 4 altın kol yere vurup karakteri havaya iter. Kayarken önde yüksek bariyer varsa kollar ileri fırlar, bariyeri tutar ("ÇANK!") ve karakteri altından fırlatır gibi geçirir. Sadece görsel; oynanışı değiştirmez. |
 | Venom | Yandan sürtünme/küçük engel = tökezleme, Venom yaklaşır. Birkaç saniye içinde ikinci tökezleme = yakalanma. Önden çarpma = yakalanma. |
 | Görsel | Chibi (2–2,5 kafa boyu), toon gölgelendirme + kalın dış çizgi. Karakterler önce kodla, temel şekillerden. |
@@ -132,7 +133,8 @@ Aynı koda dokunan görevler aynı ajanda toplanır. Ajan bir görevi bitirince 
   - G3/G4: `src/models/spiderman.js`, `src/models/ironspider.js`, `src/models/venom.js`, `src/models/toon.js`
   - G5: `src/audio.js` · G7: `src/city.js` · G8: `src/chaser.js` · G9: `src/powerups/web.js` · G10: `src/powerups/ironspider.js` · G11: `src/fx.js` · G12: `src/ui.js`, `ui.css`
 - Model arayüzü: `createSpiderman()`, `createIronSpider()`, `createVenom()` → `{ root, setState(name), update(dt) }`. `root` orijini ayak hizasında, yüzü -Z'ye bakar, boyu yaklaşık `CONFIG.playerHeight`. Oyuncu durumları: `idle, run, jump, slide, web, stumble, caught`. Venom: `run, reach, catch`.
-- Olaylar: `src/events.js` → `events` (EventTarget) ve `emit(name, detail)`. İsimler: `start, pause, resume, gameover {score, coins, distance}, jump, land, slide, lane {dir}, coin {position}, stumble, crash {position}, caught, pickup {type}, web {from, to}, ironOn, ironOff, ironSave {positions}, ironGrab {position}, venomNear, venomFar`.
+- Olaylar: `src/events.js` → `events` (EventTarget) ve `emit(name, detail)`. İsimler: `start, pause, resume, gameover {score, coins, distance}, jump, land, slide, lane {dir}, coin {position}, stumble, crash {position}, caught, pickup {type}, web {from, to}, ironOn, ironOff, ironSave {positions}, ironGrab {position}, venomNear, venomFar, intro {phase}`. Klip aşamaları sırayla: `start, swing (her sallanışta), webEmpty, fall, roll, roar, scream, run, end` (`end` geçişte de gelir, `{skipped: true}` ile).
+- Klip için ek model durumları: oyuncu `swing, fall, roll, scared`; Venom `roar`. Klip sürerken `game.state.intro === true` (arayüz HUD'u gizler).
 - Iron Spider modeli ek olarak `setGrabTarget(worldPos | null)` sunar: oyun, kayarken önündeki yüksek bariyerin tutma noktasını her kare bildirir (yoksa `null`). Bariyer tam üstünden geçerken oyun `ironGrab {position}` yayınlar.
 - Oyun durumu (arayüz sadece okur): `game.state = { mode: 'menu'|'running'|'paused'|'over', score, coins, distance, speed, webCharges, ironCount, ironTime }`. API: `game.start()`, `game.pause()`, `game.resume()`, `game.restart()`.
 

@@ -1,6 +1,10 @@
-// spiderman.js — chibi Spider-Man, built from smooth primitives + canvas-painted textures.
+// spiderman.js — chibi Spider-Man as a Funko Pop vinyl figure: a big rounded-cube head
+// sitting straight on a small, stocky body (no neck), satin vinyl shading, clean colour
+// blocks. Modern suit: red head (smooth face, web lines only on the back), big white lenses
+// in thick black frames, navy body with a red chest panel / shoulders, white spider front
+// and back, red belt, red fists and red boots.
 //   createSpiderman() -> { root, setState(name), update(dt, speed?), setSpeed(v), hand }
-//   (hand: empty marker in the right mitten, where the web line starts; speed: game speed in
+//   (hand: empty marker in the right fist, where the web line starts; speed: game speed in
 //   m/s, optional, makes the run cadence faster - see runCadence)
 //   root origin at the feet, facing -Z, about CONFIG.playerHeight tall.
 //   States: idle, run, jump, slide, web, stumble, caught (blend ~0.12 s).
@@ -10,30 +14,32 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import {
-  toonMaterial, addOutline, canvasTexture, smoothLathe, facePatch, mergeGeos, smoothNormals, PoseBlend,
-  roundCube, boxify,
+  toonMaterial, addOutline, canvasTexture, smoothLathe, mergeGeos, smoothNormals, PoseBlend,
+  roundCube, boxify, latheGrid, sphereGrid, bakeTextures, sphereDir, flatPicture, rgb, taperCurve,
 } from './toon.js';
 
 // ------------------------------------------------------------------ proportions
-// Designed at 1.6 m and scaled to CONFIG.playerHeight. Funko-style: a big rounded-cube
-// head (≈ 45 % of the height) sitting straight on a compact boxy torso, no neck.
+// Designed at 1.6 m and scaled to CONFIG.playerHeight. Funko Pop: the head is ~46 % of the
+// height and about twice as wide as the shoulders; short thick limbs, big fists and boots.
 const DESIGN_H = 1.6;
 export const SPIDER_DIM = {
-  hipY: 0.36,          // hip joint height
-  hipX: 0.088,
-  thighLen: 0.15,      // hip -> knee
-  headR: 0.38,         // head "radius" (half width); half height = 0.95 x this
-  neckY: 0.54,         // head pivot above the hips (= bottom of the head, inside the shoulders)
-  headUp: 0.339,       // head centre above the pivot (top of head = 1.6 m)
-  shoulderX: 0.15,
-  shoulderY: 0.41,     // above the hips
-  elbowY: 0.16,        // elbow below the shoulder
+  hipY: 0.40,          // hip joint height
+  hipX: 0.11,
+  thighLen: 0.18,      // hip -> knee (knee 0.22 m above the floor)
+  headW: 0.43,         // head half width  (0.86 m)
+  headH: 0.365,        // head half height (0.73 m)
+  headD: 0.37,         // head half depth
+  neckY: 0.47,         // head pivot above the hips (= bottom of the head)
+  shoulderX: 0.215,
+  shoulderY: 0.34,     // above the hips
+  elbowY: 0.15,        // upper arm length
+  fistY: 0.17,         // elbow -> centre of the fist
 };
 const D = SPIDER_DIM;
+D.headUp = D.headH;    // head centre above the pivot (top of the head = 1.6 m)
 
-export const OUTLINE = 0.024;
+export const OUTLINE = 0.02;
 export const OUTLINE_COLOR = 0x1c1016;
-const LINE = '#16121c';
 
 // How much of the pose's head nod / tilt is used: the head sits on the shoulders, so it
 // only nods a little (big nods would open a gap under it).
@@ -42,61 +48,154 @@ const SPIN_Y = 0.8;      // flip / twist pivot above the feet
 const LAND_T = 0.2;     // landing squash after a jump (s)
 const POP_T = 0.18;     // stretch when popping up out of a slide (s)
 
-// Funko head: a rounded cube, a bit flatter front to back, chin slightly narrower.
-export function deformHead(v, R = D.headR) {
-  roundCube(v, 3);
-  v.x *= 1.0;
-  v.y *= 0.95;
-  v.z *= 0.92;
-  const t = v.y < 0 ? Math.min(1, -v.y / (R * 0.95)) : 0;
-  const f = 1 - 0.1 * t * t;
-  v.x *= f;
-  v.z *= f;
+// Funko head: a rounded cube (unit sphere point -> head surface, centred at the origin),
+// flat face, big soft corners, the chin a little narrower than the top.
+export function deformHead(v, W = D.headW, H = D.headH, Dp = D.headD, n = 4.6) {
+  v.normalize();
+  roundCube(v, n);
+  const t = v.y < 0 ? -v.y : 0;
+  const f = 1 - 0.09 * t * t;
+  v.x *= W * f;
+  v.y *= H;
+  v.z *= Dp * f;
   return v;
 }
 
 // ------------------------------------------------------------------ painting helpers
 
-// Web on a sphere whose UV pole faces forward: meridians (vertical lines) radiate from
-// the face centre (canvas top) and parallels (horizontal lines) make the rings.
-export function paintPolarWeb(g, W, H, { spokes = 16, rings = 15, color = LINE, width = 2.3 } = {}) {
+const smooth = THREE.MathUtils.smoothstep;
+
+// Web lines on the head: spokes radiating from a pole low on the back of the head plus
+// sagging rings, faded out toward the face (the figure's face is smooth). d = unit direction
+// from the head centre. Returns the line coverage 0..1.
+const WEB_POLE = new THREE.Vector3(0, -0.9, 0.44).normalize();
+const WEB_E1 = new THREE.Vector3(0, 1, 0).addScaledVector(WEB_POLE, -WEB_POLE.y).normalize(); // up the back
+const WEB_E2 = new THREE.Vector3().crossVectors(WEB_POLE, WEB_E1);
+export function headWeb(d, { spokes = 18, step = 0.22, width = 0.0105, sag = 0.3, frontFade = [-0.3, -0.06] } = {}) {
+  const fade = smooth(d.z, frontFade[0], frontFade[1]);
+  if (fade <= 0) return 0;
+  const c = THREE.MathUtils.clamp(d.dot(WEB_POLE), -1, 1);
+  const rho = Math.acos(c);
+  const psi = Math.atan2(d.dot(WEB_E2), d.dot(WEB_E1));
+  const sp = (Math.PI * 2) / spokes;
+  const q = psi / sp;
+  const fr = q - Math.floor(q);                       // 0..1 between two spokes
+  const dSpoke = Math.abs(fr - 0.5) < 0.5 ? Math.min(fr, 1 - fr) * sp * Math.sin(rho) : 0;
+  const r = rho + step * sag * Math.sin(Math.PI * fr); // rings sag toward the pole
+  const k = Math.max(1, Math.round(r / step));
+  const dRing = Math.abs(r - k * step);
+  const dist = Math.min(dSpoke, dRing);
+  const aa = 0.006;
+  return fade * (1 - smooth(dist, width - aa, width + aa));
+}
+
+// Spider emblem drawn in a flat picture. P(x, y) maps emblem metres (y up, centre of the
+// body at 0, 0) to pixels; k = pixels per metre. legs: per side [[root, ctrl, tip], ...]
+// (right side, x > 0), body: { top, bottom, w } in metres.
+export function paintSpiderEmblem(g, P, k, { legs, legW = [0.022, 0.009], head, body, color }) {
   g.fillStyle = color;
-  for (let k = 0; k < spokes; k++) {
-    const x = ((k + 0.5) / spokes) * W;
-    g.beginPath();
-    const left = [], right = [];
-    for (let y = 0; y <= H; y += 4) {
-      const s = Math.max(Math.sin((y / H) * Math.PI), 0.1);
-      const hw = Math.min(width * 0.5 / s, 12);
-      left.push([x - hw, y]);
-      right.push([x + hw, y]);
+  for (const s of [-1, 1]) {
+    for (const [a, c, b] of legs) {
+      taperCurve(g, P(a[0] * s, a[1]), P(c[0] * s, c[1]), P(b[0] * s, b[1]), legW[0] * k, legW[1] * k);
     }
-    g.moveTo(left[0][0], left[0][1]);
-    for (const p of left) g.lineTo(p[0], p[1]);
-    for (let i = right.length - 1; i >= 0; i--) g.lineTo(right[i][0], right[i][1]);
-    g.closePath();
-    g.fill();
   }
-  g.strokeStyle = color;
-  g.lineWidth = width;
-  const step = H / rings;
-  for (let i = 1; i < rings; i++) {
-    const y = i * step;
-    const sag = (y < H / 2 ? -1 : 1) * step * 0.3;
-    g.beginPath();
-    for (let k = 0; k <= spokes; k++) {
-      const x0 = ((k - 0.5) / spokes) * W;
-      const x1 = ((k + 0.5) / spokes) * W;
-      if (k === 0) g.moveTo(x0, y);
-      g.quadraticCurveTo((x0 + x1) / 2, y + sag, x1, y);
+  // head with two little horns on top
+  const { top, neck, w: hw } = head;
+  g.beginPath();
+  let p = P(0, top - 0.012); g.moveTo(p[0], p[1]);
+  for (const s of [1, -1]) {
+    const q = [P(s * hw * 0.45, top), P(s * hw * 0.75, top - 0.008), P(s * hw, top - 0.03), P(s * hw * 0.75, neck)];
+    if (s === 1) {
+      g.lineTo(q[0][0], q[0][1]);
+      g.quadraticCurveTo(q[1][0], q[1][1], q[2][0], q[2][1]);
+      g.quadraticCurveTo(P(hw, neck + 0.01)[0], P(hw, neck + 0.01)[1], q[3][0], q[3][1]);
+      p = P(0, neck - 0.006); g.lineTo(p[0], p[1]);
+    } else {
+      g.lineTo(q[3][0], q[3][1]);
+      g.quadraticCurveTo(P(-hw, neck + 0.01)[0], P(-hw, neck + 0.01)[1], q[2][0], q[2][1]);
+      g.quadraticCurveTo(q[1][0], q[1][1], q[0][0], q[0][1]);
     }
+  }
+  g.closePath();
+  g.fill();
+  // long abdomen: widest just under the neck, forked tip
+  const { top: bt, bottom: bb, w: bw } = body;
+  g.beginPath();
+  p = P(0, bt); g.moveTo(p[0], p[1]);
+  for (const s of [1, -1]) {
+    const c1 = P(s * bw * 1.15, bt - 0.01), m = P(s * bw, bt - (bt - bb) * 0.35);
+    const c2 = P(s * bw * 0.85, bb + (bt - bb) * 0.2), tip = P(s * bw * 0.32, bb);
+    if (s === 1) {
+      g.quadraticCurveTo(c1[0], c1[1], m[0], m[1]);
+      g.quadraticCurveTo(c2[0], c2[1], tip[0], tip[1]);
+      p = P(0, bb + 0.012); g.lineTo(p[0], p[1]);
+    } else {
+      g.lineTo(tip[0], tip[1]);
+      g.quadraticCurveTo(c2[0], c2[1], m[0], m[1]);
+      g.quadraticCurveTo(c1[0], c1[1], P(0, bt)[0], P(0, bt)[1]);
+    }
+  }
+  g.closePath();
+  g.fill();
+}
+
+// Big Spider-Man lenses (photo: rounded triangles, a sharp flick on the outer top corner, a
+// pointed inner corner by the nose, thick black frames with a thin groove).
+// E(X, Y): face coordinates (X = 1 at the side of the head, Y = 1 at the top) -> pixels.
+const EYE = {
+  F: [0.872, 0.576], t1: [0.70, 0.52], t2: [0.30, 0.28], I: [0.143, -0.116],
+  b1: [0.22, -0.30], b2: [0.42, -0.40], B: [0.592, -0.393],
+  b3: [0.76, -0.385], b4: [0.90, -0.24], O: [0.923, 0.029],
+  b5: [0.94, 0.25], b6: [0.92, 0.45],
+};
+export function eyePath(g, side, E) {
+  const P = (p) => E(p[0] * side, p[1]);
+  const seg = (a, b, c) => { const A = P(a), B = P(b), C = P(c); g.bezierCurveTo(A[0], A[1], B[0], B[1], C[0], C[1]); };
+  g.beginPath();
+  const f = P(EYE.F);
+  g.moveTo(f[0], f[1]);
+  seg(EYE.t1, EYE.t2, EYE.I);
+  seg(EYE.b1, EYE.b2, EYE.B);
+  seg(EYE.b3, EYE.b4, EYE.O);
+  seg(EYE.b5, EYE.b6, EYE.F);
+  g.closePath();
+}
+// frameW in face units (fraction of the head half width); scale = pixels per face unit (x)
+export function paintLenses(g, E, scale, { frame = '#111015', groove = '#34343c', lens = '#ffffff', lensShade = '#cfd3dc', frameW = 0.1, inner = null } = {}) {
+  g.lineJoin = 'round';
+  for (const side of [-1, 1]) {
+    eyePath(g, side, E);
+    g.fillStyle = frame;
+    g.fill();
+    g.save();
+    eyePath(g, side, E);
+    g.clip();
+    // lens: white, a soft grey shade under the top of the frame
+    const [x0, y0] = E(0.55 * side, 0.45), [x1, y1] = E(0.55 * side, -0.25);
+    const grd = g.createLinearGradient(x0, y0, x1, y1);
+    grd.addColorStop(0, lensShade);
+    grd.addColorStop(0.45, lens);
+    grd.addColorStop(1, lens);
+    g.fillStyle = grd;
+    g.fill();
+    if (inner) inner(g, side, E, scale);
+    const w = frameW * scale * 2;
+    g.strokeStyle = frame;
+    g.lineWidth = w;
     g.stroke();
+    g.strokeStyle = groove;
+    g.lineWidth = w * 0.63;
+    g.stroke();
+    g.strokeStyle = frame;
+    g.lineWidth = w * 0.55;
+    g.stroke();
+    g.restore();
   }
 }
 
-// Web radiating from a centre point (chest emblem / middle of the back).
-// toPx(xm, ym) converts metres around the centre to canvas pixels.
-export function paintRadialWeb(g, toPx, { spokes = 12, step = 0.05, maxR = 0.6, color = LINE, width = 2.2, rot = 0 } = {}) {
+// Web radiating from a centre point (yoke on the back). toPx(xm, ym) gives pixels for
+// metres around the centre.
+export function paintRadialWeb(g, toPx, { spokes = 12, step = 0.05, maxR = 0.6, color = '#3c0612', width = 2.2, rot = 0 } = {}) {
   g.strokeStyle = color;
   g.lineWidth = width;
   g.lineCap = 'round';
@@ -116,7 +215,7 @@ export function paintRadialWeb(g, toPx, { spokes = 12, step = 0.05, maxR = 0.6, 
       const a1 = rot + ((k + 1) / spokes) * Math.PI * 2;
       const am = (a0 + a1) / 2;
       const [x0, y0] = toPx(Math.cos(a0) * r, Math.sin(a0) * r);
-      const [xc, yc] = toPx(Math.cos(am) * r * 0.8, Math.sin(am) * r * 0.8);
+      const [xc, yc] = toPx(Math.cos(am) * r * 0.82, Math.sin(am) * r * 0.82);
       const [x1, y1] = toPx(Math.cos(a1) * r, Math.sin(a1) * r);
       if (k === 0) g.moveTo(x0, y0);
       g.quadraticCurveTo(xc, yc, x1, y1);
@@ -126,7 +225,7 @@ export function paintRadialWeb(g, toPx, { spokes = 12, step = 0.05, maxR = 0.6, 
 }
 
 // Grid web for limbs: lines along the limb + scalloped rings around it.
-export function paintWebGrid(g, x0, y0, x1, y1, { cols = 8, rows = 9, color = LINE, width = 2, sag = 0.3 } = {}) {
+export function paintWebGrid(g, x0, y0, x1, y1, { cols = 8, rows = 9, color = '#3c0612', width = 2, sag = 0.3 } = {}) {
   g.strokeStyle = color;
   g.lineWidth = width;
   const cw = (x1 - x0) / cols;
@@ -151,180 +250,173 @@ export function paintWebGrid(g, x0, y0, x1, y1, { cols = 8, rows = 9, color = LI
   }
 }
 
-// Spider emblem. Unit coordinates (y down), scaled by s metres through toPx.
-const SPIDER_LEGS = [
-  [[0.07, -0.13], [0.26, -0.40], [0.58, -0.50]],
-  [[0.09, -0.05], [0.40, -0.21], [0.68, -0.14]],
-  [[0.09, 0.05], [0.38, 0.16], [0.58, 0.44]],
-  [[0.07, 0.13], [0.24, 0.40], [0.30, 0.78]],
-];
-export function paintSpider(g, toPx, s, fill, outline, { leg = 0.085, edge = 3, bodyW = 0.11 } = {}) {
-  const ux = (x, y) => toPx(x * s, y * s);
-  const pxPerUnit = Math.abs(toPx(s, 0)[0] - toPx(0, 0)[0]);
-  const draw = (color, extra) => {
-    g.strokeStyle = color;
-    g.fillStyle = color;
-    g.lineCap = 'round';
-    g.lineJoin = 'round';
-    g.lineWidth = leg * pxPerUnit + extra * 2;
-    for (const side of [-1, 1]) {
-      for (const l of SPIDER_LEGS) {
-        g.beginPath();
-        const p0 = ux(l[0][0] * side, l[0][1]);
-        const p1 = ux(l[1][0] * side, l[1][1]);
-        const p2 = ux(l[2][0] * side, l[2][1]);
-        g.moveTo(p0[0], p0[1]);
-        g.quadraticCurveTo(p1[0], p1[1], p2[0], p2[1]);
-        g.stroke();
-      }
-    }
-    // head + long body
-    const head = ux(0, -0.17);
-    const body = ux(0, 0.07);
-    const hx = 0.075 * pxPerUnit + extra;
-    g.beginPath();
-    g.ellipse(head[0], head[1], hx, hx * 1.05 * Math.abs((toPx(0, s)[1] - toPx(0, 0)[1]) / pxPerUnit), 0, 0, Math.PI * 2);
-    g.fill();
-    const ry = Math.abs(toPx(0, s)[1] - toPx(0, 0)[1]);
-    g.beginPath();
-    g.ellipse(body[0], body[1], bodyW * pxPerUnit + extra, 0.25 * ry + extra, 0, 0, Math.PI * 2);
-    g.fill();
-  };
-  if (outline) draw(outline, edge);
-  draw(fill, 0);
-}
+// ------------------------------------------------------------------ the modern suit
 
-// Spider-Man eye lenses in face-patch space (radians; a = right, b = up).
-// eyesPatch() maps them onto a 512x256 canvas covering a∈[-1,1], b∈[-0.5,0.5].
-export const EYE_PATCH = { a0: -1, a1: 1, b0: -0.5, b1: 0.5 };
-export function eyePath(g, side, toPx) {
-  const P = (a, b) => toPx(a * side, b);
-  g.beginPath();
-  let p = P(0.06, -0.12); g.moveTo(p[0], p[1]);
-  let c1 = P(0.04, -0.03), c2 = P(0.05, 0.04); p = P(0.10, 0.09);
-  g.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], p[0], p[1]);
-  c1 = P(0.25, 0.20); c2 = P(0.42, 0.30); p = P(0.60, 0.31);
-  g.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], p[0], p[1]);
-  c1 = P(0.78, 0.31); c2 = P(0.80, 0.08); p = P(0.68, -0.06);
-  g.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], p[0], p[1]);
-  c1 = P(0.52, -0.22); c2 = P(0.22, -0.24); p = P(0.06, -0.12);
-  g.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], p[0], p[1]);
-  g.closePath();
-}
-export function paintEyes(g, W, H, { border = '#111015', lens = '#ffffff', borderW = 0.085, inner = null } = {}) {
-  const k = W / (EYE_PATCH.a1 - EYE_PATCH.a0);
-  const toPx = (a, b) => [(a - EYE_PATCH.a0) * k, (EYE_PATCH.b1 - b) * k];
-  g.clearRect(0, 0, W, H);
-  g.lineJoin = 'round';
-  for (const side of [-1, 1]) {
-    eyePath(g, side, toPx);
-    g.strokeStyle = border;
-    g.lineWidth = borderW * 2 * k;
-    g.stroke();
-    g.fillStyle = border;
-    g.fill();
-    g.save();
-    eyePath(g, side, toPx);
-    g.clip();
-    g.fillStyle = lens;
-    g.fill();
-    if (inner) inner(g, side, toPx, k);
-    g.restore();
-  }
-}
+const RED = '#ad1242';
+const NAVY = '#172142';
+const WEB = '#3a0613';
+const WHITE = '#f6f6f8';
 
-// ------------------------------------------------------------------ the classic paint job
+// Torso pictures, in torso metres (origin at the hips, y up). Shared numbers:
+export const TORSO = {
+  beltLo: 0.045, beltHi: 0.1,   // red waistband
+  armpit: 0.27,
+};
 
-const RED = '#d8202c';
-const RED_DARK = '#a3121e';
-const BLUE = '#1f4fc4';
+// PS4-style chest spider (photo 9): two leg pairs arching over the chest to the shoulders,
+// two long pairs reaching down to the belt, long forked abdomen.
+export const CHEST_SPIDER = {
+  legs: [
+    [[0.03, 0.085], [0.1, 0.165], [0.172, 0.1]],
+    [[0.035, 0.05], [0.12, 0.1], [0.18, 0.035]],
+    [[0.035, 0.02], [0.14, 0.0], [0.13, -0.15]],
+    [[0.03, -0.01], [0.085, -0.03], [0.085, -0.165]],
+  ],
+  legW: [0.024, 0.01],
+  head: { top: 0.115, neck: 0.055, w: 0.034 },
+  body: { top: 0.06, bottom: -0.105, w: 0.042 },
+};
+// smaller spider between the shoulder blades (photo 8): upper legs bend up, lower legs down
+export const BACK_SPIDER = {
+  legs: [
+    [[0.022, 0.055], [0.085, 0.035], [0.095, 0.125]],
+    [[0.028, 0.034], [0.115, 0.034], [0.12, 0.09]],
+    [[0.028, 0.0], [0.115, 0.0], [0.095, -0.145]],
+    [[0.022, -0.022], [0.07, -0.045], [0.056, -0.165]],
+  ],
+  legW: [0.019, 0.008],
+  head: { top: 0.078, neck: 0.04, w: 0.025 },
+  body: { top: 0.042, bottom: -0.09, w: 0.03 },
+};
 
 const SPIDER_LOOK = {
-  head(g, W, H) {
+  head: { color: RED, web: { color: WEB, opacity: 0.92 } },
+  face(g, E, s) { paintLenses(g, E, s); },
+  lensGlow: 0x8a8a8a,
+  torsoBase: NAVY,
+  torsoFront(g, P, k) {
+    const T = TORSO;
+    // red chest panel + yoke over the shoulders, navy wedges down the sides
     g.fillStyle = RED;
-    g.fillRect(0, 0, W, H);
-    paintPolarWeb(g, W, H);
-  },
-  eyes(g, W, H) {
-    paintEyes(g, W, H);
-  },
-  // info: { W, H, yToPx(y), C (circumference m), L (arc length m) }
-  torso(g, W, H, info) {
-    const { yToPx, C, L } = info;
-    const kx = W / C, ky = H / L;
-    g.fillStyle = RED;
-    g.fillRect(0, 0, W, H);
-    const chestY = yToPx(0.27);
-    // front web from the emblem, back web from between the shoulder blades
-    g.save();
-    g.beginPath(); g.rect(W * 0.25, 0, W * 0.5, H); g.clip();
-    paintRadialWeb(g, (x, y) => [W / 2 + x * kx, chestY + y * ky], { spokes: 12, step: 0.05, maxR: 0.75, rot: Math.PI / 12 });
-    g.restore();
-    for (const cx of [0, W]) {
-      g.save();
-      g.beginPath(); g.rect(cx === 0 ? 0 : W * 0.75, 0, W * 0.25, H); g.clip();
-      paintRadialWeb(g, (x, y) => [cx + x * kx, yToPx(0.25) + y * ky], { spokes: 12, step: 0.05, maxR: 0.75, rot: Math.PI / 12 });
-      g.restore();
-    }
-    // blue side panels (armpit -> waist) and blue below the belt (V at front and back)
-    const waist = yToPx(0.07);
-    const armpit = yToPx(0.33);
-    g.fillStyle = BLUE;
-    for (const u of [0.25, 0.75]) {
-      const x = u * W;
-      g.beginPath();
-      g.moveTo(x - 0.015 * kx, armpit);
-      g.quadraticCurveTo(x - 0.06 * kx, (armpit + waist) / 2, x - 0.11 * kx, waist + 2);
-      g.lineTo(x + 0.11 * kx, waist + 2);
-      g.quadraticCurveTo(x + 0.06 * kx, (armpit + waist) / 2, x + 0.015 * kx, armpit);
-      g.closePath();
-      g.fill();
-    }
     g.beginPath();
-    g.moveTo(0, waist + 0.05 * ky);
-    g.lineTo(W * 0.25, waist);
-    g.lineTo(W * 0.5, waist + 0.06 * ky);
-    g.lineTo(W * 0.75, waist);
-    g.lineTo(W, waist + 0.05 * ky);
-    g.lineTo(W, H);
-    g.lineTo(0, H);
+    let p = P(0.32, 0.7); g.moveTo(p[0], p[1]);
+    p = P(0.32, T.armpit + 0.02); g.lineTo(p[0], p[1]);
+    let c = P(0.215, T.armpit + 0.01); p = P(0.18, T.armpit - 0.01); g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+    c = P(0.162, 0.17); p = P(0.132, T.beltHi); g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+    p = P(-0.132, T.beltHi); g.lineTo(p[0], p[1]);
+    c = P(-0.162, 0.17); p = P(-0.18, T.armpit - 0.01); g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+    c = P(-0.215, T.armpit + 0.01); p = P(-0.32, T.armpit + 0.02); g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+    p = P(-0.32, 0.7); g.lineTo(p[0], p[1]);
     g.closePath();
     g.fill();
-    // white spider: big on the chest, smaller on the back
-    paintSpider(g, (x, y) => [W / 2 + x * kx, chestY + y * ky], 0.2, '#ffffff', '#15121a', { edge: 2.5 });
-    for (const cx of [0, W]) {
-      paintSpider(g, (x, y) => [cx + x * kx, yToPx(0.25) + y * ky], 0.17, '#ffffff', '#15121a', { edge: 2.5 });
-    }
-  },
-  arm(g, W, H, info) {
-    g.fillStyle = RED;
-    g.fillRect(0, 0, W, H);
-    paintWebGrid(g, 0, 0, W, H, { cols: 8, rows: 10, sag: 0.35 });
-    // blue stripe on the inside of the upper arm (u = 0.75 faces the body)
-    const elbow = info.yToPx(-0.19);
-    g.fillStyle = BLUE;
+    // belt + the red V below it
     g.beginPath();
-    g.moveTo(W * 0.62, 0);
-    g.lineTo(W * 0.88, 0);
-    g.quadraticCurveTo(W * 0.84, elbow * 0.7, W * 0.75, elbow);
-    g.quadraticCurveTo(W * 0.66, elbow * 0.7, W * 0.62, 0);
+    p = P(0.32, T.beltHi); g.moveTo(p[0], p[1]);
+    p = P(-0.32, T.beltHi); g.lineTo(p[0], p[1]);
+    p = P(-0.32, T.beltLo); g.lineTo(p[0], p[1]);
+    p = P(-0.16, T.beltLo); g.lineTo(p[0], p[1]);
+    c = P(-0.06, T.beltLo - 0.03); p = P(0, T.beltLo - 0.075); g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+    c = P(0.06, T.beltLo - 0.03); p = P(0.16, T.beltLo); g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+    p = P(0.32, T.beltLo); g.lineTo(p[0], p[1]);
+    g.closePath();
     g.fill();
+    // sculpted edge of the waistband
+    g.strokeStyle = 'rgba(70, 4, 18, 0.55)';
+    g.lineWidth = 0.004 * k;
+    g.beginPath();
+    p = P(0.32, T.beltLo); g.moveTo(p[0], p[1]);
+    p = P(-0.32, T.beltLo); g.lineTo(p[0], p[1]);
+    g.stroke();
+    paintSpiderEmblem(g, (x, y) => P(x, y + 0.27), k, { ...CHEST_SPIDER, color: WHITE });
+  },
+  torsoBack(g, P, k) {
+    const T = TORSO;
+    // red yoke across the top of the back and over the shoulders, with web lines
+    const yoke = () => {
+      g.beginPath();
+      let p = P(-0.32, 0.7); g.moveTo(p[0], p[1]);
+      p = P(-0.32, T.armpit + 0.02); g.lineTo(p[0], p[1]);
+      let c = P(-0.17, T.armpit + 0.03); p = P(-0.1, 0.355); g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+      c = P(0, 0.33); p = P(0.1, 0.355); g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+      c = P(0.17, T.armpit + 0.03); p = P(0.32, T.armpit + 0.02); g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+      p = P(0.32, 0.7); g.lineTo(p[0], p[1]);
+      g.closePath();
+    };
+    yoke();
+    g.fillStyle = RED;
+    g.fill();
+    g.save();
+    yoke();
+    g.clip();
+    paintRadialWeb(g, (x, y) => P(x, 0.47 + y), { spokes: 14, step: 0.045, maxR: 0.4, width: 0.0035 * k, rot: Math.PI / 14 });
+    g.restore();
+    // belt with web lines, dipping a little at the middle of the back
+    const belt = () => {
+      g.beginPath();
+      let p = P(-0.32, T.beltHi); g.moveTo(p[0], p[1]);
+      p = P(0.32, T.beltHi); g.lineTo(p[0], p[1]);
+      p = P(0.32, T.beltLo); g.lineTo(p[0], p[1]);
+      const c = P(0, T.beltLo - 0.025); p = P(-0.32, T.beltLo);
+      g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+      g.closePath();
+    };
+    belt();
+    g.fillStyle = RED;
+    g.fill();
+    g.save();
+    belt();
+    g.clip();
+    const [bx0, by0] = P(-0.32, T.beltHi), [bx1, by1] = P(0.32, T.beltLo - 0.03);
+    paintWebGrid(g, bx0, by0, bx1, by1, { cols: 18, rows: 2, width: 0.0035 * k, color: WEB, sag: 0.35 });
+    g.restore();
+    paintSpiderEmblem(g, (x, y) => P(x, y + 0.27), k, { ...BACK_SPIDER, color: WHITE });
+  },
+  // limbs are painted in lathe space: u around (0.25 = outside of the limb), y from info.yToPx
+  arm(g, W, H, info) {
+    g.fillStyle = NAVY;
+    g.fillRect(0, 0, W, H);
+    // red shoulder cap (seen from the front and the back) and a red stripe down the outside
+    const cap = info.yToPx(0.0);
+    g.fillStyle = RED;
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(W, 0);
+    for (let x = W; x >= 0; x -= 4) {
+      const f = Math.cos(((x / W) - 0.25) * Math.PI * 2); // 1 on the outside
+      g.lineTo(x, cap + (0.045 * Math.max(0, f) - 0.02 * Math.max(0, -f)) * info.ky);
+    }
+    g.closePath();
+    g.fill();
+    g.fillRect(W * 0.19, 0, W * 0.12, H);
+  },
+  fore(g, W, H, info) {
+    g.fillStyle = NAVY;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = RED;
+    g.fillRect(W * 0.19, 0, W * 0.12, H);
+    // glove cuff (the fist below uses the bottom rows)
+    const cuff = info.yToPx(-0.085);
+    g.fillRect(0, cuff, W, H - cuff);
   },
   thigh(g, W, H) {
-    g.fillStyle = BLUE;
+    g.fillStyle = NAVY;
     g.fillRect(0, 0, W, H);
+    g.fillStyle = RED;
+    g.fillRect(W * 0.235, 0, W * 0.03, H); // thin seam stripe on the outside
   },
   shin(g, W, H, info) {
-    g.fillStyle = BLUE;
+    g.fillStyle = NAVY;
     g.fillRect(0, 0, W, H);
-    // red boot, its top peaks at the front of the shin (u = 0.5)
-    const top = info.yToPx(-0.07);
+    g.fillStyle = RED;
+    g.fillRect(W * 0.235, 0, W * 0.03, H);
+    // red boot up to just under the knee, its top dips a little at the back
+    const top = info.yToPx(-0.03);
     g.save();
     g.beginPath();
-    g.moveTo(0, top + 14);
-    for (let x = 0; x <= W; x += 8) {
-      const f = Math.cos(((x / W) - 0.5) * Math.PI * 2);
-      g.lineTo(x, top + 14 - Math.max(0, f) * 26);
+    g.moveTo(0, top);
+    for (let x = 0; x <= W; x += 4) {
+      const f = Math.cos((x / W) * Math.PI * 2); // 1 at the back (u = 0)
+      g.lineTo(x, top + Math.max(0, f) * 0.02 * info.ky);
     }
     g.lineTo(W, H);
     g.lineTo(0, H);
@@ -332,11 +424,18 @@ const SPIDER_LOOK = {
     g.fillStyle = RED;
     g.fill();
     g.clip();
-    paintWebGrid(g, 0, top - 30, W, H, { cols: 8, rows: 7, sag: 0.35 });
+    paintWebGrid(g, 0, top, W, info.yToPx(-0.19), { cols: 10, rows: 5, sag: 0.35, width: 2.4, color: WEB });
     g.restore();
   },
-  matOpts: { head: { gloss: { color: 0xff9c9c, threshold: 0.985, strength: 0.55 } } },
-  eyeGlow: null,
+  matOpts: {},
+};
+
+// Satin vinyl: soft toon ramp, a broad soft sheen and a faint highlight.
+export const SATIN = {
+  shade: 'soft',
+  sheen: { color: 0xffffff, threshold: 0.72, strength: 0.09, soft: 0.28 },
+  gloss: { color: 0xffffff, threshold: 0.985, strength: 0.25, soft: 0.012 },
+  rim: { color: 0xffffff, threshold: 0.62, strength: 0.05, soft: 0.3 },
 };
 
 // ------------------------------------------------------------------ body builder
@@ -347,18 +446,92 @@ function mesh(geo, mat, outline = OUTLINE) {
   return m;
 }
 
-function texMat(paint, w, h, info, matOpts) {
-  const map = canvasTexture(w, h, (g, W, H) => paint(g, W, H, info && { ...info, W, H }));
-  return toonMaterial(0xffffff, { map, ...matOpts });
+// left-side copy of a limb: mirrored, so u = 0.25 is the outside on both sides
+function mirrorX(geo) {
+  const g = geo.clone();
+  g.scale(-1, 1, 1);
+  const idx = g.index.array;
+  for (let i = 0; i < idx.length; i += 3) {
+    const t = idx[i + 1];
+    idx[i + 1] = idx[i + 2];
+    idx[i + 2] = t;
+  }
+  g.index.needsUpdate = true;
+  return g;
 }
 
-function infoFor(geo, C) {
-  const H = 256;
+function infoFor(geo, H) {
   return {
     yToPx: (y) => (1 - geo.userData.vOfY(y)) * H,
-    C,
-    L: geo.userData.arcLength,
+    ky: H / geo.userData.arcLength,
   };
+}
+
+function limbMat(paint, geo, w, h, matOpts, yShift = 0) {
+  const info = infoFor(geo, h);
+  const map = canvasTexture(w, h, (g, W, H) => paint(g, W, H, { ...info, yToPx: (y) => info.yToPx(y - yShift) }));
+  return toonMaterial(0xffffff, { map, ...SATIN, ...matOpts });
+}
+
+// rounded-cube blob (fist, boot), its UVs squeezed into a strip of the limb texture
+function blob(r, n, sx, sy, sz, uvV0, uvV1) {
+  const geo = new THREE.SphereGeometry(1, 14, 10);
+  const p = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    roundCube(v.fromBufferAttribute(p, i), n);
+    p.setXYZ(i, v.x * sx, v.y * sy, v.z * sz);
+  }
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setY(i, uvV0 + uv.getY(i) * (uvV1 - uvV0));
+  smoothNormals(geo);
+  return geo;
+}
+
+// Head texture (colour + lens glow mask), painted from directions on the head and from a
+// flat front picture of the face.
+function bakeHead(headGeo, look) {
+  const W = D.headW, H = D.headH;
+  const face = flatPicture(-W * 1.1, W * 1.1, -H * 1.1, H * 1.1, 1000, 'front', (g, toPx) => {
+    look.face(g, (X, Y) => toPx(X * W, Y * H), W * 1000);
+  });
+  const base = rgb(look.head.color);
+  const web = look.head.web;
+  const line = web ? rgb(web.color) : null;
+  const d = new THREE.Vector3(), p = new THREE.Vector3();
+  const grid = sphereGrid(headGeo);
+  const tmp = [0, 0, 0];
+  return bakeTextures(1024, 512, ([col, glow], u, v) => {
+    col[0] = base[0]; col[1] = base[1]; col[2] = base[2];
+    sphereDir(u, v, d);
+    if (web) {
+      const a = headWeb(d, web) * (web.opacity ?? 1);
+      if (a > 0) for (let i = 0; i < 3; i++) col[i] += (line[i] - col[i]) * a;
+    }
+    if (d.z < -0.05) {
+      grid.at(u, v, p);
+      tmp[0] = 0; tmp[1] = 0; tmp[2] = 0;
+      const a = face.over(p.x, p.y, tmp);
+      if (a > 0) {
+        for (let i = 0; i < 3; i++) col[i] = col[i] * (1 - a) + tmp[i];
+        const lum = (tmp[0] + tmp[1] + tmp[2]) / (3 * a);
+        if (lum > 120) for (let i = 0; i < 3; i++) glow[i] = tmp[i];
+      }
+    }
+  }, 2);
+}
+
+function bakeTorso(torsoGeo, look) {
+  const k = 900;
+  const front = flatPicture(-0.27, 0.27, -0.12, 0.5, k, 'front', (g, toPx) => look.torsoFront(g, toPx, k));
+  const back = flatPicture(-0.27, 0.27, -0.12, 0.5, k, 'back', (g, toPx) => look.torsoBack(g, toPx, k));
+  const base = rgb(look.torsoBase);
+  const grid = latheGrid(torsoGeo), p = new THREE.Vector3();
+  return bakeTextures(512, 256, ([col], u, v) => {
+    col[0] = base[0]; col[1] = base[1]; col[2] = base[2];
+    grid.at(u, v, p);
+    (p.z < 0 ? front : back).over(p.x, p.y, col);
+  })[0];
 }
 
 // look: paint functions + material options (see SPIDER_LOOK).
@@ -384,18 +557,20 @@ export function createSpiderCharacter(look, extras = {}) {
   pelvis.add(spine);
   const mo = look.matOpts || {};
 
-  // --- torso: compact rounded box; its top reaches up inside the head (no neck)
+  // --- torso: compact rounded box with broad shoulders; its top reaches up inside the head
   const torsoGeo = smoothLathe([
-    [0, -0.08], [0.12, -0.07], [0.165, -0.02], [0.172, 0.1], [0.17, 0.25],
-    [0.166, 0.4], [0.142, 0.5], [0.08, 0.56], [0, 0.575],
-  ], { segments: 20, samples: 18, scaleZ: 0.82 });
-  smoothNormals(boxify(torsoGeo, 3.5));
-  const torso = mesh(torsoGeo, texMat(look.torso, 512, 256, infoFor(torsoGeo, 1.05), mo.torso));
+    [0, -0.08], [0.12, -0.072], [0.18, -0.04], [0.196, 0.02], [0.186, 0.085], [0.192, 0.15],
+    [0.205, 0.24], [0.2, 0.31], [0.175, 0.37], [0.125, 0.42], [0.05, 0.455], [0, 0.465],
+  ], { segments: 22, samples: 20, scaleZ: 0.8 });
+  smoothNormals(boxify(torsoGeo, 3.2));
+  // the big baked textures arrive in bake() below; a 1-texel stand-in until then
+  const blank = canvasTexture(1, 1, (g) => { g.fillStyle = '#000'; g.fillRect(0, 0, 1, 1); });
+  const torsoMat = toonMaterial(0xffffff, { map: blank, ...SATIN, ...mo.torso });
+  const torso = mesh(torsoGeo, torsoMat);
   spine.add(torso);
 
-  // --- head (UV pole turned to face forward, so the web radiates from the face)
-  const headGeo = new THREE.SphereGeometry(D.headR, 28, 18);
-  headGeo.rotateX(-Math.PI / 2);
+  // --- head: Funko rounded cube, eyes baked into its texture
+  const headGeo = new THREE.SphereGeometry(1, 40, 28);
   {
     const p = headGeo.attributes.position;
     const v = new THREE.Vector3();
@@ -405,45 +580,46 @@ export function createSpiderCharacter(look, extras = {}) {
     }
     smoothNormals(headGeo);
   }
+  const headMat = toonMaterial(0xffffff, {
+    map: blank, emissive: look.lensGlow, emissiveMap: blank, ...SATIN, ...mo.head,
+  });
+  // Iron Spider (look.lazy) is hidden at start: its textures are baked a little later, or
+  // the first time it is used, so the game starts faster.
+  let baked = false;
+  function bake() {
+    if (baked) return;
+    baked = true;
+    torsoMat.map = bakeTorso(torsoGeo, look);
+    [headMat.map, headMat.emissiveMap] = bakeHead(headGeo, look);
+  }
+  if (look.lazy) setTimeout(bake, 1500);
+  else bake();
   const neck = new THREE.Group(); // head pivot at the bottom of the head, inside the shoulders
   neck.position.y = D.neckY;
   spine.add(neck);
   const head = new THREE.Group();
   neck.add(head);
-  const headMesh = mesh(headGeo, texMat(look.head, 512, 256, null, mo.head), OUTLINE * 1.15);
+  const headMesh = mesh(headGeo, headMat, OUTLINE * 1.2);
   headMesh.position.y = D.headUp;
   head.add(headMesh);
 
-  const eyeTex = canvasTexture(512, 256, look.eyes);
-  const eyeMat = toonMaterial(0xffffff, {
-    map: eyeTex, alphaTest: 0.5,
-    emissive: look.eyeGlow ?? 0x8a8a8a, emissiveMap: eyeTex, emissiveIntensity: look.eyeGlow ? 1 : 1,
-    ...(mo.eyes || {}),
-  });
-  const eyes = new THREE.Mesh(
-    // patch shifted 0.1 rad down: the eyes sit a touch low on the face
-    facePatch(D.headR, EYE_PATCH.a0, EYE_PATCH.a1, EYE_PATCH.b0 - 0.1, EYE_PATCH.b1 - 0.1, 0.006, { segX: 18, segY: 9, deform: deformHead }),
-    eyeMat
-  );
-  eyes.position.y = D.headUp;
-  head.add(eyes);
-
-  // --- arms: upper arm (pivot at the shoulder) + forearm with the mitten hand (pivot at
-  // the elbow). One paint job covers the whole arm: arm-space y is measured from the shoulder.
+  // --- arms: upper arm with the round shoulder (pivot at the shoulder) + forearm with a big
+  // fist (pivot at the elbow). Arm-space y is measured from the shoulder for the paint.
   const upperGeo = smoothLathe([
-    [0, -D.elbowY - 0.045], [0.045, -D.elbowY - 0.03], [0.049, -D.elbowY], [0.05, -0.08],
-    [0.057, 0], [0.05, 0.03], [0, 0.055],
-  ], { segments: 12, samples: 12 });
-  const foreGeo = smoothLathe([
-    [0, -0.23], [0.056, -0.212], [0.072, -0.162], [0.06, -0.112], [0.046, -0.065],
-    [0.047, 0], [0.042, 0.03], [0, 0.045],
-  ], { segments: 12, samples: 14 });
-  const upperMat = texMat(look.arm, 256, 256, infoFor(upperGeo, 0.35), mo.arm);
-  const foreInfo = infoFor(foreGeo, 0.35);
-  const foreMat = texMat(look.arm, 256, 256, { ...foreInfo, yToPx: (y) => foreInfo.yToPx(y + D.elbowY) }, mo.arm);
-  // left side turned half round so the inside of the arm faces the body
-  const upperGeoL = upperGeo.clone().rotateY(Math.PI);
-  const foreGeoL = foreGeo.clone().rotateY(Math.PI);
+    [0, -D.elbowY - 0.02], [0.054, -D.elbowY - 0.008], [0.06, -D.elbowY + 0.03], [0.066, -0.06],
+    [0.074, -0.01], [0.076, 0.02], [0.06, 0.062], [0, 0.077],
+  ], { segments: 14, samples: 14 });
+  smoothNormals(upperGeo);
+  const foreLathe = smoothLathe([
+    [0, -0.12], [0.05, -0.112], [0.056, -0.07], [0.06, -0.02], [0.056, 0.025], [0, 0.045],
+  ], { segments: 14, samples: 12 });
+  const fist = blob(1, 2.8, 0.07, 0.074, 0.074, 0.004, 0.03);
+  fist.translate(0, -D.fistY, -0.006);
+  const foreGeo = mergeGeos([foreLathe, fist]);
+  const upperMat = limbMat(look.arm, upperGeo, 256, 256, mo.arm);
+  const foreMat = limbMat(look.fore, foreLathe, 256, 256, mo.arm);
+  const upperGeoL = mirrorX(upperGeo);
+  const foreGeoL = mirrorX(foreGeo);
   function arm(side) {
     const shoulder = new THREE.Group();
     shoulder.position.set(side * D.shoulderX, D.shoulderY, 0);
@@ -459,34 +635,36 @@ export function createSpiderCharacter(look, extras = {}) {
   const armR = arm(1);
   const shoulderL = armL.shoulder;
   const shoulderR = armR.shoulder;
-  // empty marker in the right mitten: where the web line starts (G9)
+  // empty marker in the right fist: where the web line starts (G9)
   const handR = new THREE.Object3D();
-  handR.position.y = -0.19;
+  handR.position.y = -D.fistY;
   armR.elbow.add(handR);
 
-  // --- legs: thigh + shin with a little foot
+  // --- legs: thick thigh + shin with a big rounded boot
   const thighGeo = smoothLathe([
-    [0, -0.205], [0.05, -0.19], [0.072, -0.15], [0.082, -0.08], [0.088, 0], [0.07, 0.04], [0, 0.06],
-  ], { segments: 12, samples: 12 });
+    [0, -0.2], [0.076, -0.19], [0.086, -0.15], [0.094, -0.07], [0.098, 0], [0.078, 0.05], [0, 0.07],
+  ], { segments: 14, samples: 12 });
+  smoothNormals(thighGeo);
+  const kneeY = D.hipY - D.thighLen;
   const shinLathe = smoothLathe([
-    [0, -0.17], [0.055, -0.16], [0.062, -0.12], [0.067, -0.05], [0.07, 0.0], [0.05, 0.035], [0, 0.045],
-  ], { segments: 12, samples: 12 });
-  const shinInfo = infoFor(shinLathe, 0.4);
-  const foot = new THREE.SphereGeometry(1, 12, 8);
-  foot.scale(0.07, 0.048, 0.105);
-  foot.translate(0, -0.163, -0.035);
-  { const uv = foot.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) * 0.12); }
-  const shinGeo = mergeGeos([shinLathe, foot]);
-  const thighMat = texMat(look.thigh, 128, 128, null, mo.thigh);
-  const shinMat = texMat(look.shin, 256, 256, shinInfo, mo.shin);
+    [0, -kneeY + 0.02], [0.084, -kneeY + 0.03], [0.092, -0.15], [0.088, -0.08], [0.083, -0.02],
+    [0.08, 0.02], [0.055, 0.05], [0, 0.065],
+  ], { segments: 14, samples: 14 });
+  const boot = blob(1, 2.6, 0.094, 0.06, 0.142, 0.004, 0.03);
+  boot.translate(0, -kneeY + 0.06, -0.045);
+  const shinGeo = mergeGeos([shinLathe, boot]);
+  const thighMat = limbMat(look.thigh, thighGeo, 128, 128, mo.thigh);
+  const shinMat = limbMat(look.shin, shinLathe, 256, 256, mo.shin);
+  const thighGeoL = mirrorX(thighGeo);
+  const shinGeoL = mirrorX(shinGeo);
 
   function leg(side) {
     const hip = new THREE.Group();
     hip.position.set(side * D.hipX, 0, 0);
-    hip.add(mesh(thighGeo, thighMat, OUTLINE * 0.9));
+    hip.add(mesh(side < 0 ? thighGeoL : thighGeo, thighMat, OUTLINE * 0.9));
     const knee = new THREE.Group();
     knee.position.y = -D.thighLen;
-    knee.add(mesh(shinGeo, shinMat, OUTLINE * 0.9));
+    knee.add(mesh(side < 0 ? shinGeoL : shinGeo, shinMat, OUTLINE * 0.9));
     hip.add(knee);
     pelvis.add(hip);
     return { hip, knee };
@@ -494,7 +672,7 @@ export function createSpiderCharacter(look, extras = {}) {
   const legL = leg(-1);
   const legR = leg(1);
 
-  const parts = { root, scaler, pelvis, spine, neck, head, headMesh, eyes, torso, shoulderL, shoulderR, armL, armR, handR, legL, legR };
+  const parts = { root, scaler, pelvis, spine, neck, head, headMesh, torso, shoulderL, shoulderR, armL, armR, handR, legL, legR };
   if (extras.build) extras.build(parts);
 
   // ---------------------------------------------------------------- animation
@@ -502,8 +680,8 @@ export function createSpiderCharacter(look, extras = {}) {
     pelvisX: 0, pelvisY: 0, pelvisZ: 0, pelvisRX: 0, pelvisRY: 0, pelvisRZ: 0,
     spineRX: 0, spineRY: 0, spineRZ: 0, squash: 1, rootSquash: 1, flip: 0, twist: 0,
     headRX: 0, headRY: 0, headRZ: 0,
-    armLX: 0, armLY: 0, armLZ: -0.12, armRX: 0, armRY: 0, armRZ: 0.12, elbowL: 0.12, elbowR: 0.12,
-    legLX: 0, legLZ: 0, legRX: 0, legRZ: 0, kneeL: 0, kneeR: 0,
+    armLX: 0, armLY: 0, armLZ: -0.2, armRX: 0, armRY: 0, armRZ: 0.2, elbowL: 0.15, elbowR: 0.15,
+    legLX: 0, legLZ: -0.06, legRX: 0, legRZ: 0.06, kneeL: 0, kneeR: 0,
     ...(extras.defaults || {}),
   };
   const blend = new PoseBlend(defaults, 0.13);
@@ -511,6 +689,7 @@ export function createSpiderCharacter(look, extras = {}) {
   const ctx = { t: 0, st: 0, phase: 0, dt: 0, speed: CONFIG.startSpeed, land: 9, pop: 9 };
 
   function setState(name) {
+    bake();
     if (name === state) return;
     const prev = state;
     state = name;
@@ -545,7 +724,7 @@ export function createSpiderCharacter(look, extras = {}) {
     if (ctx.land < LAND_T) { // landing: squash down into bent knees, arms out for balance
       const e = Math.sin(Math.PI * ctx.land / LAND_T);
       pose.rootSquash *= 1 - 0.16 * e;
-      pose.pelvisY -= 0.07 * e;
+      pose.pelvisY -= 0.06 * e;
       pose.kneeL -= 0.7 * e;
       pose.kneeR -= 0.7 * e;
       pose.legLX += 0.4 * e;
@@ -611,7 +790,7 @@ function jumpPeak(t) {
   return Object.assign(_peak, {
     // arms out wide just under the big head so they read from the front and from behind
     pelvisY: 0.08, pelvisRX: -0.12, spineRX: -0.22, headRX: 0.3, headRZ: 0.06,
-    armLZ: -1.75 - f, armRZ: 1.85 + f, armLX: 0.25, armRX: 0.15, elbowL: 0.55, elbowR: 0.55,
+    armLZ: -1.95 - f, armRZ: 2.05 + f, armLX: 0.25, armRX: 0.15, elbowL: 0.6, elbowR: 0.6,
     legLX: 1.0, legLZ: -1.1, kneeL: -2.1, legRX: 1.3, legRZ: 0.8, kneeR: -1.8, squash: 1,
   });
 }
@@ -661,13 +840,13 @@ function spiderPose(state, P, { t, st, phase }) {
       P.legRX = 0.5 - 1.05 * s;
       P.kneeL = -0.3 - 1.9 * Math.pow(Math.max(0, Math.cos(phase - 0.35)), 0.7);
       P.kneeR = -0.3 - 1.9 * Math.pow(Math.max(0, -Math.cos(phase - 0.35)), 0.7);
-      P.legLZ = -0.03;
-      P.legRZ = 0.03;
+      P.legLZ = -0.05;
+      P.legRZ = 0.05;
       // arms: fists pump hard, close to the body, elbows ~90 degrees
       P.armLX = 0.15 - 1.05 * s;
       P.armRX = 0.15 + 1.05 * s;
-      P.armLZ = -0.38 - 0.1 * Math.max(0, s);  // elbows flare a touch on the back swing (shows from behind)
-      P.armRZ = 0.38 + 0.1 * Math.max(0, -s);
+      P.armLZ = -0.42 - 0.1 * Math.max(0, s);  // elbows flare a touch on the back swing (shows from behind)
+      P.armRZ = 0.42 + 0.1 * Math.max(0, -s);
       P.armLY = 0.28;                          // fists drive toward the centre line
       P.armRY = -0.28;
       P.elbowL = 1.5 - 0.4 * s;                // tighter when the fist comes forward
@@ -682,11 +861,11 @@ function spiderPose(state, P, { t, st, phase }) {
       }
       break;
     }
-    case 'slide': { // power slide: quick drop, nearly flat, trailing hand drags, buzzing
+    case 'slide': { // power slide: quick drop, lying back on the big head, trailing hand drags, buzzing
       const imp = Math.max(0, 1 - st / 0.12);  // impact right after the drop
       const buzz = Math.min(1, st / 0.1);
       P.rootSquash = 0.84 - 0.08 * imp;
-      P.pelvisY = -0.21 - 0.03 * imp + 0.012 * Math.sin(t * 62) * buzz;
+      P.pelvisY = -0.12 - 0.03 * imp + 0.012 * Math.sin(t * 62) * buzz;
       P.pelvisRX = 1.1;
       P.pelvisRY = 0.9;
       P.pelvisX = -0.36;
@@ -694,16 +873,16 @@ function spiderPose(state, P, { t, st, phase }) {
       P.pelvisRZ = -0.12 + 0.035 * Math.sin(t * 47) * buzz;
       P.spineRX = 0.2;
       P.spineRY = 0.1;
-      P.headRX = -0.3;
-      P.headRY = -0.7;
-      P.headRZ = 0.08 + 0.06 * Math.sin(t * 53) * buzz;
+      P.headRX = 0.6;                          // the head lies back flat (Funko head: keeps the slide low)
+      P.headRY = -0.2;
+      P.headRZ = 0.05 + 0.06 * Math.sin(t * 53) * buzz;
       P.legRX = 0.4;
       P.kneeR = -0.05;
       P.legRZ = 0.1;
       P.legLX = 0.75;
       P.legLZ = -0.7;
       P.kneeL = -1.3;
-      P.armLX = -1.05;     // trailing hand dragging on the ground behind
+      P.armLX = -0.95;     // trailing hand dragging on the ground behind
       P.armLZ = -0.5;
       P.elbowL = 0.05;
       P.armRX = 1.5;       // front fist up
@@ -711,19 +890,20 @@ function spiderPose(state, P, { t, st, phase }) {
       P.elbowR = 1.4;
       break;
     }
-    case 'web': { // right arm shoots up (past the head), left arm out, legs tucked
+    case 'web': { // right arm shoots up-out (clear of the big head), left arm out, legs tucked
       const pull = Math.sin(t * 6) * 0.04;
       P.pelvisY = 0.06;
       P.pelvisRX = 0.05;
       P.spineRX = 0.06;
       P.spineRY = -0.15;
-      P.spineRZ = 0.16;
+      P.spineRZ = 0.2;
       P.headRX = 0.3;
       P.headRY = 0.2;
-      P.headRZ = 0.22;
-      P.armRX = -0.4 + pull;                   // up and a little forward
-      P.armRZ = 2.65;
-      P.armRY = -0.3;
+      P.headRZ = 0.4;                          // head leans away from the shooting arm
+      P.armRX = 0.2 + pull;                    // up past the side of the head, a little forward
+      P.armRZ = 2.25;
+      P.armRY = 0;
+      P.elbowR = 0.05;
       P.armLX = 0.35;
       P.armLZ = -1.3 - pull;
       P.legLX = 1.2;
@@ -778,19 +958,23 @@ function spiderPose(state, P, { t, st, phase }) {
       break;
     }
     case 'idle':
-    default: {
+    default: { // photo 9: feet planted, fists clenched out at the sides, breathing
       const b = Math.sin(t * 2.4);
       P.squash = 1 + b * 0.018;
       P.pelvisY = -0.005 + b * 0.004;
       P.spineRX = -0.03;
       P.headRX = 0.04 + Math.sin(t * 1.2) * 0.03;
       P.headRZ = Math.sin(t * 0.9) * 0.05;
-      P.armLZ = -0.2 - b * 0.04;
-      P.armRZ = 0.2 + b * 0.04;
-      P.armLX = 0.05;
-      P.armRX = 0.05;
-      P.legLZ = -0.04;
-      P.legRZ = 0.04;
+      P.armLZ = -0.85 - b * 0.03;              // fists out at chest height, like the figure
+      P.armRZ = 0.85 + b * 0.03;
+      P.armLX = 0.5;
+      P.armRX = 0.5;
+      P.armLY = 0.6;
+      P.armRY = -0.6;
+      P.elbowL = 1.2;
+      P.elbowR = 1.2;
+      P.legLZ = -0.1;
+      P.legRZ = 0.1;
       break;
     }
   }

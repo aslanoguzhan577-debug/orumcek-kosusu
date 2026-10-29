@@ -1,6 +1,7 @@
-// ironspider.js — chibi Iron Spider: the Spider-Man body (shared builder in spiderman.js)
-// with a red / gold / black armour paint job, softly glowing eyes and four golden
-// mechanical arms on the back (instanced: 4 draw calls for all of them).
+// ironspider.js — chibi Iron Spider as a Funko Pop vinyl figure: the Spider-Man body (shared
+// builder in spiderman.js) with a red / gold / black armour paint job, a glossier metallic
+// finish, softly glowing lenses and four golden mechanical arms on the back (instanced:
+// 6 draw calls for all of them, outlines included).
 //   createIronSpider() -> { root, setState(name), update(dt, speed?), setSpeed(v), hand }
 //   (hand: web line start; speed: game speed in m/s for the run cadence, optional)
 //   States: idle, run, jump, slide, web, stumble, caught.
@@ -8,142 +9,161 @@
 import * as THREE from 'three';
 import { toonMaterial, addOutline, mergeGeos, TubeShape } from './toon.js';
 import {
-  createSpiderCharacter, keyframes, paintPolarWeb, paintRadialWeb, paintWebGrid, paintSpider, paintEyes,
-  OUTLINE_COLOR,
+  createSpiderCharacter, keyframes, paintLenses, paintSpiderEmblem, paintWebGrid,
+  CHEST_SPIDER, TORSO, SATIN, OUTLINE_COLOR,
 } from './spiderman.js';
 
-const RED = '#d01822';
-const BLACK = '#1b1a22';
-const GOLD = '#f5c23c';
-const GOLD_EDGE = '#6b4300';
-const LINE = '#1a0d12';
+const RED = '#c0152a';
+const BLACK = '#1a1922';
+const GOLD = '#f2bd38';
+const GOLD_EDGE = '#7a4a00';
+const LINE = '#3a0610';
 
 function goldLine(g, pathFn, w = 5) {
   g.lineJoin = 'round';
   g.lineCap = 'round';
   pathFn();
   g.strokeStyle = GOLD_EDGE;
-  g.lineWidth = w + 3;
+  g.lineWidth = w * 1.7;
   g.stroke();
   g.strokeStyle = GOLD;
   g.lineWidth = w;
   g.stroke();
 }
 
-// Red top, black lower body; the red dips in a V at the chest and between the shoulder blades.
-function boundaryY(u, C, yc, yFront, yBack) {
-  const df = Math.abs(u - 0.5) * C;
-  const db = Math.min(u, 1 - u) * C;
-  if (df < 0.13) return yFront + (yc - yFront) * (df / 0.13);
-  if (db < 0.13) return yBack + (yc - yBack) * (db / 0.13);
-  return yc;
+// gold spider with a dark rim: drawn once fat in the rim colour, then in gold
+function goldSpider(g, P, k, spider) {
+  const fat = { ...spider, legW: [spider.legW[0] + 0.008, spider.legW[1] + 0.008] };
+  g.save();
+  g.strokeStyle = GOLD_EDGE;
+  g.lineWidth = 0.008 * k;
+  g.lineJoin = 'round';
+  const fill = g.fill.bind(g);
+  g.fill = (...a) => { fill(...a); g.stroke(); };   // rim around the head and body shapes too
+  paintSpiderEmblem(g, P, k, { ...fat, color: GOLD_EDGE });
+  delete g.fill;
+  g.restore();
+  paintSpiderEmblem(g, P, k, { ...spider, color: GOLD });
 }
 
-const SUIT_GLOSS = { gloss: { color: 0xffe2e2, threshold: 0.985, strength: 0.75 }, rim: { color: 0xffc04a, threshold: 0.72, strength: 0.22 } };
+// Metallic vinyl: glossier than Spider-Man's satin, with a warm gold rim.
+const METAL = {
+  ...SATIN,
+  sheen: { color: 0xffe6dc, threshold: 0.62, strength: 0.16, soft: 0.3 },
+  gloss: { color: 0xffffff, threshold: 0.978, strength: 0.65, soft: 0.01 },
+  rim: { color: 0xffc04a, threshold: 0.66, strength: 0.2, soft: 0.12 },
+};
 
 const IRON_LOOK = {
-  head(g, W, H) {
-    g.fillStyle = RED;
-    g.fillRect(0, 0, W, H);
-    paintPolarWeb(g, W, H, { color: LINE, width: 1.8 });
-  },
-  eyes(g, W, H) {
-    paintEyes(g, W, H, {
+  head: { color: RED, web: { color: LINE, opacity: 0.8, width: 0.009 } },
+  face(g, E, s) {
+    paintLenses(g, E, s, {
       lens: '#f2fbff',
-      borderW: 0.08,
-      inner(g2, side, toPx, k) { // soft blue glow toward the rim of the lens
-        const [cx, cy] = toPx(0.38 * side, 0.06);
-        const grd = g2.createRadialGradient(cx, cy, 0.05 * k, cx, cy, 0.42 * k);
+      lensShade: '#bfe9ff',
+      inner(g2, side, E2, scale) { // soft blue glow toward the rim of the lens
+        const [cx, cy] = E2(0.5 * side, 0.02);
+        const grd = g2.createRadialGradient(cx, cy, 0.05 * scale, cx, cy, 0.5 * scale);
         grd.addColorStop(0, '#ffffff');
-        grd.addColorStop(1, '#a9e4ff');
+        grd.addColorStop(1, '#9fe0ff');
         g2.fillStyle = grd;
-        g2.fillRect(0, 0, W, H);
+        g2.fill();
       },
     });
   },
-  torso(g, W, H, info) {
-    const { yToPx, C, L } = info;
-    const kx = W / C, ky = H / L;
-    const yc = yToPx(0.33), yFront = yToPx(0.1), yBack = yToPx(0.18);
-    g.fillStyle = BLACK;
-    g.fillRect(0, 0, W, H);
-    const path = () => {
+  lensGlow: 0xbfeaff,
+  torsoBase: BLACK,
+  torsoFront(g, P, k) {
+    const T = TORSO;
+    // red chest and shoulders, a V of black rising from the belt, gold trim on the edge
+    const edge = () => {
       g.beginPath();
-      g.moveTo(0, -2);
-      g.lineTo(W, -2);
-      for (let x = W; x >= 0; x -= 4) g.lineTo(x, boundaryY(x / W, C, yc, yFront, yBack));
-      g.closePath();
+      let p = P(0.32, T.armpit - 0.02); g.moveTo(p[0], p[1]);
+      p = P(0.17, T.armpit - 0.03); g.lineTo(p[0], p[1]);
+      const c = P(0.1, 0.2); p = P(0, 0.135);
+      g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+      const c2 = P(-0.1, 0.2); p = P(-0.17, T.armpit - 0.03);
+      g.quadraticCurveTo(c2[0], c2[1], p[0], p[1]);
+      p = P(-0.32, T.armpit - 0.02); g.lineTo(p[0], p[1]);
     };
-    path();
+    edge();
+    let p = P(-0.32, 0.7); g.lineTo(p[0], p[1]);
+    p = P(0.32, 0.7); g.lineTo(p[0], p[1]);
+    g.closePath();
     g.fillStyle = RED;
     g.fill();
-    g.save();
-    path();
-    g.clip();
-    paintRadialWeb(g, (x, y) => [W / 2 + x * kx, yToPx(0.27) + y * ky], { color: LINE, width: 1.8, step: 0.045, maxR: 0.7 });
-    for (const cx of [0, W]) paintRadialWeb(g, (x, y) => [cx + x * kx, yToPx(0.27) + y * ky], { color: LINE, width: 1.8, step: 0.045, maxR: 0.7 });
-    g.restore();
-    // gold trim along the red edge, and two gold side lines on the black
-    goldLine(g, () => {
-      g.beginPath();
-      for (let x = 0; x <= W; x += 4) {
-        const y = boundaryY(x / W, C, yc, yFront, yBack);
-        if (x === 0) g.moveTo(x, y); else g.lineTo(x, y);
-      }
-    });
-    for (const u of [0.25, 0.75]) {
+    goldSpider(g, (x, y) => P(x, y + 0.27), k, CHEST_SPIDER);
+    goldLine(g, edge, 0.009 * k);
+    // gold belt line and side lines
+    goldLine(g, () => { g.beginPath(); const a = P(0.32, T.beltHi), b = P(-0.32, T.beltHi); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }, 0.008 * k);
+    for (const s of [-1, 1]) {
       goldLine(g, () => {
         g.beginPath();
-        g.moveTo(u * W - 0.05 * kx, yc);
-        g.quadraticCurveTo(u * W - 0.02 * kx, yToPx(0.18), u * W - 0.06 * kx, yToPx(0.0));
-        g.moveTo(u * W + 0.05 * kx, yc);
-        g.quadraticCurveTo(u * W + 0.02 * kx, yToPx(0.18), u * W + 0.06 * kx, yToPx(0.0));
-      }, 3);
+        const a = P(s * 0.165, T.armpit - 0.04), c = P(s * 0.13, 0.17), b = P(s * 0.15, T.beltHi);
+        g.moveTo(a[0], a[1]);
+        g.quadraticCurveTo(c[0], c[1], b[0], b[1]);
+      }, 0.006 * k);
     }
-    // gold belt line
-    goldLine(g, () => {
+  },
+  torsoBack(g, P, k) {
+    const T = TORSO;
+    const edge = () => {
       g.beginPath();
-      g.moveTo(0, yToPx(0.0));
-      g.lineTo(W, yToPx(0.0));
-    }, 3);
-    // golden spider on the chest
-    paintSpider(g, (x, y) => [W / 2 + x * kx, yToPx(0.26) + y * ky], 0.18, GOLD, '#140f14', { edge: 3 });
+      let p = P(-0.32, T.armpit - 0.02); g.moveTo(p[0], p[1]);
+      p = P(-0.16, T.armpit - 0.02); g.lineTo(p[0], p[1]);
+      const c = P(-0.08, 0.22); p = P(0, 0.19);
+      g.quadraticCurveTo(c[0], c[1], p[0], p[1]);
+      const c2 = P(0.08, 0.22); p = P(0.16, T.armpit - 0.02);
+      g.quadraticCurveTo(c2[0], c2[1], p[0], p[1]);
+      p = P(0.32, T.armpit - 0.02); g.lineTo(p[0], p[1]);
+    };
+    edge();
+    let p = P(0.32, 0.7); g.lineTo(p[0], p[1]);
+    p = P(-0.32, 0.7); g.lineTo(p[0], p[1]);
+    g.closePath();
+    g.fillStyle = RED;
+    g.fill();
+    goldLine(g, edge, 0.009 * k);
+    goldLine(g, () => { g.beginPath(); const a = P(0.32, T.beltHi), b = P(-0.32, T.beltHi); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }, 0.008 * k);
+    // gold spine line down from the back unit
+    goldLine(g, () => { g.beginPath(); const a = P(0, 0.19), b = P(0, T.beltHi); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }, 0.006 * k);
   },
   arm(g, W, H, info) {
-    const elbow = info.yToPx(-0.19);
-    const wrist = info.yToPx(-0.265);
     g.fillStyle = RED;
-    g.fillRect(0, 0, W, elbow);
-    g.save();
-    g.beginPath(); g.rect(0, 0, W, elbow); g.clip();
-    paintWebGrid(g, 0, 0, W, elbow, { cols: 8, rows: 5, color: LINE, width: 1.8, sag: 0.35 });
-    g.restore();
+    g.fillRect(0, 0, W, H);
+    // black inside of the arm, gold edges
+    const inner = () => { g.beginPath(); g.rect(W * 0.62, info.yToPx(-0.03), W * 0.26, H); };
+    inner();
     g.fillStyle = BLACK;
-    g.fillRect(0, elbow, W, wrist - elbow);
+    g.fill();
+    goldLine(g, () => {
+      g.beginPath();
+      g.moveTo(W * 0.62, H); g.lineTo(W * 0.62, info.yToPx(-0.03)); g.lineTo(W * 0.88, info.yToPx(-0.03)); g.lineTo(W * 0.88, H);
+    }, 4);
+  },
+  fore(g, W, H, info) {
+    g.fillStyle = BLACK;
+    g.fillRect(0, 0, W, H);
+    const cuff = info.yToPx(-0.08);
     g.fillStyle = RED;
-    g.fillRect(0, wrist, W, H - wrist);
-    goldLine(g, () => { g.beginPath(); g.moveTo(0, elbow); g.lineTo(W, elbow); }, 6);
-    goldLine(g, () => { g.beginPath(); g.moveTo(0, wrist); g.lineTo(W, wrist); }, 7);
+    g.fillRect(0, cuff, W, H - cuff);
+    goldLine(g, () => { g.beginPath(); g.moveTo(0, cuff); g.lineTo(W, cuff); }, 7);
+    goldLine(g, () => { g.beginPath(); g.moveTo(0, info.yToPx(0.0)); g.lineTo(W, info.yToPx(0.0)); }, 5);
   },
   thigh(g, W, H) {
     g.fillStyle = BLACK;
     g.fillRect(0, 0, W, H);
-    goldLine(g, () => {
-      g.beginPath();
-      g.moveTo(W * 0.3, H * 0.72);
-      g.quadraticCurveTo(W * 0.5, H * 0.6, W * 0.7, H * 0.72);
-    }, 3);
+    goldLine(g, () => { g.beginPath(); g.moveTo(W * 0.25, 0); g.lineTo(W * 0.25, H); }, 3);
   },
   shin(g, W, H, info) {
     g.fillStyle = BLACK;
     g.fillRect(0, 0, W, H);
-    const top = info.yToPx(-0.07);
+    const top = info.yToPx(-0.04);
     const bootPath = () => {
       g.beginPath();
-      g.moveTo(0, top + 14);
-      for (let x = 0; x <= W; x += 8) {
-        const f = Math.cos(((x / W) - 0.5) * Math.PI * 2);
-        g.lineTo(x, top + 14 - Math.max(0, f) * 26);
+      g.moveTo(0, top);
+      for (let x = 0; x <= W; x += 4) {
+        const f = Math.cos(((x / W) - 0.5) * Math.PI * 2); // peaks at the front
+        g.lineTo(x, top - Math.max(0, f) * 0.03 * info.ky);
       }
     };
     g.save();
@@ -154,12 +174,12 @@ const IRON_LOOK = {
     g.fillStyle = RED;
     g.fill();
     g.clip();
-    paintWebGrid(g, 0, top - 30, W, H, { cols: 8, rows: 7, color: LINE, width: 1.8, sag: 0.35 });
+    paintWebGrid(g, 0, top - 0.03 * info.ky, W, info.yToPx(-0.19), { cols: 10, rows: 5, color: LINE, width: 1.8, sag: 0.35 });
     g.restore();
     goldLine(g, bootPath, 6);
   },
-  matOpts: { head: SUIT_GLOSS, torso: SUIT_GLOSS, arm: SUIT_GLOSS, thigh: SUIT_GLOSS, shin: SUIT_GLOSS },
-  eyeGlow: 0xbfeaff,
+  matOpts: { head: METAL, torso: METAL, arm: METAL, thigh: METAL, shin: METAL },
+  lazy: true,
 };
 
 // ------------------------------------------------------------------ mechanical arms
@@ -245,12 +265,13 @@ function mechPose(state, P, { t, st }) {
 function addMechArms(parts) {
   const { segGeo, clawGeo } = mechGeometries();
   const gold = toonMaterial(0xf0b026, {
+    shade: 'soft',
     gloss: { color: 0xfff7d0, threshold: 0.9, strength: 0.95 },
     rim: { color: 0xffe08a, threshold: 0.66, strength: 0.35 },
   });
   const mech = new THREE.Group();
   mech.name = 'mech-arms';
-  mech.position.set(0, 0.29, 0.13);
+  mech.position.set(0, 0.27, 0.15);
   parts.spine.add(mech);
 
   // gold spider-shaped back unit the legs come out of
