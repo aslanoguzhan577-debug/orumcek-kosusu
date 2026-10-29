@@ -175,6 +175,11 @@ export const CONFIG = {
     clearTime: 2,          // a save clears everything reaching the player within this many s
     graceTime: 0.5,        // no collisions for this long after a save
     storageKey: 'spidey.iron',
+    // gold arms grab a high barrier while sliding (visual only): reach = speed * leadTime,
+    // clamped; ~0.3-0.4 s for the arms to reach out
+    grabLeadTime: 0.35,
+    grabReachMin: 4.5,
+    grabReachMax: 9,
   },
 
   // --- Pattern generator (G2) ---

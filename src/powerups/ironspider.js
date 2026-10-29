@@ -18,14 +18,21 @@
 //      including what was hit; emit('ironSave', {positions});
 //   3. a short grace period with no collisions.
 // Side stumbles stay normal stumbles. Restart / menu drop the suit (no refund).
+//
+// Gold arms (visual only): while suited and sliding, the nearest high barrier ahead in the
+// player's lane (within a speed-aware reach) is reported every frame to
+// ironModel.setGrabTarget(pos | null) — pos = bottom edge of its board at the lane centre.
+// When that barrier passes over the player: emit('ironGrab', {position}) once.
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { emit } from '../events.js';
 import { game } from '../game.js';
+import { laneX } from '../world.js';
 import { createIronPickup } from '../pickup-art.js';
 
 const I = CONFIG.iron;
+const _grab = new THREE.Vector3();
 
 function loadCount() {
   try {
@@ -112,13 +119,40 @@ export class IronSpiderPowerup {
     if (!this.active || game.halted) return;
     const st = game.state;
     st.ironTime = Math.max(0, st.ironTime - dt);
-    if (st.ironTime <= 0) this._suitOff(true);
+    if (st.ironTime <= 0) {
+      this._suitOff(true);
+      return;
+    }
+    this._updateGrab();
+  }
+
+  // Gold arms: tell the model which high barrier to grab; ironGrab as it passes overhead.
+  _updateGrab() {
+    const p = this.player;
+    let best = null;
+    if (p.sliding) {
+      const reach = THREE.MathUtils.clamp(game.state.speed * I.grabLeadTime, I.grabReachMin, I.grabReachMax);
+      const x = laneX(p.lane);
+      for (const o of this.obstacles.active) {
+        if (o.type !== 'high' || Math.abs(o.x - x) > 0.5) continue;
+        const mid = o.z - o.length / 2;               // board centre (world z)
+        if (mid < -reach || mid - o.dz >= 0) continue; // too far, or already passed before this frame
+        if (!best || o.z > best.z) best = o;
+        if (mid >= 0) {                                // crossed the player's z this frame
+          _grab.set(o.x, CONFIG.obstacles.high.bottom, mid);
+          emit('ironGrab', { position: _grab.clone() });
+        }
+      }
+    }
+    if (best) _grab.set(best.x, CONFIG.obstacles.high.bottom, best.z - best.length / 2);
+    if (this.ironModel.setGrabTarget) this.ironModel.setGrabTarget(best ? _grab : null);
   }
 
   _suitOff(withEvent) {
     this.active = false;
     game.state.ironTime = 0;
     this.player.useModel(this.normalModel);
+    if (this.ironModel.setGrabTarget) this.ironModel.setGrabTarget(null);
     if (withEvent) emit('ironOff');
   }
 
