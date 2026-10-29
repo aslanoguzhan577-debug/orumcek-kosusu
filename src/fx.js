@@ -235,6 +235,7 @@ class Particles {
 
 // ---------- comic text sprites ----------
 const WORDS = {
+  cank:  { t: 'ÇANK!',  burst: '#d8dde6', fill: '#b01a20' },
   gum:   { t: 'GÜM!',   burst: '#ffd23a', fill: '#e0262c' },
   cat:   { t: 'ÇAT!',   burst: '#ffffff', fill: '#1a3cb0' },
   bam:   { t: 'BAM!',   burst: '#ff9f1c', fill: '#ffffff' },
@@ -523,6 +524,7 @@ export function initFx(game) {
   const chunkCols = [0x6b5a48, 0x4d4a50, 0xa08a66, 0xd6c9aa];
   let airMaxY = 0;
   let lastHopMs = -1e9;
+  const metalCols = [0xffd23a, 0xffffff, 0xd8dde6, 0xffb52e];
   const rm = reduceMotion ? 0.5 : 1;
 
   function streak(x, y, z, vy, vz, len, life, a, horizontal) {
@@ -554,14 +556,45 @@ export function initFx(game) {
     if (!reduceMotion) {
       for (const dx of [-0.5, -0.3, 0.3, 0.5]) streak(pl.x + dx, fy + rnd(0.5, 0.9), 0.15, -1.5, 0, 1.5 * big, 0.3, 0.8, false);
     }
+    // Iron Spider: the 4 gold arms slam the ground around his feet and push him up
+    const iron = game.state.ironTime > 0;
+    if (iron) {
+      const n = reduceMotion ? 2 : 4;
+      for (let i = 0; i < n; i++) {
+        const a = ((i + Math.random() * 0.4) / n) * Math.PI * 2 + 0.4;
+        const ax = pl.x + Math.cos(a) * rnd(0.5, 0.7), az = Math.sin(a) * 0.45;
+        sparkBurst(normal, ax, fy + 0.15, az, 4, metalCols, 5, 0.26, 0.4);
+        puffBurst(ax, fy + 0.1, az, 2, dustCol, 2.2, 1.0, 0.35, 0.8, 0.35);
+      }
+      normal.spawn(pl.x, fy + 0.06, 0.1, 0, 0, 0, 0.22, 1.0, 3.8, SHAPE.flat, 0xffd23a, 0.95, 0, 0, true);
+      normal.spawn(pl.x, fy + 0.07, 0.1, 0, 0, 0, 0.3, 0.6, 3.0, SHAPE.flat, 0xffffff, 0.85, 0, 0, true, 0.04);
+    }
     // occasional comic word, always off to the side; high jumps get it more often
     const now = performance.now();
     const chance = apex > 2.4 ? 0.7 : 0.14;
-    if (now - lastHopMs > 2800 && Math.random() < chance) {
+    if (!iron && now - lastHopMs > 2800 && Math.random() < chance) {
       lastHopMs = now;
       const side = pl.x > 0.3 ? -1 : 1;
       showText('hop', pl.x + side * 1.5, fy + 1.1, 0, 0.2, 0.5, true);
     }
+  });
+
+  // Iron Spider's arms catch a high barrier while he slides under it. The barrier is gone
+  // ~0.1 s later, so everything stays at the catch point (no world scroll) for a moment.
+  on('ironGrab', (d) => {
+    const pl = player();
+    const p = posOf(d, 0.8);
+    glow.spawn(p.x, p.y, p.z, 0, 0, 0, 0.2, 1.1, 2.0, SHAPE.star, 0xfff2a0, 1, 0, 0, false, 0, 2);
+    glow.spawn(p.x, p.y, p.z, 0, 0, 0, 0.3, 0.5, 2.4, SHAPE.ring, 0xffe27a, 0.9, 0, 0, false);
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = rnd(2.5, 7);
+      normal.spawn(p.x, p.y, p.z, Math.cos(a) * sp, Math.sin(a) * sp * 0.8 + 1, rnd(-1.5, 1.5),
+        rnd(0.3, 0.55), 0.3, 0.1, SHAPE.star, metalCols[i % metalCols.length], 1, 6, 2.5, false, 0, rnd(-8, 8));
+    }
+    const side = pl.x > 0.3 ? -1 : 1;
+    showText('cank', pl.x + side * 1.05, p.y + 1.0, p.z, 0.3, 0.8, false);
+    shake(0.05, 0.1);
   });
 
   on('land', () => {
