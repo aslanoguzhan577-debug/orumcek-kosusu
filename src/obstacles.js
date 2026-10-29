@@ -276,7 +276,7 @@ export class Obstacles {
   // Move everything, then tell the player what is under its feet.
   beforePlayer(dt) {
     const v = game.state.speed;
-    const backZ = CONFIG.world.backZ;
+    const backZ = O.releaseZ;
     this._time += dt;
     this._sideHitTimer -= dt;
     this._graceTimer -= dt;

@@ -91,6 +91,32 @@ export class Chaser {
     return this.mode === 'near' || CATCHING.has(this.mode);
   }
 
+  // Intro clip (intro.js) poses Venom directly while the clip plays.
+  clipPose(x, y, z, state, dt) {
+    this.x = x;
+    this.y = y;
+    this.floor = 0;
+    this.gap = z;
+    this.root.visible = true;
+    this.shadow.visible = true;
+    this.root.position.set(x, y, z);
+    this.shadow.position.set(x, 0.08, z);
+    if (state !== this._modelState) {
+      this._modelState = state;
+      this.model.setState(state);
+    }
+    this.model.update(dt);
+  }
+
+  // Clip finished: carry on with the normal start (close behind, then fall back) from
+  // where the clip left him, without snapping.
+  continueFromClip() {
+    this.mode = 'intro';
+    this.timer = C.introTime;
+    this._snapNear = false;
+    this.arrived = false;
+  }
+
   _startIntro() {
     this.mode = 'intro';
     this.timer = C.introTime;

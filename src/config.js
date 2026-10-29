@@ -65,8 +65,10 @@ export const CONFIG = {
   // --- World / track ---
   world: {
     segmentLength: 20,
-    segmentCount: 9,
-    backZ: 16,             // segments fully behind this z are recycled to the front
+    segmentCount: 13,
+    backZ: 96,             // segments fully behind this z are recycled to the front
+                           // (track reaches 96 m behind the player for the intro clip's
+                           // reverse angle; behind the chase camera it is culled)
     sleeperSpacing: 0.75,
     postSpacing: 5,
   },
@@ -103,6 +105,7 @@ export const CONFIG = {
     trainSpeedMin: 6,      // own speed of oncoming trains (m/s, added to the run speed)
     trainSpeedMax: 11,
     spawnDistance: 160,    // oncoming trains appear this far ahead
+    releaseZ: 16,          // obstacles / coins / pickups this far behind are released
   },
 
   // --- Coins (G2) ---
@@ -180,6 +183,41 @@ export const CONFIG = {
     grabLeadTime: 0.35,
     grabReachMin: 4.5,
     grabReachMax: 9,
+  },
+
+  // --- Start-of-run intro clip (intro.js). Seconds unless noted; z is metres behind the
+  //     player's start spot (the world stands still during the clip). ---
+  intro: {
+    swings: 3,
+    swingTime: 0.7,        // per swing
+    webEmptyTime: 0.3,     // the shot that does not come ("TIK TIK")
+    fallTime: 0.5,
+    rollTime: 0.5,
+    roarTime: 0.55,
+    screamTime: 0.5,
+    runTime: 0.9,          // from the crouch to full start speed; the camera swings behind
+    swingLength: 9,        // metres along the track per swing
+    swingHigh: 7,          // height at the ends of a swing ...
+    swingLow: 3.2,         // ... and at its lowest point
+    emptyForward: 1.5,     // metres drifted during the failed shot
+    fallForward: 4,
+    rollDistance: 3.5,
+    anchorHeight: 34,      // web anchors: this far above the swing's low point ...
+    anchorAhead: 4,        // ... and this far ahead of it (toward the camera); out of frame
+    anchorSide: 6,
+    venomLag: 8,           // Venom runs this far behind during the swings
+    venomLeap: 2.4,        // his leap height in the middle swing
+    venomRoarGap: 3.2,     // how close he gets while roaring
+    camSide: 1.4,          // reverse-angle camera: to the side ...
+    camDistSwing: 10,      // ... and this far ahead of Spider-Man while he swings ...
+    camDistGround: 6.5,    // ... and on the ground
+    camHeight: 2.2,        // height above the deck (+ a share of Spider-Man's height)
+    camFollowY: 0.45,
+    camDamp: 6,
+    orbitPullIn: 0.5,      // run phase: the camera orbit comes this much closer beside him ...
+    orbitRise: 1.5,        // ... and this much higher
+    fogNear: 14,           // tighter fog while the camera looks back down the track
+    fogFar: 58,            // (hides the end of the track behind)
   },
 
   // --- Pattern generator (G2) ---

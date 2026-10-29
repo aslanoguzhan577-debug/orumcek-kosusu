@@ -21,6 +21,7 @@ const state = {
   ironCount: 0,     // G10 (persistent inventory; NOT reset per run)
   ironTime: 0,      // G10 seconds left
   time: 0,          // seconds of running this round (extra, not in contract)
+  intro: false,     // true while the start-of-run clip plays (intro.js)
 };
 
 export const game = {
@@ -30,6 +31,7 @@ export const game = {
   chaser: null,     // G8 Venom (main.js)
   web: null,        // G9 web cartridge / zip (main.js)
   iron: null,       // G10 Iron Spider (main.js)
+  intro: null,      // start-of-run clip (main.js): begin(), update(dt), skip(), reset()
 
   // True during the catch sequence (G8): mode stays 'running', but the world, speed and
   // distance stop; the player and systems' update(dt) still run so the catch can play.
@@ -66,12 +68,14 @@ export const game = {
     this._resetRun();
     state.mode = 'running';
     emit('start', { restart: false });
+    if (this.intro) this.intro.begin();
   },
 
   restart() {
     this._resetRun();
     state.mode = 'running';
     emit('start', { restart: true });
+    if (this.intro) this.intro.begin();
   },
 
   // Back to the main menu: start layout, nothing moving, mode 'menu' (G12 "Ana menü").
@@ -130,12 +134,20 @@ export const game = {
       if (this.tapToStart && name === 'tap') this.restart();
       return;
     }
+    if (state.intro) {
+      this.intro.skip(); // any tap / swipe / key skips the clip
+      return;
+    }
     this.player.handleAction(name);
   },
 
   // Called once per frame by main.js with a capped dt.
   update(dt) {
     if (state.mode === 'paused') return;
+    if (state.intro) {
+      this.intro.update(dt); // the clip drives player, Venom and camera; the world waits
+      return;
+    }
     const running = state.mode === 'running';
 
     if (running && !this.halted) {
@@ -167,5 +179,6 @@ export const game = {
     this.world.reset();
     this.player.reset();
     for (const s of this.systems) if (s.reset) s.reset();
+    if (this.intro) this.intro.reset();
   },
 };

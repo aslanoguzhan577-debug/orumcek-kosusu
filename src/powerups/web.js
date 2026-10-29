@@ -115,6 +115,17 @@ export class WebPowerup {
     return true;
   }
 
+  // Intro clip (intro.js): draw / hide the web line to any anchor.
+  drawLineTo(anchor) {
+    this.anchor.copy(anchor);
+    this.line.visible = true;
+    this._updateLine();
+  }
+
+  hideLine() {
+    this.line.visible = false;
+  }
+
   _endZip() {
     const p = this.player;
     if (this.zip && p.override === 'web') p.clearOverride();

@@ -37,8 +37,10 @@ export class CameraRig {
     this._tiltOn = on;
   }
 
-  setShot(position, lookAt) {
+  // instant = jump straight into the shot (no blend), e.g. the intro clip driving the camera
+  setShot(position, lookAt, instant = false) {
     this._shotOn = true;
+    if (instant) this.shotBlend = 1;
     this._shotPos.copy(position);
     this._shotLook.copy(lookAt);
   }

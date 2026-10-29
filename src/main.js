@@ -11,6 +11,7 @@ import { Obstacles } from './obstacles.js';
 import { Chaser } from './chaser.js';
 import { WebPowerup } from './powerups/web.js';
 import { IronSpiderPowerup } from './powerups/ironspider.js';
+import { Intro } from './intro.js';
 import { createInput } from './input.js';
 import { CameraRig } from './camera.js';
 import { addLights } from './lights.js';
@@ -64,6 +65,7 @@ game.scene = scene;
 game.camera = camera;
 game.cameraRig = cameraRig;
 game.renderer = renderer;
+game.intro = new Intro({ scene, player, chaser, web, cameraRig });
 initCity(game);
 initFx(game);
 window.game = game; // handy in the console while developing
@@ -75,6 +77,7 @@ events.addEventListener('start', () => {
   cameraRig.snap(player);
 });
 events.addEventListener('resume', () => input.reset());
+events.addEventListener('intro', (e) => { if (e.detail.phase === 'end') input.reset(); });
 
 // ---------- resize ----------
 function resize() {
@@ -99,9 +102,9 @@ renderer.setAnimationLoop((now) => {
   if (game.state.mode !== 'paused') cameraRig.update(dt, player);
 
   // Blob shadow stays on the floor and shrinks / fades while in the air.
-  const height = Math.max(0, player.y - player.floorY);
+  const height = Math.max(0, player.y - player.floorY); // (z: the intro clip moves the root)
   const s = THREE.MathUtils.clamp(1 - height / 4, 0.45, 1);
-  shadow.position.set(player.x, player.floorY + 0.08, 0);
+  shadow.position.set(player.x, player.floorY + 0.08, player.root.position.z);
   shadow.scale.set(s, s, 1);
   shadow.material.opacity = s;
 
