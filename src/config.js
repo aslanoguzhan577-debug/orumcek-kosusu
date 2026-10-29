@@ -160,7 +160,7 @@ export const CONFIG = {
 
   // --- Coins (G2) ---
   coins: {
-    spacing: 2.4,          // metres between coins in a row
+    spacing: 3.4,          // metres between coins in a row
     height: 0.6,           // coin centre above the feet of a running player
     pickupSize: 0.4,       // half size of the coin pickup box
     maxRow: 14,

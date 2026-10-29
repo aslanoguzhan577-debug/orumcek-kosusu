@@ -268,10 +268,23 @@ function buildRamp() {
   return s.build();
 }
 
+// Coin: a lathe of a recessed face + thick raised rim (profile [r, y] bottom -> top, axis turned to Z),
+// vertex colours: recess mid tone, inner wall shadow, rim gold. Highlight comes from the material gloss.
 function buildCoin() {
-  const r = 0.3;
-  const geometry = new THREE.CylinderGeometry(r, r, 0.08, 18).rotateX(Math.PI / 2);
-  const outline = new THREE.CylinderGeometry(r + 0.05, r + 0.05, 0.14, 18).rotateX(Math.PI / 2);
+  const P = [[0, -0.02, 0xe09b00], [0.19, -0.02, 0xe09b00], [0.22, -0.045, 0x8c4a00], [0.27, -0.05, 0xffc700],
+    [0.3, -0.03, 0xffc700], [0.3, 0.03, 0xe09b00], [0.27, 0.05, 0xffc700], [0.22, 0.045, 0x8c4a00],
+    [0.19, 0.02, 0xe09b00], [0, 0.02, 0xe09b00]];
+  const segs = 18;
+  const geometry = new THREE.LatheGeometry(P.map(([r, y]) => new THREE.Vector2(r, y)), segs).rotateX(Math.PI / 2);
+  const col = new Float32Array(geometry.getAttribute('position').count * 3);
+  for (let i = 0; i <= segs; i++) {
+    for (let j = 0; j < P.length; j++) {
+      _color.setHex(P[j][2]);
+      col.set([_color.r, _color.g, _color.b], (i * P.length + j) * 3);
+    }
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const outline = new THREE.CylinderGeometry(0.335, 0.335, 0.13, segs).rotateX(Math.PI / 2);
   return { geometry, outline };
 }
 
@@ -333,8 +346,8 @@ class InstancedKind {
 export function createObstacleArt(scene) {
   const material = toonMaterial(0xffffff, { vertexColors: true });
   const outlineMaterial = new THREE.MeshBasicMaterial({ color: OUTLINE_COLOR, side: THREE.BackSide });
-  const coinMaterial = toonMaterial(0xffcf3a, { emissive: 0x6b4500 });
-  const coinOutline = new THREE.MeshBasicMaterial({ color: 0x5a3800, side: THREE.BackSide });
+  const coinMaterial = toonMaterial(0xffffff, { vertexColors: true, emissive: 0x4a3000, gloss: { color: 0xfffab3, threshold: 0.9, soft: 0.02 } });
+  const coinOutline = new THREE.MeshBasicMaterial({ color: 0x4d2600, side: THREE.BackSide });
 
   const kinds = {
     low: new InstancedKind(scene, buildLow(), material, outlineMaterial, 24),
