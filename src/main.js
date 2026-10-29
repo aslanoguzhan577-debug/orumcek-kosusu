@@ -23,6 +23,13 @@ import { createIronSpider } from './models/ironspider.js';
 import { createHelloKitty } from './models/hellokitty.js';
 import { createGwen } from './models/gwen.js';
 import { createMiles } from './models/miles.js';
+import { createRaimi } from './models/raimi.js';
+import { createMcuSpidey } from './models/mcu.js';
+import { createIronMan } from './models/ironman.js';
+import { createPanther } from './models/panther.js';
+import { createBatman } from './models/batman.js';
+import { createCap } from './models/cap.js';
+import { createHulk } from './models/hulk.js';
 import { createVenom } from './models/venom.js';
 import { initCity } from './city.js';
 import { initFx } from './fx.js';
@@ -53,7 +60,7 @@ const world = new World(scene);
 // The ONE place the player's skins are created: both built once (behind the loading screen),
 // the chosen one is the player's model, the other hangs hidden under player.root.
 const SKIN_KEY = 'spidey.skin';
-const skins = { spider: createSpiderman(), kitty: createHelloKitty(), gwen: createGwen(), miles: createMiles() };
+const skins = { spider: createSpiderman(), kitty: createHelloKitty(), gwen: createGwen(), miles: createMiles(), raimi: createRaimi(), mcu: createMcuSpidey(), ironman: createIronMan(), panther: createPanther(), batman: createBatman(), cap: createCap(), hulk: createHulk() };
 let skin = 'spider';
 try { if (skins[localStorage.getItem(SKIN_KEY)]) skin = localStorage.getItem(SKIN_KEY); } catch (e) { /* default */ }
 const player = new Player(skins[skin]);
