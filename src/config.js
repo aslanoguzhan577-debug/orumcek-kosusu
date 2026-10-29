@@ -232,7 +232,7 @@ export const CONFIG = {
 
   // --- Iron Spider (G10) ---
   iron: {
-    duration: 5,           // seconds the suit lasts
+    duration: 12,          // seconds the suit lasts
     maxCount: 5,           // most cores you can hold
     pickupChance: 0.08,    // per pattern block with a free stretch on the route lane
     pickupChanceFull: 0.04, // ... while holding maxCount

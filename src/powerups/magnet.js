@@ -20,6 +20,7 @@ import { CONFIG } from '../config.js';
 import { emit } from '../events.js';
 import { game } from '../game.js';
 import { createMagnetPickup } from '../pickup-art.js';
+import { getEffectiveSkillDuration } from '../shop.js';
 
 const M = CONFIG.magnet;
 
@@ -52,7 +53,7 @@ export class MagnetPowerup {
 
   start() {
     const was = game.state.magnetTime > 0;
-    game.state.magnetTime = M.duration;
+    game.state.magnetTime = getEffectiveSkillDuration('magnet');
     if (!was) emit('magnetOn');
   }
 

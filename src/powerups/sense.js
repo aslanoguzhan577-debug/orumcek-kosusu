@@ -27,6 +27,7 @@ import { emit } from '../events.js';
 import { game } from '../game.js';
 import { laneX } from '../world.js';
 import { createSensePickup } from '../pickup-art.js';
+import { getEffectiveSkillDuration } from '../shop.js';
 
 const S = CONFIG.sense;
 const O = CONFIG.obstacles;
@@ -228,7 +229,7 @@ export class SensePowerup {
 
   start() {
     const was = game.state.senseTime > 0;
-    game.state.senseTime = S.duration;
+    game.state.senseTime = getEffectiveSkillDuration('spiderSense');
     if (!was) emit('senseOn');
   }
 

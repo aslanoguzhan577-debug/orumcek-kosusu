@@ -46,7 +46,7 @@ const el = {
   score: $('h-score'), coins: $('h-coins'), pause: $('h-pause'),
   web: $('h-web'), iron: $('h-iron'), ironN: $('h-iron-n'), ironHint: $('h-iron-hint'),
   ironBar: $('h-ironbar'), ironFill: $('h-ironfill'),
-  menu: $('scr-menu'), help: $('scr-help'), pauseScr: $('scr-pause'), over: $('scr-over'),
+  menu: $('scr-menu'), market: $('scr-market'), mkCoins: $('mk-coins'), mkList: $('mk-list'), mkBtn: $('b-market'), mkClose: $('b-market-close'), help: $('scr-help'), pauseScr: $('scr-pause'), over: $('scr-over'),
   nameBox: $('m-namebox'), name: $('m-name'), best: $('m-best'), bestName: $('m-bestname'),
   play: $('b-play'), helpBtn: $('b-help'), helpOk: $('b-help-ok'),
   resume: $('b-resume'), restart: $('b-restart'), pauseMenu: $('b-pause-menu'),
@@ -57,7 +57,7 @@ const el = {
 if (!el.hud || !el.menu) {
   console.warn('[ui] #ui markup missing from index.html');
 }
-const screens = { intro: $('intro-hint'), hud: el.hud, menu: el.menu, help: el.help, pause: el.pauseScr, over: el.over };
+const screens = { intro: $('intro-hint'), hud: el.hud, menu: el.menu, market: el.market, help: el.help, pause: el.pauseScr, over: el.over };
 const slots = el.web ? Array.from(el.web.querySelectorAll('.slot')) : [];
 const muteButtons = Array.from(document.querySelectorAll('[data-mute]'));
 const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
@@ -109,6 +109,7 @@ function showScreen(name) {
   const active = document.activeElement;
   if (active && active !== document.body && active.blur && !(screens[name] && screens[name].contains(active))) active.blur();
   if (name === 'menu') refreshMenu();
+  if (name === 'market') paintMarket();
   if (name === 'hud') resetHudCache();
   if (name === 'pause' || name === 'menu') paintMute();
 }
@@ -121,6 +122,59 @@ function wantScreen(now) {
     case 'over': return now >= overAt ? 'over' : 'hud';
     default: return 'menu';
   }
+}
+
+// ---------- market (src/shop.js is loaded lazily so a missing file cannot break the game) ----------
+let shop = null;
+async function openMarket() {
+  try { shop = shop || await import('./shop.js'); } catch (e) { console.warn('[ui] shop.js yok', e); return; }
+  forced = 'market';
+  paintMarket();
+}
+function paintMarket() {
+  if (!shop) return;
+  const wallet = shop.getPlayerData().totalCoins;
+  el.mkCoins.textContent = fmt(wallet);
+  el.mkList.textContent = '';
+  for (const key of Object.keys(shop.SKILL_UPGRADE_CONFIG)) {
+    const c = shop.SKILL_UPGRADE_CONFIG[key];
+    const lvl = shop.getPlayerData().upgrades[key] | 0;
+    const max = lvl >= c.maxLevel;
+    const cost = max ? 0 : shop.getUpgradeCost(key);
+    const cur = shop.getEffectiveSkillDuration(key);
+    const row = document.createElement('div'); row.className = 'mk-item';
+    const cv = document.createElement('canvas'); cv.width = cv.height = 96;
+    drawPowerIcon(cv, key === 'magnet' ? 'magnet' : 'sense');
+    const info = document.createElement('div'); info.className = 'mk-info';
+    const nm = document.createElement('b'); nm.textContent = `${c.name} · Sv. ${lvl}`;
+    const du = document.createElement('small');
+    du.textContent = max ? `${+cur.toFixed(1)} sn (en yüksek seviye)` : `${+cur.toFixed(1)} sn → ${+(cur + c.stepDuration).toFixed(1)} sn`;
+    info.append(nm, du);
+    const buy = document.createElement('button'); buy.type = 'button'; buy.className = 'btn small mk-buy';
+    if (max) { buy.textContent = 'MAX'; buy.disabled = true; }
+    else {
+      buy.disabled = wallet < cost;
+      buy.append(document.createTextNode(fmt(cost) + ' '), Object.assign(document.createElement('i'), { className: 'coin-ico' }));
+      buy.addEventListener('click', () => { if (shop.buyUpgrade(key)) paintMarket(); });
+    }
+    row.append(cv, info, buy);
+    el.mkList.appendChild(row);
+  }
+}
+
+// "demet" easter egg: ~3 s of floating hearts at the start of a run
+function heartRain() {
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed;inset:0;z-index:60;pointer-events:none;overflow:hidden';
+  for (let i = 0; i < 40; i++) {
+    const h = document.createElement('span');
+    h.textContent = '❤';
+    h.className = 'heart-fly';
+    h.style.cssText = `left:${Math.random() * 100}%;font-size:${20 + Math.random() * 36}px;animation-delay:${Math.random() * 1.2}s;animation-duration:${1.6 + Math.random() * 0.8}s`;
+    layer.appendChild(h);
+  }
+  document.body.appendChild(layer);
+  setTimeout(() => layer.remove(), 3200);
 }
 
 function refreshMenu() {
@@ -179,6 +233,8 @@ function onButton(node, fn) {
 onButton(el.play, onPlay);
 onButton(el.helpBtn, () => openHelp(false));
 onButton(el.helpOk, closeHelp);
+onButton(el.mkBtn, openMarket);
+onButton(el.mkClose, () => { forced = 'menu'; });
 onButton(el.pause, () => game.pause());
 onButton(el.resume, () => game.resume());
 onButton(el.restart, () => { forced = null; game.restart(); });
@@ -265,7 +321,7 @@ events.addEventListener('gameover', (e) => {
   paintOver();
   overAt = performance.now() + OVER_DELAY_MS;
 });
-events.addEventListener('start', () => { forced = null; overAt = Infinity; resetHudCache(); });
+events.addEventListener('start', () => { if (getName().toLowerCase() === 'demet') heartRain(); forced = null; overAt = Infinity; resetHudCache(); });
 
 // ---------- share ----------
 let shareTimer = 0;

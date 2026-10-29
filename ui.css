@@ -492,3 +492,22 @@
   pointer-events: none;
   animation: ui-blink 1.2s infinite;
 }
+
+/* ---------- market ---------- */
+#ui .market-card { gap: 10px; }
+#ui .wallet { display: flex; align-items: center; gap: 8px; background: #fff; border: 3px solid var(--ink); border-radius: 12px; box-shadow: 3px 3px 0 var(--ink); padding: 6px 14px; transform: rotate(-1deg); }
+#ui .wallet b { font-family: var(--font-h); font-weight: 400; font-size: 32px; letter-spacing: .05em; line-height: 1; }
+#ui .wallet span { font-weight: 800; font-size: 14px; color: #4a4f66; }
+#ui .mk-list { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+#ui .mk-item { display: flex; align-items: center; gap: 10px; background: #fff; border: 3px solid var(--ink); border-radius: 14px; box-shadow: 3px 3px 0 var(--ink); padding: 8px 10px; }
+#ui .mk-item canvas { width: 48px; height: 48px; flex: none; }
+#ui .mk-info { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.1; }
+#ui .mk-info b { font-family: var(--font-h); font-weight: 400; font-size: 22px; letter-spacing: .05em; color: var(--blue); }
+#ui .mk-info small { font-size: 13px; font-weight: 800; color: #4a4f66; }
+#ui .mk-buy { flex: none; min-width: 88px; min-height: 52px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: var(--yellow); color: var(--ink); text-shadow: none; transform: none; }
+#ui .mk-buy .coin-ico { width: 18px; height: 18px; border-width: 2.5px; }
+#ui .mk-buy:disabled { opacity: .45; cursor: default; box-shadow: 0 3px 0 var(--ink); }
+
+/* "demet" hearts (the layer lives on <body>, outside #ui) */
+.heart-fly { position: absolute; bottom: -60px; color: #ff2d55; text-shadow: 2px 2px 0 #0d0d14; animation: heart-up 2s ease-in forwards; }
+@keyframes heart-up { to { transform: translateY(-115vh) rotate(25deg); opacity: .2; } }
