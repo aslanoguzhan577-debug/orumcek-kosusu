@@ -38,8 +38,9 @@ export const TRACK = {
   deckBottom: BED_TOP - DECK_THICK,
 };
 
+// long pieces get cuts every ~4 m so the curved world (curve.js) can bend them smoothly
 function box(w, h, d, x, y, z) {
-  return new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+  return new THREE.BoxGeometry(w, h, d, 1, 1, Math.max(1, Math.round(d / 4))).translate(x, y, z);
 }
 
 // One merged geometry, shared by all segments.

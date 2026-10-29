@@ -26,6 +26,7 @@ import { CONFIG } from './config.js';
 import { emit } from './events.js';
 import { laneX } from './world.js';
 import { game } from './game.js';
+import { curve } from './curve.js';
 
 const CENTER_LANE = Math.floor(CONFIG.laneCount / 2);
 
@@ -261,7 +262,8 @@ export class Player {
     this._prevX = this.x;
     this.root.position.set(this.x, this.y, 0);
     const lean = THREE.MathUtils.clamp(vx * 0.012, -0.25, 0.25);
-    this.root.rotation.z += (-lean - this.root.rotation.z) * Math.min(1, dt * 14);
+    const bank = curve.bank * CONFIG.curve.lean; // lean into the curved street (visual)
+    this.root.rotation.z += (-lean - bank - this.root.rotation.z) * Math.min(1, dt * 14);
     this.root.rotation.y += (-lean * 0.8 - this.root.rotation.y) * Math.min(1, dt * 14);
 
     this.model.update(dt, game.state.speed); // speed drives the run cadence

@@ -2,6 +2,7 @@
 // wiring of world + player + input + city into game. The #ui overlay belongs to ui.js.
 
 import * as THREE from 'three';
+import { curve } from './curve.js'; // first: patches every material's shader (curved world)
 import { CONFIG } from './config.js';
 import { events } from './events.js';
 import { game } from './game.js';
@@ -11,6 +12,8 @@ import { Obstacles } from './obstacles.js';
 import { Chaser } from './chaser.js';
 import { WebPowerup } from './powerups/web.js';
 import { IronSpiderPowerup } from './powerups/ironspider.js';
+import { SensePowerup } from './powerups/sense.js';
+import { MagnetPowerup } from './powerups/magnet.js';
 import { Intro } from './intro.js';
 import { createInput } from './input.js';
 import { CameraRig } from './camera.js';
@@ -22,6 +25,7 @@ import { initCity } from './city.js';
 import { initFx } from './fx.js';
 import { createAdaptiveRatio } from './quality.js';
 import { warmUp } from './warmup.js';
+import { createXray } from './xray.js';
 import './audio.js';
 import './ui.js';
 
@@ -64,6 +68,16 @@ game.web = web;
 const iron = new IronSpiderPowerup({ player, obstacles, chaser, ironModel: createIronSpider() });
 game.addSystem(iron);
 game.iron = iron;
+const sense = new SensePowerup({ player, obstacles }); // spider-sense auto-dodge
+game.addSystem(sense);
+game.sense = sense;
+const magnet = new MagnetPowerup({ player, obstacles }); // coin magnet
+game.addSystem(magnet);
+game.magnet = magnet;
+// x-ray silhouette over both suits (the Iron Spider model is a child of player.root by now)
+const xray = createXray(player.root);
+game.xray = xray;
+game.curve = curve;
 game.scene = scene;
 game.camera = camera;
 game.cameraRig = cameraRig;
@@ -104,7 +118,11 @@ renderer.setAnimationLoop((now) => {
   last = now;
 
   game.update(dt);
+  // curved world: fades out in the catch cam (it looks back across the track)
+  curve.update(world.distance, game.state.speed, 1 - cameraRig.shotBlend);
+  chaser.root.rotation.z = -curve.bank * CONFIG.curve.lean;
   if (game.state.mode !== 'paused') cameraRig.update(dt, player);
+  xray.enabled = !game.state.intro && !game.halted && cameraRig.shotBlend < 0.05;
 
   // Blob shadow stays on the floor and shrinks / fades while in the air.
   const height = Math.max(0, player.y - player.floorY); // (z: the intro clip moves the root)

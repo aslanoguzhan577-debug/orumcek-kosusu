@@ -453,6 +453,7 @@ export class Obstacles {
       for (const vis of o.visuals) art.add(vis.art, o.x, 0, o.z - vis.f, o.color);
     }
     for (const c of this.coins) art.addCoin(c.x, c.y, c.z);
+    if (this.extraCoins) for (const c of this.extraCoins) art.addCoin(c.x, c.y, c.z); // magnet flights
     art.end(this._time);
   }
 }

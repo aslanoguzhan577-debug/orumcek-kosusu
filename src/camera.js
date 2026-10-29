@@ -6,9 +6,13 @@
 // rig.setTilt(on) lifts the view a little (G9 web zip).
 // rig.setShot(position, lookAt) blends to a fixed shot (G8 catch cam); rig.clearShot()
 // blends back. snap() drops both instantly (run start / menu).
+// Curved world (curve.js): the view yaws toward the road ahead and banks a little.
+// A tall obstacle between the camera and a side-lane player raises the lateral follow.
 
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
+import { curve } from './curve.js';
+import { game } from './game.js';
 
 const lerp = THREE.MathUtils.lerp;
 const clamp = THREE.MathUtils.clamp;
@@ -20,6 +24,7 @@ export class CameraRig {
     this.refY = 0;          // damped floor/jump height the camera rides on
     this.scale = 1;         // offset multiplier from the portrait fit
     this.follow = CONFIG.camera.followX;
+    this.block = 0;         // 0..1, eases toward followBlocked
     this._shakeTime = 0;
     this._shakeDuration = 0;
     this._shakeStrength = 0;
@@ -89,6 +94,7 @@ export class CameraRig {
 
   // Jump straight to the target (run start).
   snap(player) {
+    this.block = 0;
     this.x = player.x * this.follow;
     this.refY = player.floorY;
     this.tilt = 0;
@@ -108,7 +114,8 @@ export class CameraRig {
     const c = CONFIG.camera;
     const kx = 1 - Math.exp(-c.dampX * dt);
     const ky = 1 - Math.exp(-c.dampY * dt);
-    this.x += (player.x * this.follow - this.x) * kx;
+    this.block += ((this._blocked(player) ? 1 : 0) - this.block) * (1 - Math.exp(-c.blockRate * dt));
+    this.x += (player.x * lerp(this.follow, Math.max(this.follow, c.followBlocked), this.block) - this.x) * kx;
     const targetY = player.floorY + (player.y - player.floorY) * c.jumpFollow;
     this.refY += (targetY - this.refY) * ky;
     this.tilt += ((this._tiltOn ? 1 : 0) - this.tilt) * (1 - Math.exp(-c.tiltRate * dt));
@@ -124,16 +131,34 @@ export class CameraRig {
     }
   }
 
+  // a train / wagon in a lane between the camera and the player (he is in a side lane)
+  _blocked(player) {
+    const c = CONFIG.camera;
+    const ob = game.obstacles;
+    if (!ob || player.floorY > 1 || Math.abs(player.x) < 0.5) return false;
+    const camZ = this.camera.position.z;
+    for (const o of ob.active) {
+      if (Math.abs(o.x) > Math.abs(player.x) - 0.5) continue; // not between camera and player
+      if (o.z < -c.blockAhead || o.z - o.length > camZ) continue;
+      for (const p of o.parts) if (p.y1 >= c.blockHeight) return true;
+    }
+    return false;
+  }
+
   _place() {
     const c = CONFIG.camera;
     const s = this.scale;
     this._pos.set(this.x, this.refY + c.height * s, c.distance * s);
     this._look.set(this.x, this.refY + c.lookHeight + this.tilt * c.zipLookUp, -c.lookAhead);
+    // yaw toward the bent road ahead (the bend fades out by itself in the catch cam)
+    const camZ = this._pos.z;
+    this._look.x += curve.offsetAt(-c.curveLook) * c.curveYaw * (c.lookAhead + camZ) / (c.curveLook + camZ);
     if (this.shotBlend > 0.001) {
       this._pos.lerp(this._shotPos, this.shotBlend);
       this._look.lerp(this._shotLook, this.shotBlend);
     }
     this.camera.position.copy(this._pos);
     this.camera.lookAt(this._look);
+    if (curve.bank) this.camera.rotateZ(-curve.bank * c.curveRoll);
   }
 }

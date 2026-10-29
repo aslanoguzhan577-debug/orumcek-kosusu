@@ -23,7 +23,7 @@ const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-re
 const SHAKE_K = reduceMotion ? 0.25 : 1;
 const FLASH_K = reduceMotion ? 0.35 : 1;
 
-const SHAPE = { puff: 0, star: 1, square: 2, ring: 3, flat: 4, streak: 5 };
+const SHAPE = { puff: 0, star: 1, square: 2, ring: 3, flat: 4, streak: 5, zig: 6 };
 
 // ---------- particle system ----------
 const VERT = /* glsl */`
@@ -36,7 +36,7 @@ varying vec4 vColor;
 varying float vShape;
 varying float vRot;
 void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vec4 mv = viewMatrix * curveWorld(modelMatrix * vec4(position, 1.0)); // curve.js bend
   gl_Position = projectionMatrix * mv;
   gl_PointSize = min(aSize * uScale / max(-mv.z, 0.1), 420.0);
   if (aSize <= 0.0 || aColor.a <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; }
@@ -75,9 +75,17 @@ void main() {
   } else if (vShape < 4.5) {     // flat ground ring (squashed ellipse)
     float d = length(vec2(p0.x, p0.y * 2.6));   // not rotated: stays a flat ellipse
     edge = max(d - 0.97, 0.78 - d);
-  } else {                       // speed streak: tapered line, long axis = local y
+  } else if (vShape < 5.5) {     // speed streak: tapered line, long axis = local y
     float ax = abs(p.x), ay = abs(p.y);
     edge = max(ax - 0.17 * (1.0 - ay), ay - 1.0);
+  } else {                       // spider-sense zigzag: yellow core, white rim, ink outline
+    float ay = abs(p.y);
+    float zx = (abs(fract(p.y * 1.5 + 0.25) * 2.0 - 1.0) - 0.5) * 0.8;
+    float d = abs(p.x - zx) / 2.6;
+    float hw = 0.27 * (1.0 - 0.4 * ay);
+    edge = max(d - hw, ay - 0.97);
+    col = mix(vec3(1.0), col, smoothstep(-0.02, 0.02, hw * 0.5 - d));
+    ink = smoothstep(-0.07, -0.03, edge);
   }
   float w = max(fwidth(edge), 0.001);
   float a = clamp(0.5 - edge / w, 0.0, 1.0) * vColor.a;
@@ -246,6 +254,7 @@ const WORDS = {
   parca: { t: 'PARAMPARÇA!', burst: '#ff9f1c', fill: '#ffffff' },
   nano:  { t: 'NANO!',  burst: '#ffd23a', fill: '#1a3cb0' },
   hop:   { t: 'HOP!',   burst: null,      fill: '#ffe14a', stroke: '#e0262c' },
+  his:   { t: 'HİS!',   burst: '#ffe14a', fill: '#d0192b' },
 };
 const FONT = "'Bangers', Impact, 'Arial Black', sans-serif";
 
@@ -474,6 +483,7 @@ export function initFx(game) {
     gold: 'radial-gradient(circle at 50% 55%, rgba(255,240,150,.95), rgba(255,170,30,.8) 40%, rgba(224,38,44,.75))',
     white: 'radial-gradient(circle, rgba(255,255,255,.9), rgba(255,255,255,.55))',
     red: 'radial-gradient(circle, rgba(255,60,60,.7), rgba(120,0,10,.7))',
+    sense: 'radial-gradient(circle at 50% 55%, rgba(255,225,60,0) 36%, rgba(255,225,50,.6) 72%, rgba(255,200,0,.9))',
   };
   function flash(kind, alpha, ms) {
     const f = dom.flash;
@@ -733,12 +743,16 @@ export function initFx(game) {
   on('pickup', (d) => {
     const pl = player();
     const iron = d.type === 'iron';
-    const ringCol = iron ? 0xffd23a : 0x9fd8ff;
-    const sparks = iron ? [0xffd23a, 0xe0262c, 0xffffff] : [0xffffff, 0x4aa8ff, 0x9fd8ff];
+    const sense = d.type === 'sense', magnet = d.type === 'magnet';
+    const ringCol = iron ? 0xffd23a : sense ? 0xffe14a : magnet ? 0xe0262c : 0x9fd8ff;
+    const ring2 = magnet ? 0xd8dde6 : 0xffffff;
+    const sparks = iron ? [0xffd23a, 0xe0262c, 0xffffff] : sense ? [0xffe14a, 0xffffff, 0xffc83a]
+      : magnet ? [0xe0262c, 0xd8dde6, 0xffffff] : [0xffffff, 0x4aa8ff, 0x9fd8ff];
     const y = pl.y + 0.9;
     glow.spawn(pl.x, y, 0.2, 0, 0, 0, 0.45, 0.6, 3.4, SHAPE.ring, ringCol, 0.95, 0, 0, true);
-    glow.spawn(pl.x, y, 0.2, 0, 0, 0, 0.3, 0.3, 2.2, SHAPE.ring, 0xffffff, 0.7, 0, 0, true, 0.07);
+    glow.spawn(pl.x, y, 0.2, 0, 0, 0, 0.3, 0.3, 2.2, SHAPE.ring, ring2, 0.7, 0, 0, true, 0.07);
     sparkBurst(glow, pl.x, y, 0.2, 10, sparks, 4, 0.4, 0.5);
+    if (sense) for (let i = 0; i < 4; i++) squiggle(0.6, 1.0, 0.7, 0.4, 1, 1.6, y);
   });
 
   on('web', (d) => {
@@ -817,6 +831,93 @@ export function initFx(game) {
     showText('parca', num(ax, pl.x), num(ay, 1.2) + 1.8, Math.max(az, -9), 0.5, 1.0, true);
     shake(0.3, 0.5);
     flash('gold', 0.5, 380);
+  });
+
+  // ----- spider-sense: yellow zigzag squiggles around the head (same look as the HUD logo) -----
+  // Squiggles sit beside / above the head (never in front of the face), in the player's frame
+  // (scroll = false). One per spawn; the pool is the normal system (ink outline).
+  const headY = () => {
+    const pl = player();
+    return pl.y + (pl.sliding ? CONFIG.slideHeight * 0.6 : CONFIG.playerHeight * 0.78);
+  };
+  function squiggle(rMin, rMax, size, life, a, outward, cy0) {
+    const pl = player();
+    let ang = rnd(-0.2, 1.75);                    // right side .. top; mirrored half the time
+    if (Math.random() < 0.5) ang = Math.PI - ang;
+    const r = rnd(rMin, rMax);
+    const cy = (cy0 === undefined ? headY() : cy0);
+    const c = Math.cos(ang), s = Math.sin(ang);
+    const sz = size * rnd(0.85, 1.15);
+    const i = normal.spawn(pl.x + c * r, cy + s * r * 0.9, -0.25 + rnd(-0.1, 0.1), c * outward, s * outward, 0,
+      life, sz * 0.7, sz, SHAPE.zig, 0xffe14a, a, 0, 0, false);
+    normal.rot[i] = ang - Math.PI / 2 + rnd(-0.6, 0.6);
+    normal.spin[i] = 0;
+  }
+  let senseActive = false;
+  let senseAcc = 0;
+  on('senseOn', () => {
+    senseActive = true;
+    senseAcc = rnd(0.1, 0.2);
+    const n = Math.round(5 * rm);
+    for (let i = 0; i < n; i++) squiggle(0.6, 0.85, 0.7, 0.35, 1, 1.2);
+    flash('sense', 0.3, 320);
+  });
+  on('senseOff', () => {
+    senseActive = false;
+    const n = Math.round(5 * rm);
+    for (let i = 0; i < n; i++) squiggle(0.6, 0.8, 0.6, 0.55, 0.7, 0.9);
+  });
+  on('senseDodge', (d) => {
+    const pl = player();
+    const hy = headY();
+    const n = Math.round(9 * rm);
+    for (let i = 0; i < n; i++) squiggle(0.45, 0.7, 0.95, 0.38, 1, 2.8);
+    glow.spawn(pl.x, hy, 0.1, 0, 0, 0, 0.3, 0.8, 3.0, SHAPE.ring, 0xffe14a, 0.9, 0, 0, false);
+    flash('sense', 0.5, 300);
+    // comic word beside his feet, towards the camera: the lower screen is where no obstacle is
+    const side = d.action === 'left' ? 1 : d.action === 'right' ? -1 : (pl.x > 0.3 ? -1 : 1);
+    showText('his', pl.x + side * 1.5, pl.y + 0.6, 1.8, 0.22, 0.6, false);
+  });
+
+  // ----- magnet: red pulse ring on the ground now and then; golden streak coin -> chest -----
+  let magnetActive = false;
+  let magAcc = 0;
+  let trailWin = 0, trailN = 0;
+  function magnetPulse(grow) {
+    const pl = player();
+    const fy = floorY();
+    if (grow) {
+      glow.spawn(pl.x, fy + 0.06, 0.1, 0, 0, 0, 0.8, 0.9, 4.4, SHAPE.flat, 0xff4a4a, 0.4, 0, 0, false);
+      glow.spawn(pl.x, fy + 0.06, 0.1, 0, 0, 0, 0.6, 0.6, 3.0, SHAPE.flat, 0xd8dde6, 0.22, 0, 0, false, 0.12);
+    } else {
+      glow.spawn(pl.x, fy + 0.06, 0.1, 0, 0, 0, 0.45, 4.4, 0.7, SHAPE.flat, 0xff4a4a, 0.4, 0, 0, false);
+    }
+  }
+  on('magnetOn', () => { magnetActive = true; magAcc = 0; });
+  on('magnetOff', () => { magnetActive = false; magnetPulse(false); });
+  on('magnetCoin', (d) => {
+    const pl = player();
+    const p = posOf(d, 1);
+    const M = CONFIG.magnet || {};
+    const T = M.flyTime || 0.32, arc = M.arc || 0.9;
+    const tx = pl.x, ty = pl.y + (M.chest || 0.9), tz = 0;
+    const now = performance.now();
+    if (now - trailWin > 80) { trailWin = now; trailN = 0; }
+    if (++trailN <= 8) {
+      // comet: a gold streak (turned along its screen direction) with a chain of stars behind
+      const g = 8 * arc / (T * T);
+      const vx = (tx - p.x) / T, vz = (tz - p.z) / T, vy = (ty - p.y) / T + 4 * arc / T;
+      _v.set(p.x, p.y, p.z).project(camera);
+      _pp.set(p.x + vx * 0.05, p.y + vy * 0.05, p.z + vz * 0.05).project(camera);
+      const h = glow.spawn(p.x, p.y, p.z, vx, vy, vz, T, 2.0, 0.7, SHAPE.streak, 0xffd23a, 0.95, g, 0, false);
+      glow.rot[h] = Math.atan2(-(_pp.x - _v.x) * camera.aspect, -(_pp.y - _v.y));
+      glow.spin[h] = 0;
+      for (let i = 1; i <= 3; i++) {
+        glow.spawn(p.x, p.y, p.z, vx, vy, vz, T, 0.85 - i * 0.12, 0.15, SHAPE.star,
+          i === 1 ? 0xfff2a0 : 0xffd23a, 0.95 - i * 0.15, g, 0, false, i * 0.03, 4);
+      }
+    }
+    glow.spawn(tx, ty, tz, 0, 0, 0, 0.16, 0.5, 0.9, SHAPE.star, 0xfff2a0, 0.9, 0, 0, false, T, 3);
   });
 
   let venomOn = false;
@@ -901,6 +1002,7 @@ export function initFx(game) {
     ring.visible = false;
     ringT = -1;
     ironActive = false;
+    senseActive = magnetActive = false;
     venomOn = false;
     dom.venom.hidden = true;
     introSpeedUntil = 0;
@@ -909,7 +1011,7 @@ export function initFx(game) {
     splashOff();
   }
   on('start', clearAll);
-  on('gameover', () => { venomOn = false; dom.venom.hidden = true; });
+  on('gameover', () => { venomOn = senseActive = magnetActive = false; dom.venom.hidden = true; });
 
   // ----- per-frame -----
   let last = performance.now();
@@ -962,6 +1064,22 @@ export function initFx(game) {
           slideStreakAcc -= 0.07;
           streak(pl.x + (Math.random() < 0.5 ? -1 : 1) * rnd(0.25, 0.5), fy + 0.05, 0.9, 0, 5, 1.1, 0.22, 0.55, false);
         }
+      }
+    }
+
+    // power-up auras
+    if (running && !game.halted) {
+      if (senseActive) {
+        senseAcc -= dt;
+        if (senseAcc <= 0) {
+          senseAcc = rnd(0.2, 0.42);
+          const n = Math.random() < 0.35 ? 2 : 1;
+          for (let k = 0; k < n; k++) squiggle(0.62, 0.85, 0.6, 0.2, 0.9, 0.4);
+        }
+      }
+      if (magnetActive) {
+        magAcc -= dt;
+        if (magAcc <= 0) { magAcc = 0.95; magnetPulse(true); }
       }
     }
 

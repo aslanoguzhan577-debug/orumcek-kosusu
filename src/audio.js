@@ -123,9 +123,11 @@ function addFilter(src, nodes, t, dur, o) {
   return f;
 }
 
-// o: {type,f,to,at,dur,vol,attack,low, filter,f1,f2,q}
+// o: {type,f,to,at,dur,vol,attack,low, filter,f1,f2,q, trem,depth}
+// trem = tremolo rate in Hz (fast amplitude wobble, depth 0..0.5): the "tingle" / electric hum
 function tone(o) {
-  if (!claim(o.low)) return;
+  const cost = o.trem ? 2 : 1;
+  if (!claim(o.low, cost)) return;
   const t = ctx.currentTime + (o.at || 0);
   const dur = o.dur;
   const osc = ctx.createOscillator();
@@ -133,13 +135,29 @@ function tone(o) {
   osc.frequency.setValueAtTime(o.f, t);
   if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t + dur);
   const nodes = [osc];
-  const tail = addFilter(osc, nodes, t, dur, o);
+  let tail = addFilter(osc, nodes, t, dur, o);
+  if (o.trem) {
+    const d = o.depth || 0.45;
+    const am = ctx.createGain();
+    am.gain.value = 1 - d;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = o.trem;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = d;
+    lfo.connect(lfoG);
+    lfoG.connect(am.gain);
+    tail.connect(am);
+    tail = am;
+    nodes.push(am, lfo, lfoG);
+    lfo.start(t);
+    lfo.stop(t + dur + 0.03);
+  }
   const g = ctx.createGain();
   envelope(g, t, dur, o.vol, o.attack);
   tail.connect(g);
   g.connect(master);
   nodes.push(g);
-  osc.onended = () => release(nodes);
+  osc.onended = () => release(nodes, cost);
   osc.start(t);
   osc.stop(t + dur + 0.03);
 }
@@ -278,12 +296,54 @@ const SOUNDS = {
         tone({ type: 'sine', f: f * 4.02, dur: 0.3, vol: 0.05, at: i * 0.07 + 0.02 });
       });
       tone({ type: 'sawtooth', f: 131, dur: 0.4, vol: 0.1, filter: 'lowpass', f1: 600 });
+    } else if (d && d.type === 'sense') {
+      // tingle: tiz, titreyen kucuk cinlama arpeji
+      [1175, 1568, 2093, 2637].forEach((f, i) => {
+        tone({ type: 'sine', f, dur: 0.22, vol: 0.12, at: i * 0.05, attack: 0.003, trem: 32 });
+      });
+      tone({ type: 'sine', f: 3951, dur: 0.3, vol: 0.05, at: 0.18, trem: 40 });
+    } else if (d && d.type === 'magnet') {
+      // elektrikli "tak": alcak mıknatıs kenetlenmesi + yukselen iki nota
+      tone({ type: 'sawtooth', f: 110, to: 330, dur: 0.22, vol: 0.14, filter: 'lowpass', f1: 500, f2: 2200, q: 3, trem: 48, depth: 0.4 });
+      tone({ type: 'square', f: 392, dur: 0.12, vol: 0.09, at: 0.14, filter: 'lowpass', f1: 2600 });
+      tone({ type: 'square', f: 587, dur: 0.2, vol: 0.09, at: 0.24, filter: 'lowpass', f1: 2600 });
+      tone({ type: 'sine', f: 1500, to: 300, dur: 0.07, vol: 0.14 });
+      noise({ dur: 0.04, vol: 0.12, filter: 'highpass', f1: 3500 });
     } else {
       // ag doldurucu: yukari giden parlak arpej
       [523, 659, 784, 1047, 1319].forEach((f, i) => {
         tone({ type: 'triangle', f, dur: 0.16, vol: 0.2, at: i * 0.06, attack: 0.003 });
       });
     }
+  },
+  senseOn() {
+    // titreyen ses: ince sinuslar yukari kayar, hizli tremolo
+    [[1568, 2349, 0], [2349, 3136, 0.04], [3136, 4186, 0.08]].forEach(([f, to, at]) => {
+      tone({ type: 'sine', f, to, dur: 0.55, vol: 0.075, at, attack: 0.08, trem: 30 });
+    });
+    tone({ type: 'sine', f: 784, to: 1175, dur: 0.5, vol: 0.06, attack: 0.1, trem: 22 });
+    noise({ dur: 0.45, vol: 0.04, attack: 0.1, filter: 'highpass', f1: 5000 });
+  },
+  senseDodge() {
+    // keskin "tingg" + hizli bir vuslama
+    tone({ type: 'sine', f: 3136, to: 2637, dur: 0.22, vol: 0.2, attack: 0.002, trem: 36, depth: 0.35 });
+    tone({ type: 'triangle', f: 1568, dur: 0.1, vol: 0.12, attack: 0.002 });
+    noise({ dur: 0.22, vol: 0.2, attack: 0.03, filter: 'bandpass', f1: 700, f2: 3600, q: 1.6 });
+  },
+  senseOff() {
+    [[3136, 1568, 0], [2349, 1175, 0.05]].forEach(([f, to, at]) => {
+      tone({ type: 'sine', f, to, dur: 0.5, vol: 0.06, at, attack: 0.02, trem: 24 });
+    });
+  },
+  magnetOn() {
+    // yukselen elektrik vizildisi
+    tone({ type: 'sawtooth', f: 70, to: 230, dur: 0.6, vol: 0.14, attack: 0.1, filter: 'lowpass', f1: 300, f2: 2400, q: 3, trem: 52, depth: 0.4 });
+    tone({ type: 'sine', f: 140, to: 460, dur: 0.6, vol: 0.1, attack: 0.1 });
+    tone({ type: 'square', f: 880, to: 1760, dur: 0.4, vol: 0.025, at: 0.2, attack: 0.1, trem: 60, depth: 0.5 });
+  },
+  magnetOff() {
+    tone({ type: 'sawtooth', f: 230, to: 55, dur: 0.5, vol: 0.13, filter: 'lowpass', f1: 2200, f2: 250, q: 3, trem: 46, depth: 0.4 });
+    tone({ type: 'sine', f: 400, to: 90, dur: 0.45, vol: 0.09 });
   },
   web() {
     // "thwip": hizli suprulen bant filtreli gurultu
@@ -408,7 +468,7 @@ const SOUNDS = {
 };
 
 // ayni sesin cok sik tekrarini engelle (saniye)
-const MIN_GAP = { i_swing: 0.25, lane: 0.06, land: 0.08, slide: 0.15, stumble: 0.15, venomNear: 1.5, coin: 0.025, crash: 0.1, web: 0.1 };
+const MIN_GAP = { senseDodge: 0.08, i_swing: 0.25, lane: 0.06, land: 0.08, slide: 0.15, stumble: 0.15, venomNear: 1.5, coin: 0.025, crash: 0.1, web: 0.1 };
 
 function play(name, detail) {
   if (muted || paused || !ctx || ctx.state === 'closed') return;

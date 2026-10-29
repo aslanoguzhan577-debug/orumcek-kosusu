@@ -8,12 +8,15 @@ export const CONFIG = {
   laneSwitchTime: 0.14,    // seconds for one lane change (works mid-air too)
 
   // --- Speed and score ---
-  // Two phases: start -> cruiseSpeed quickly (~100 s), then slowly on to maxSpeed (~7 min).
+  // Three phases: start -> cruiseSpeed quickly (~100 s), then slowly on to maxSpeed (~8.8 min),
+  // then creeping on to topSpeed, the hard cap (~18.5 min).
   startSpeed: 11,          // m/s at run start
   cruiseSpeed: 26,         // end of the first phase
-  maxSpeed: 32,            // m/s cap (second phase end)
+  maxSpeed: 32,            // second phase end (fx / run cadence treat this as "full speed")
+  topSpeed: 39,            // hard cap, end of the third phase
   acceleration: 0.15,      // m/s gained per second, first phase
   acceleration2: 0.014,    // m/s gained per second, second phase
+  acceleration3: 0.012,    // m/s gained per second, third phase
   scorePerMeter: 1,
 
   // --- Player body / hitbox ---
@@ -50,7 +53,15 @@ export const CONFIG = {
     lookAhead: 7,          // look at a point this far ahead (-Z)
     lookHeight: 0.9,
     followX: 0.55,         // fraction of player x the camera follows (landscape)
-    followXPortrait: 0.25, // ... in portrait
+    followXPortrait: 0.3,  // ... in portrait
+    followBlocked: 0.7,    // ... while a tall obstacle (train, wagon) stands between the
+                           // camera and the player (side lane, train in the middle)
+    blockHeight: 2,        // obstacles at least this tall count
+    blockAhead: 6,         // ... from this far ahead of the player back to the camera
+    blockRate: 4,          // how fast the follow changes (damping rate)
+    curveLook: 30,         // curved world: the camera yaws toward the road this far ahead ...
+    curveYaw: 0.6,         // ... this much of the way
+    curveRoll: 0.03,       // radians the camera banks at full curvature
     sideMargin: 0.45,      // extra metres kept visible beyond the outer lane centre ...
     fitAhead: 4,           // ... this far ahead of the player (where obstacles come from)
     playerMargin: 0.6,     // the player in an outer lane: this much beyond his lane centre
@@ -63,6 +74,28 @@ export const CONFIG = {
     zipLookUp: 2.2,        // web zip: look this much higher (G9)
     tiltRate: 4,
     shotRate: 7,           // blend speed into / out of the catch cam (G8)
+  },
+
+  // --- Curved world (src/curve.js): visual only, gameplay stays straight ---
+  curve: {
+    enabled: true,
+    straightMin: 15,       // seconds of straight road between two curves ...
+    straightMax: 30,
+    radiusMin: 220,        // curve radius in metres (smaller = sharper)
+    radiusMax: 380,
+    easeTime: 2.5,         // seconds to ease into / out of a curve
+    holdMin: 3,            // seconds a curve holds at full bend
+    holdMax: 7,
+    sBendChance: 0.3,      // a curve turns straight into the opposite one
+    sampleStep: 6,         // metres between bend samples (36 samples = 210 m)
+    lean: 0.12,            // radians Spider-Man / Venom lean into a full curve
+  },
+
+  // --- X-ray silhouette: the player's parts hidden behind obstacles (src/xray.js) ---
+  xray: {
+    color: 0xff5a4a,
+    edge: 0x4a0a10,        // darker toward the silhouette's rim
+    pull: 0.35,            // metres an occluder must be in front before it shows
   },
 
   // --- World / track ---
@@ -130,9 +163,17 @@ export const CONFIG = {
     spacing: 2.4,          // metres between coins in a row
     height: 0.6,           // coin centre above the feet of a running player
     pickupSize: 0.4,       // half size of the coin pickup box
-    maxRow: 10,
+    maxRow: 14,
+    // coins in more than the route lane (patterns.js): per block, the chance of a row /
+    // obstacle coins in a second lane, and in the third lane too
+    sideChance: 0.95,
+    thirdChance: 0.4,
+    routeRowChance: 0.85,  // a row on the route lane's free stretch
+    zigzagChance: 0.7,     // a diagonal line across when the route moves one lane
+    roofChance: 0.7,       // a row on the roof of stationary wagons (no ramp)
+    trapTime: 0.8,         // side-lane rows end this many s before a blocking car / train
   },
-  coinScore: 10,           // score per coin (score = distance * scorePerMeter + coins * coinScore)
+  coinScore: 10,          // score per coin (score = distance * scorePerMeter + coins * coinScore)
 
   // --- Venom chase (G8). Gaps are metres behind the player (+Z). ---
   chaser: {
@@ -202,6 +243,38 @@ export const CONFIG = {
     grabReachMax: 9,
   },
 
+  // --- Spider-sense (powerups/sense.js) ---
+  sense: {
+    duration: 12,          // seconds of auto-dodge after a pickup
+    pickupChance: 0.8,     // per pattern block with a free stretch on the route lane (and no
+                           // other pickup there: web / core go first) ...
+    pickupMinGap: 450,     // ... and this many metres after the last one: ~1 per 1000 m
+    pickupY: 0.15,
+    pickupScale: 1.3,
+    lookAhead: 0.7,       // s: obstacles reaching the player within this are simulated
+    actTime: 0.3,          // s: dodge only a hit this close (later = "he could not have")
+    laneActTime: 0.45,     // ... for a wall / train face (a lane change; the next lane may close)
+    laneClearTime: 0.6,    // a lane is a way out if no wall / train reaches the player sooner
+    laneRankTime: 1.5,     // of two ways out, take the one whose next wall is further (up to this) ...
+    centerBonus: 0.25,     // ... counting the middle lane this many s better (two ways out from there)
+    simStep: 1 / 120,      // s per step of the jump / slide prediction
+  },
+
+  // --- Magnet (powerups/magnet.js) ---
+  magnet: {
+    duration: 13,          // seconds
+    pickupChance: 0.3,     // like sense: ~1 per 800 m (the web cartridge: ~1 per 700 m)
+    pickupMinGap: 200,
+    pickupY: 0.15,
+    pickupScale: 1.3,
+    ahead: 22,             // pull coins this many metres ahead ...
+    behind: 2,             // ... up to this far behind ...
+    side: 5,               // ... and this far to the side (all three lanes), at any height
+    flyTime: 0.32,         // s from the coin's place to Spider-Man
+    arc: 0.9,              // m the flight bows upward
+    chest: 0.9,            // target height above the feet
+  },
+
   // --- Start-of-run intro clip (intro.js). Seconds unless noted; z is metres behind the
   //     player's start spot (the world stands still during the clip). ---
   intro: {
@@ -242,11 +315,28 @@ export const CONFIG = {
     safeStart: 60,         // metres with no obstacles at run start
     reactionTime: 0.5,     // seconds a player needs to react (used for spacing)
     blockTimeEasy: 1.5,    // seconds of running per pattern block at the start ...
-    blockTimeHard: 1.05,   // ... and at full difficulty
+    blockTimeHard: 1.05,   // ... and at full difficulty (0.915 s at difficultyMax) ...
+    blockTimeEndless: 0.76, // ... shrinking toward this in the endless phase (k -> 1)
     difficultyDistance: 2500, // metres until difficulty 1 (first phase) ...
     difficultyDistance2: 12000, // ... then it creeps on to difficultyMax over this many metres
     difficultyMax: 1.3,
+    // Endless phase (after difficultyMax, ~8.8 min): difficulty keeps growing as
+    // difficultyMax + endlessGain * ln(1 + metres past it / endlessScale), with no plateau.
+    // The extra part h drives the "hard" knobs through k = h / (h + endlessHalf) (0 -> 1, never
+    // quite there): tighter route spacing, jump->slide combos, fuller side lanes, more and
+    // faster trains.
+    endlessGain: 0.4,
+    endlessScale: 5000,
+    endlessHalf: 0.2,
+    afterTimeHard: 0.72,   // route spacing after an obstacle shrinks to this share at k = 1
+    comboChance: 0.55,     // chance of a 2nd route obstacle in the same block at k = 1
+    sideSecondChance: 0.6, // chance of a 2nd obstacle in a side lane in the same block at k = 1
+    sideGapHard: 2,        // random extra gap after side-lane obstacles: 0-6 m -> 0-this
+    blockWeightHard: 2.5,  // extra weight of stationary wagons in side lanes at k = 1
+    trainSpeedMinHard: 9,  // oncoming train speed range at k = 1
+    trainSpeedMaxHard: 16,
     trainStart: 200,       // no oncoming trains before this distance
-    checkGapTime: 0.6,     // tools/check-patterns.mjs: min seconds between two actions in a lane
+    checkGapTime: 0.6,     // tools/check-patterns.mjs: min seconds between two actions in a lane ...
+    minReaction: 0.4,      // ... which may shrink to this in the endless phase (never lower)
   },
 };

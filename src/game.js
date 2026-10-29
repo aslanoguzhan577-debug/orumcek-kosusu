@@ -20,7 +20,9 @@ const state = {
   webCharges: 0,    // G9
   ironCount: 0,     // G10 (persistent inventory; NOT reset per run)
   ironTime: 0,      // G10 seconds left
-  time: 0,          // seconds of running this round (extra, not in contract)
+  senseTime: 0,     // spider-sense seconds left (powerups/sense.js), 0 = off
+  magnetTime: 0,    // magnet seconds left (powerups/magnet.js), 0 = off
+  time: 0,         // seconds of running this round (extra, not in contract)
   intro: false,     // true while the start-of-run clip plays (intro.js)
 };
 
@@ -152,8 +154,9 @@ export const game = {
 
     if (running && !this.halted) {
       state.time += dt;
-      const accel = state.speed < CONFIG.cruiseSpeed ? CONFIG.acceleration : CONFIG.acceleration2;
-      state.speed = Math.min(CONFIG.maxSpeed, state.speed + accel * dt);
+      const accel = state.speed < CONFIG.cruiseSpeed ? CONFIG.acceleration
+        : state.speed < CONFIG.maxSpeed ? CONFIG.acceleration2 : CONFIG.acceleration3;
+      state.speed = Math.min(CONFIG.topSpeed, state.speed + accel * dt);
       state.distance += state.speed * dt;
       this.world.update(dt, state.speed);
       for (const s of this.systems) if (s.beforePlayer) s.beforePlayer(dt);

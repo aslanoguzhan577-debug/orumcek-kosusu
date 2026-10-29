@@ -183,7 +183,8 @@ function finishPlain(list, g, color, cx, cy, cz, rx = 0, ry = 0, rz = 0) {
   list.push(g);
 }
 function pBox(list, cx, cy, cz, sx, sy, sz, color, rx = 0, ry = 0, rz = 0) {
-  finishPlain(list, new THREE.BoxGeometry(sx, sy, sz), color, cx, cy, cz, rx, ry, rz);
+  // long boxes (street, deck beams) get cuts every ~5 m so the curved world bends them smoothly
+  finishPlain(list, new THREE.BoxGeometry(sx, sy, sz, 1, 1, Math.max(1, Math.round(sz / 5))), color, cx, cy, cz, rx, ry, rz);
 }
 function pCyl(list, cx, cy, cz, rTop, rBot, h, seg, color) {
   finishPlain(list, new THREE.CylinderGeometry(rTop, rBot, h, seg, 1), color, cx, cy, cz);
