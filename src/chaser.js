@@ -16,9 +16,9 @@
 // onFrontHit stays first in line, so G10 can still absorb a crash before any of this.
 // Events: venomNear (he has arrived close), venomFar (he falls back), caught.
 //
-// Readability: when close, Venom stands where only his head and shoulders show at the
-// bottom edge of the screen (CONFIG.chaser.headScreenY, computed from the chase camera),
-// so he never hides the player or the lanes ahead.
+// Readability: when close, Venom stands where his head top is just below Spider-Man's
+// feet on screen, showing at most CONFIG.chaser.maxScreenShare of the screen height
+// (head, shoulders, back emblem), so he never hides the player or the lanes ahead.
 //
 // The model is passed in (main.js is the single creation point); setModel() swaps it.
 
@@ -33,6 +33,7 @@ const CATCHING = new Set(['catch', 'lunge', 'caught']);
 const _box = new THREE.Box3();
 const _shotPos = new THREE.Vector3();
 const _shotLook = new THREE.Vector3();
+const _proj = new THREE.Vector3();
 const _size = new THREE.Vector3();
 
 function damp(current, target, rate, dt) {
@@ -186,21 +187,27 @@ export class Chaser {
     rig.setShot(_shotPos, _shotLook);
   }
 
-  // Gap at which the top of Venom's head sits at headScreenY (fraction of the screen
-  // height, from the bottom), using the chase camera's own pose (not camera.position,
-  // which the catch cam may move).
+  // Close-up gap, from the live chase camera: the top of Venom's head goes just below
+  // Spider-Man's feet on screen (feetMargin), but never higher than maxScreenShare of the
+  // screen from the bottom. Projected with the real camera, so it adapts to roofs, jumps
+  // and the zip tilt. Bisection: further back (toward the camera) = lower on screen.
   _nearGap() {
     const rig = game.cameraRig;
-    if (!rig || !game.camera) return C.minGap;
-    const cam = CONFIG.camera;
-    const camUp = cam.height * rig.scale;                       // above the floor
-    const camZ = cam.distance * rig.scale;
-    const lookY = cam.lookHeight + rig.tilt * cam.zipLookUp;
-    const pitch = Math.atan2(camUp - lookY, camZ + cam.lookAhead); // looking down
-    const halfFov = THREE.MathUtils.degToRad(game.camera.fov) / 2;
-    const below = pitch + Math.atan((1 - 2 * C.headScreenY) * Math.tan(halfFov));
-    const gap = camZ - Math.max(0.1, camUp - this.height * C.nearScale) / Math.tan(below);
-    return THREE.MathUtils.clamp(gap, C.minGap, Math.max(C.minGap, camZ - 0.8));
+    const cam = game.camera;
+    if (!rig || !cam) return C.minGap;
+    cam.updateMatrixWorld();
+    const p = this.player;
+    const feet = _proj.set(p.x, p.y, 0).project(cam).y;
+    const target = Math.min(feet - C.feetMargin, -1 + 2 * C.maxScreenShare);
+    const top = this.y + this.height * C.nearScale;
+    let lo = C.minGap;
+    let hi = Math.max(C.minGap, CONFIG.camera.distance * rig.scale - 0.8);
+    for (let i = 0; i < 10; i++) {
+      const mid = (lo + hi) / 2;
+      if (_proj.set(this.x, top, mid).project(cam).y > target) lo = mid;
+      else hi = mid;
+    }
+    return hi;
   }
 
   update(dt) {

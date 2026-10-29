@@ -8,9 +8,12 @@ export const CONFIG = {
   laneSwitchTime: 0.14,    // seconds for one lane change (works mid-air too)
 
   // --- Speed and score ---
+  // Two phases: start -> cruiseSpeed quickly (~100 s), then slowly on to maxSpeed (~7 min).
   startSpeed: 11,          // m/s at run start
-  maxSpeed: 28,            // m/s cap
-  acceleration: 0.15,      // m/s gained per second
+  cruiseSpeed: 26,         // end of the first phase
+  maxSpeed: 32,            // m/s cap (second phase end)
+  acceleration: 0.15,      // m/s gained per second, first phase
+  acceleration2: 0.014,    // m/s gained per second, second phase
   scorePerMeter: 1,
 
   // --- Player body / hitbox ---
@@ -123,8 +126,8 @@ export const CONFIG = {
     nearTime: 4.5,         // seconds he stays close after a stumble; a 2nd stumble inside = caught
     farGap: 30,            // where he waits when he has fallen back (off screen)
     minGap: 2.6,           // closest he gets while chasing (catching goes closer)
-    headScreenY: 0.11,     // when close, the top of his head sits this high on screen
-                           // (fraction from the bottom): only head + shoulders show
+    maxScreenShare: 0.24,  // when close, he fills at most this much of the screen height
+    feetMargin: 0.08,      // ... and his head stays this far (NDC) below Spider-Man's feet
     nearScale: 0.8,        // his size while chasing (the catch cam shows him at full size)
     approachRate: 3.5,     // how fast he closes in (damping rate)
     retreatRate: 1.4,      // how fast he falls back
@@ -213,7 +216,6 @@ export const CONFIG = {
     camDistGround: 6.5,    // ... and on the ground
     camHeight: 2.2,        // height above the deck (+ a share of Spider-Man's height)
     camFollowY: 0.45,
-    camDamp: 6,
     orbitPullIn: 0.5,      // run phase: the camera orbit comes this much closer beside him ...
     orbitRise: 1.5,        // ... and this much higher
     fogNear: 14,           // tighter fog while the camera looks back down the track
@@ -227,7 +229,9 @@ export const CONFIG = {
     reactionTime: 0.5,     // seconds a player needs to react (used for spacing)
     blockTimeEasy: 1.5,    // seconds of running per pattern block at the start ...
     blockTimeHard: 1.05,   // ... and at full difficulty
-    difficultyDistance: 2500, // metres until full difficulty
+    difficultyDistance: 2500, // metres until difficulty 1 (first phase) ...
+    difficultyDistance2: 12000, // ... then it creeps on to difficultyMax over this many metres
+    difficultyMax: 1.3,
     trainStart: 200,       // no oncoming trains before this distance
     checkGapTime: 0.6,     // tools/check-patterns.mjs: min seconds between two actions in a lane
   },

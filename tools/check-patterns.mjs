@@ -1,5 +1,5 @@
 // tools/check-patterns.mjs — asserts that the pattern generator always leaves a way through.
-// Run:  node tools/check-patterns.mjs [seeds=300] [metres=6000]
+// Run:  node tools/check-patterns.mjs [seeds=150] [metres = a 10-minute run on the speed curve]
 //
 // Independent of the generator's own route bookkeeping, it rebuilds each lane as a strip of
 // cells (free / jump / slide / ramp+roof / blocked) and searches for a path from the start to
@@ -13,10 +13,49 @@
 // that static obstacles in a lane never overlap.
 
 import { CONFIG } from '../src/config.js';
-import { PatternGenerator, speedAt } from '../src/patterns.js';
+import { PatternGenerator, speedAt, difficultyAt } from '../src/patterns.js';
 
-const SEEDS = Number(process.argv[2] || 300);
-const LENGTH = Number(process.argv[3] || 6000);
+// Distance after `seconds` of running, simulated exactly like game.js (dt = 1/60).
+function runDistance(seconds) {
+  let v = CONFIG.startSpeed;
+  let d = 0;
+  const dt = 1 / 60;
+  for (let t = 0; t < seconds; t += dt) {
+    const a = v < CONFIG.cruiseSpeed ? CONFIG.acceleration : CONFIG.acceleration2;
+    v = Math.min(CONFIG.maxSpeed, v + a * dt);
+    d += v * dt;
+  }
+  return { d, v };
+}
+
+// --- the speed model the generator uses must match the game's speed over time ---
+{
+  const ten = runDistance(600);
+  for (const sec of [30, 100, 200, 400, 600]) {
+    const r = runDistance(sec);
+    const err = Math.abs(speedAt(r.d) - r.v);
+    if (err > 0.1) {
+      console.error(`FAIL speedAt(${r.d.toFixed(0)} m) = ${speedAt(r.d).toFixed(2)}, game speed ${r.v.toFixed(2)} at ${sec} s`);
+      process.exitCode = 1;
+    }
+  }
+  console.log(`10-minute run: ${(ten.d / 1000).toFixed(1)} km, speed ${ten.v.toFixed(1)} m/s; ` +
+    `${runDistance(120).v.toFixed(1)} m/s at 2 min; difficulty at end ${difficultyAt(ten.d).toFixed(2)}`);
+  // pattern blocks must stay longer than a lane change window (train margin assumption)
+  const P = CONFIG.patterns;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  for (const v of [CONFIG.startSpeed, CONFIG.cruiseSpeed, CONFIG.maxSpeed]) {
+    const block = v * lerp(P.blockTimeEasy, P.blockTimeHard, P.difficultyMax);
+    const shift = v * (CONFIG.laneSwitchTime + P.reactionTime) + 2;
+    if (block <= shift) {
+      console.error(`FAIL at ${v} m/s a block (${block.toFixed(1)} m) is not longer than a lane change (${shift.toFixed(1)} m)`);
+      process.exitCode = 1;
+    }
+  }
+}
+
+const SEEDS = Number(process.argv[2] || 150);
+const LENGTH = Number(process.argv[3] || Math.ceil(runDistance(600).d));
 const STEP = 0.25;
 const LANES = CONFIG.laneCount;
 

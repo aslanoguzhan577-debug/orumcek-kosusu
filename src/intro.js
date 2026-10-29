@@ -176,7 +176,7 @@ export class Intro {
         zS = this.zRoll - P.rollDistance * (1 - (1 - u) * (1 - u));
         pState = 'roll';
         zV = lerp(this.zFall - P.fallForward + P.venomLag * 0.7, this.zRun + P.venomRoarGap, smooth(u));
-        lookVenom = 0.2 * u;
+        lookVenom = 0.4 * u;
         break;
       case 'roar':
         zS = this.zRun;
@@ -215,14 +215,10 @@ export class Intro {
         this._camLookT.y += (yV + this.chaser.height * 0.7 - this._camLookT.y) * lookVenom;
         this._camLookT.z += (zV - this._camLookT.z) * lookVenom;
       }
-      if (snap) {
-        this.camPos.copy(this._camPosT);
-        this.camLook.copy(this._camLookT);
-      } else {
-        const k = 1 - Math.exp(-P.camDamp * dt);
-        this.camPos.lerp(this._camPosT, k);
-        this.camLook.lerp(this._camLookT, k);
-      }
+      // no damping: every input above is continuous, and a lagging camera lets him
+      // roll right into the lens
+      this.camPos.copy(this._camPosT);
+      this.camLook.copy(this._camLookT);
     }
     this.rig.setShot(this.camPos, this.camLook, true);
   }
@@ -266,7 +262,7 @@ export class Intro {
     this.camPos.set(Math.sin(a) * r, h, zS - Math.cos(a) * r);
     // look at Spider-Man for most of the move, then hand over to the chase camera's target
     const toHim = Math.min(1, u * 4);
-    const toChase = s * s * s;
+    const toChase = Math.pow(s, 6); // keep him centred until the camera is behind him
     const fx = 0, fy = 0.9, fz = zS;
     this.camLook.set(
       lerp(lerp(o.look.x, fx, toHim), 0, toChase),

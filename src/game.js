@@ -152,7 +152,8 @@ export const game = {
 
     if (running && !this.halted) {
       state.time += dt;
-      state.speed = Math.min(CONFIG.maxSpeed, state.speed + CONFIG.acceleration * dt);
+      const accel = state.speed < CONFIG.cruiseSpeed ? CONFIG.acceleration : CONFIG.acceleration2;
+      state.speed = Math.min(CONFIG.maxSpeed, state.speed + accel * dt);
       state.distance += state.speed * dt;
       this.world.update(dt, state.speed);
       for (const s of this.systems) if (s.beforePlayer) s.beforePlayer(dt);

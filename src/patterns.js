@@ -48,11 +48,24 @@ export function randomSeed() {
   return Math.floor(Math.random() * 4294967296) >>> 0;
 }
 
-// Expected run speed when the player reaches ground distance d
-// (speed grows linearly with time: v^2 = v0^2 + 2 a d).
+// Expected run speed when the player reaches ground distance d. Speed grows linearly with
+// time in two phases (game.js), so per phase v^2 = v0^2 + 2 a d.
 export function speedAt(d) {
-  const v = Math.sqrt(CONFIG.startSpeed * CONFIG.startSpeed + 2 * CONFIG.acceleration * Math.max(0, d));
-  return Math.min(CONFIG.maxSpeed, v);
+  const v0 = CONFIG.startSpeed;
+  const v1 = CONFIG.cruiseSpeed;
+  const d1 = (v1 * v1 - v0 * v0) / (2 * CONFIG.acceleration); // end of the first phase
+  d = Math.max(0, d);
+  if (d <= d1) return Math.sqrt(v0 * v0 + 2 * CONFIG.acceleration * d);
+  return Math.min(CONFIG.maxSpeed, Math.sqrt(v1 * v1 + 2 * CONFIG.acceleration2 * (d - d1)));
+}
+
+// Difficulty at ground distance d: 0 -> 1 over the first phase, then creeping on to
+// patterns.difficultyMax (lerps below extrapolate past 1 on purpose).
+export function difficultyAt(d) {
+  const P = CONFIG.patterns;
+  const base = clamp((d - P.safeStart) / P.difficultyDistance, 0, 1);
+  const extra = clamp((d - P.safeStart - P.difficultyDistance) / P.difficultyDistance2, 0, 1);
+  return base + (P.difficultyMax - 1) * extra;
 }
 
 // Length along the track of an obstacle descriptor.
@@ -124,7 +137,7 @@ export class PatternGenerator {
     const rng = this.rng;
     const A = this.cursor;
     const v = speedAt(A + 40); // a little faster than now = safer spacing
-    const diff = clamp((A - P.safeStart) / P.difficultyDistance, 0, 1);
+    const diff = difficultyAt(A);
     const blockLen = v * lerp(P.blockTimeEasy, P.blockTimeHard, diff);
     const B = A + blockLen;
     this.cursor = B;
