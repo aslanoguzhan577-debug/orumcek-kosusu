@@ -334,12 +334,14 @@ function bakeHead(headGeo) {
     paintVenomFace(g, (X, Y) => toPx(X * W, Y * H), s);
   });
   const base = rgb('#14141b');
+  const white = rgb(WHITE);
   const tmp = [0, 0, 0];
   const grid = sphereGrid(headGeo), p = new THREE.Vector3(), d = new THREE.Vector3();
   return bakeTextures(1280, 640, ([col, glow], u, v) => {
     col[0] = base[0]; col[1] = base[1]; col[2] = base[2];
-    if (sphereDir(u, v, d).z < -0.05) {
-      grid.at(u, v, p);
+    sphereDir(u, v, d);
+    grid.at(u, v, p);
+    if (d.z < -0.05) {
       tmp[0] = 0; tmp[1] = 0; tmp[2] = 0;
       const a = face.over(p.x, p.y, tmp);
       if (a > 0) {
@@ -348,7 +350,36 @@ function bakeHead(headGeo) {
         if (lum > 150) for (let i = 0; i < 3; i++) glow[i] = tmp[i];
       }
     }
+    // outside the face (past the eyes' outer edge), the eye tips run round the sides
+    if (Math.abs(p.x) > W * 0.86 || d.z >= -0.05) {
+      const a = eyeTip(Math.atan2(Math.abs(d.x), -d.z), p.y / H);
+      if (a > 0) for (let i = 0; i < 3; i++) { col[i] += (white[i] - col[i]) * a; glow[i] += (white[i] - glow[i]) * a; }
+    }
   }, 2);
+}
+
+// The white eyes do not stop at the corners of the face (photo 7): their outer tips sweep
+// back along the sides of the head and end in points on the back corners, so he reads as
+// Venom from behind and from above too. The middle of the back stays plain.
+// az: angle round the head from the front (0) to the back (pi), y: height (1 = top).
+const TIP_A0 = 0.62, TIP_A1 = 2.86;
+// lower / upper edge of the tip (height) at s = 0..1 along it
+const TIP_LO = [[0, -0.1], [0.3, 0.22], [0.6, 0.38], [0.86, 0.48], [1, 0.74]];
+const TIP_HI = [[0, 0.77], [0.4, 0.88], [0.86, 0.9], [1, 0.8]];
+function knots(k, s) {
+  let i = 0;
+  while (i < k.length - 2 && s > k[i + 1][0]) i++;
+  const [s0, y0] = k[i], [s1, y1] = k[i + 1];
+  const w = THREE.MathUtils.clamp((s - s0) / (s1 - s0), 0, 1);
+  return y0 + (y1 - y0) * (1 - Math.cos(Math.PI * w)) / 2;
+}
+function eyeTip(az, y) {
+  if (az < TIP_A0 || az > TIP_A1 + 0.02) return 0;
+  const s = Math.min(1, (az - TIP_A0) / (TIP_A1 - TIP_A0));
+  const lo = knots(TIP_LO, s), hi = knots(TIP_HI, s);
+  const e = 0.012;
+  return THREE.MathUtils.smoothstep(y, lo - e, lo + e) * (1 - THREE.MathUtils.smoothstep(y, hi - e, hi + e)) *
+    (1 - THREE.MathUtils.smoothstep(az, TIP_A1 - 0.01, TIP_A1 + 0.02));
 }
 
 function bakeTorso(torsoGeo) {
@@ -442,6 +473,9 @@ export function createVenom() {
   const tonguePts = Array.from({ length: 14 }, () => new THREE.Vector3());
   const tongueR = Array.from({ length: 14 }, (_, i) => 0.066 - i * 0.0019);
   const tongueTmp = new THREE.Vector3();
+  const flickTmp = new THREE.Vector3();
+  // every 1-2 s a quick whip of the tongue out past the side of the head (seen from behind)
+  const flick = { wait: 1.2, u: 1, side: 1 };
 
   // --- arms: deltoid + bulging biceps, forearm with a big clawed hand (one mesh each)
   const upperGeo = smoothLathe([
@@ -501,7 +535,7 @@ export function createVenom() {
     armLX: 0, armLY: 0, armLZ: -0.35, elbowL: 0.3,
     armRX: 0, armRY: 0, armRZ: 0.35, elbowR: 0.3,
     legLX: 0, legLZ: -0.1, legRX: 0, legRZ: 0.1, kneeL: 0, kneeR: 0,
-    tongueOut: 0.4, tongueWiggle: 1, tongueSwing: 0,
+    tongueOut: 0.4, tongueWiggle: 1, tongueSwing: 0, tongueFlick: 0,
   };
   const blend = new PoseBlend(defaults, 0.13);
   let state = 'run';
@@ -557,6 +591,14 @@ export function createVenom() {
     const reach = 0.5 + 0.5 * p.tongueOut;  // how much of the full curve is out
     const wig = p.tongueWiggle;
     const sw = p.tongueSwing * Math.sin(t * 3.4);
+    flick.wait -= dt;
+    if (flick.wait <= 0) {
+      flick.wait = 1 + Math.random();
+      flick.u = 0;
+      flick.side = Math.random() < 0.7 ? 1 : -1;  // mostly his left, where it hangs
+    }
+    flick.u = Math.min(1, flick.u + dt / 0.36);
+    const fl = p.tongueFlick * Math.pow(Math.sin(Math.PI * flick.u), 0.6);
     for (let i = 0; i < 14; i++) {
       const f = i / 13;
       TONGUE_PATH.getPoint(f * reach, tongueTmp);
@@ -566,6 +608,11 @@ export function createVenom() {
         tongueTmp.y + Math.sin(t * 9 * wig - f * 4) * 0.03 * ff - Math.abs(sw) * 0.05 * ff,
         tongueTmp.z - Math.abs(sw) * 0.08 * ff
       );
+      if (fl > 0) {
+        TONGUE_WHIP.getPoint(f, flickTmp);
+        flickTmp.x = flickTmp.x * flick.side + Math.sin(t * 30 - f * 6) * 0.05 * ff;
+        tonguePts[i].lerp(flickTmp, fl);
+      }
     }
     tongue.set(tonguePts, tongueR, 0.9);
   }
@@ -578,6 +625,12 @@ export function createVenom() {
 const TONGUE_PATH = new THREE.CatmullRomCurve3([
   [0, 0, 0], [0, -0.01, -0.1], [0.03, -0.08, -0.17], [0.07, -0.2, -0.17], [0.13, -0.31, -0.14],
   [0.22, -0.38, -0.11], [0.33, -0.4, -0.08], [0.43, -0.36, -0.07], [0.49, -0.28, -0.08], [0.48, -0.2, -0.1],
+].map((a) => new THREE.Vector3(...a)), false, 'centripetal');
+
+// the whip: out of the mouth, round the side of the head and back past its silhouette
+const TONGUE_WHIP = new THREE.CatmullRomCurve3([
+  [0, 0, 0], [0.05, -0.05, -0.12], [0.3, -0.12, -0.16], [0.62, -0.06, -0.05], [0.86, 0.08, 0.18],
+  [0.98, 0.24, 0.42], [1.02, 0.42, 0.66],
 ].map((a) => new THREE.Vector3(...a)), false, 'centripetal');
 
 function venomPose(state, P, t, st, phase) {
@@ -613,6 +666,7 @@ function venomPose(state, P, t, st, phase) {
       P.tongueOut = 1;
       P.tongueWiggle = 1.6;
       P.tongueSwing = 0.35;
+      P.tongueFlick = 1;
       break;
     }
     case 'roar': { // intro: planted wide, arms flung out, chest out, head back, tongue out, shuddering
@@ -691,6 +745,7 @@ function venomPose(state, P, t, st, phase) {
       P.tongueSwing = 1;
       P.tongueOut = 0.6;
       P.tongueWiggle = 1;
+      P.tongueFlick = 1;
       break;
     }
   }
