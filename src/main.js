@@ -20,6 +20,7 @@ import { CameraRig } from './camera.js';
 import { addLights } from './lights.js';
 import { createSpiderman } from './models/spiderman.js';
 import { createIronSpider } from './models/ironspider.js';
+import { createHelloKitty } from './models/hellokitty.js';
 import { createVenom } from './models/venom.js';
 import { initCity } from './city.js';
 import { initFx } from './fx.js';
@@ -47,8 +48,14 @@ const cameraRig = new CameraRig(camera);
 
 // ---------- world + player ----------
 const world = new World(scene);
-// The ONE place the player's model is created (G6: swap for createSpiderman()).
-const player = new Player(createSpiderman());
+// The ONE place the player's skins are created: both built once (behind the loading screen),
+// the chosen one is the player's model, the other hangs hidden under player.root.
+const SKIN_KEY = 'spidey.skin';
+const skins = { spider: createSpiderman(), kitty: createHelloKitty() };
+let skin = 'spider';
+try { if (skins[localStorage.getItem(SKIN_KEY)]) skin = localStorage.getItem(SKIN_KEY); } catch (e) { /* default */ }
+const player = new Player(skins[skin]);
+for (const k in skins) if (skins[k] !== player.model) { player.root.add(skins[k].root); skins[k].root.visible = false; }
 scene.add(player.root);
 
 const shadow = createBlobShadow(0.55);
@@ -69,6 +76,15 @@ game.web = web;
 const iron = new IronSpiderPowerup({ player, obstacles, chaser, ironModel: createIronSpider() });
 game.addSystem(iron);
 game.iron = iron;
+// Menu skin choice: the suit power-up swaps back to whichever skin is chosen.
+game.skins = skins;
+game.skin = skin;
+game.setSkin = (name) => {
+  if (!skins[name]) return;
+  game.skin = name;
+  iron.normalModel = skins[name];
+  if (!iron.active) player.useModel(skins[name]);
+};
 const sense = new SensePowerup({ player, obstacles }); // spider-sense auto-dodge
 game.addSystem(sense);
 game.sense = sense;
@@ -136,4 +152,4 @@ renderer.setAnimationLoop((now) => {
 });
 
 // Start-up warm-up (behind the loading screen): shaders, textures, pooled objects.
-warmUp(game, [...fx.textures, ...(player.model.textures || [])]);
+warmUp(game, [...fx.textures, ...Object.values(skins).flatMap((m) => m.textures || [])]);

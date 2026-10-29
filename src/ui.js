@@ -18,6 +18,7 @@ import { setMuted, isMuted } from './audio.js';
 import { drawPowerIcon } from './pickup-art.js';
 
 const KEY_NAME = 'spidey.name';
+const KEY_SKIN = 'spidey.skin';
 const KEY_SCORES = 'spidey.scores';
 const KEY_HELP = 'spidey.helpSeen';
 const OVER_DELAY_MS = 750;   // let the crash be seen before the game-over card
@@ -46,7 +47,7 @@ const el = {
   score: $('h-score'), coins: $('h-coins'), pause: $('h-pause'),
   web: $('h-web'), iron: $('h-iron'), ironN: $('h-iron-n'), ironHint: $('h-iron-hint'),
   ironBar: $('h-ironbar'), ironFill: $('h-ironfill'),
-  menu: $('scr-menu'), market: $('scr-market'), mkCoins: $('mk-coins'), mkList: $('mk-list'), mkBtn: $('b-market'), mkClose: $('b-market-close'), help: $('scr-help'), pauseScr: $('scr-pause'), over: $('scr-over'),
+  menu: $('scr-menu'), market: $('scr-market'), mkCoins: $('mk-coins'), mkList: $('mk-list'), skin: $('scr-skin'), skinBtn: $('b-skin'), skinOk: $('b-skin-close'), mkBtn: $('b-market'), mkClose: $('b-market-close'), help: $('scr-help'), pauseScr: $('scr-pause'), over: $('scr-over'),
   nameBox: $('m-namebox'), name: $('m-name'), best: $('m-best'), bestName: $('m-bestname'),
   play: $('b-play'), helpBtn: $('b-help'), helpOk: $('b-help-ok'),
   resume: $('b-resume'), restart: $('b-restart'), pauseMenu: $('b-pause-menu'),
@@ -57,7 +58,7 @@ const el = {
 if (!el.hud || !el.menu) {
   console.warn('[ui] #ui markup missing from index.html');
 }
-const screens = { intro: $('intro-hint'), hud: el.hud, menu: el.menu, market: el.market, help: el.help, pause: el.pauseScr, over: el.over };
+const screens = { intro: $('intro-hint'), hud: el.hud, menu: el.menu, market: el.market, skin: el.skin, help: el.help, pause: el.pauseScr, over: el.over };
 const slots = el.web ? Array.from(el.web.querySelectorAll('.slot')) : [];
 const muteButtons = Array.from(document.querySelectorAll('[data-mute]'));
 const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
@@ -122,6 +123,10 @@ function wantScreen(now) {
     case 'over': return now >= overAt ? 'over' : 'hud';
     default: return 'menu';
   }
+}
+
+function paintSkin() {
+  for (const b of document.querySelectorAll('[data-skin]')) b.classList.toggle('on', b.dataset.skin === (game.skin || 'spider'));
 }
 
 // ---------- market (src/shop.js is loaded lazily so a missing file cannot break the game) ----------
@@ -234,6 +239,15 @@ onButton(el.play, onPlay);
 onButton(el.helpBtn, () => openHelp(false));
 onButton(el.helpOk, closeHelp);
 onButton(el.mkBtn, openMarket);
+onButton(el.skinBtn, () => { forced = 'skin'; paintSkin(); });
+onButton(el.skinOk, () => { forced = 'menu'; });
+for (const b of document.querySelectorAll('[data-skin]')) {
+  onButton(b, () => {
+    lsSet(KEY_SKIN, b.dataset.skin);
+    if (game.setSkin) game.setSkin(b.dataset.skin);
+    paintSkin();
+  });
+}
 onButton(el.mkClose, () => { forced = 'menu'; });
 onButton(el.pause, () => game.pause());
 onButton(el.resume, () => game.resume());

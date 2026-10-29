@@ -509,3 +509,12 @@
 /* "demet" hearts (the layer lives on <body>, outside #ui) */
 .heart-fly { position: absolute; bottom: -60px; color: #ff2d55; text-shadow: 2px 2px 0 #0d0d14; animation: heart-up 2s ease-in forwards; }
 @keyframes heart-up { to { transform: translateY(-115vh) rotate(25deg); opacity: .2; } }
+
+/* karakter seçimi */
+#ui .skin-row { display: flex; gap: 12px; width: 100%; }
+#ui .skin-card { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 6px; background: #fff; border: 4px solid var(--ink); border-radius: 16px; box-shadow: 4px 4px 0 var(--ink); font-family: var(--font-h); font-size: 18px; letter-spacing: .05em; color: var(--ink); cursor: pointer; }
+#ui .skin-card b { font-weight: 400; }
+#ui .skin-card.on { background: var(--yellow); transform: rotate(-1.5deg) scale(1.04); }
+#ui .skin-ico { width: 84px; height: 84px; display: flex; align-items: center; justify-content: center; font-size: 46px; border: 3px solid var(--ink); border-radius: 50%; }
+#ui .skin-ico.spider { background: #d3202f; }
+#ui .skin-ico.kitty { background: #fff; }
