@@ -678,7 +678,7 @@ export function createSpiderCharacter(look, extras = {}) {
   const defaults = {
     pelvisX: 0, pelvisY: 0, pelvisZ: 0, pelvisRX: 0, pelvisRY: 0, pelvisRZ: 0,
     spineRX: 0, spineRY: 0, spineRZ: 0, squash: 1, rootSquash: 1, flip: 0, twist: 0, lift: 0, pivot: 0,
-    headRX: 0, headRY: 0, headRZ: 0,
+    headRX: 0, headRY: 0, headRZ: 0, neckOut: 0, limbOut: 0,
     armLX: 0, armLY: 0, armLZ: -0.2, armRX: 0, armRY: 0, armRZ: 0.2, elbowL: 0.15, elbowR: 0.15,
     legLX: 0, legLZ: -0.06, legRX: 0, legRZ: 0.06, kneeL: 0, kneeR: 0,
     ...(extras.defaults || {}),
@@ -738,6 +738,8 @@ export function createSpiderCharacter(look, extras = {}) {
       const e = Math.sin(Math.PI * ctx.pop / POP_T);
       pose.rootSquash *= 1 + 0.1 * e;
       pose.pelvisY += 0.06 * e;
+      pose.armLZ -= 0.7 * e;   // arms spring out wide
+      pose.armRZ += 0.7 * e;
     }
 
     pelvis.position.set(pose.pelvisX, D.hipY + pose.pelvisY, pose.pelvisZ);
@@ -752,6 +754,12 @@ export function createSpiderCharacter(look, extras = {}) {
     const sq = pose.squash;
     spine.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
     head.rotation.set(pose.headRX * HEAD_NOD, pose.headRY, pose.headRZ * HEAD_NOD);
+    neck.position.y = D.neckY + pose.neckOut; // slide crouch: head pushed out ahead of the shoulders
+    // slide crouch: shoulders and hips spread a little (the joints hide under the big head)
+    shoulderR.position.x = D.shoulderX + pose.limbOut;
+    shoulderL.position.x = -shoulderR.position.x;
+    legR.hip.position.x = D.hipX + 0.6 * pose.limbOut;
+    legL.hip.position.x = -legR.hip.position.x;
     shoulderL.rotation.set(pose.armLX, pose.armLY, pose.armLZ);
     shoulderR.rotation.set(pose.armRX, pose.armRY, pose.armRZ);
     armL.elbow.rotation.x = pose.elbowL;
@@ -813,6 +821,24 @@ function jumpPeak(t) {
     legLX: 1.0, legLZ: -1.1, kneeL: -2.1, legRX: 1.3, legRZ: 0.8, kneeR: -1.8, squash: 1,
   });
 }
+
+// Slide: the spider crouch (Funko head 0.73 m tall: its bottom sits ~0.15 m off the deck so the
+// top stays under ~0.83 m; the head is pushed out ahead of the shoulders so the back emblem and
+// the splayed limbs show around it from the chase camera). Arms/legs solved for hands and boots
+// on the deck with elbows and knees out wide.
+const SLIDE_CROUCH = {
+  rootSquash: 0.9, pelvisY: -0.16, pelvisZ: 0.5, pelvisRX: -0.7, spineRX: -0.95, twist: 0,
+  neckOut: 0.28, limbOut: 0.09, headRX: 3.67, headRY: 0, pelvisRZ: 0, spineRZ: 0,
+  armLX: 0.46, armLY: 0.21, armLZ: -1.69, elbowL: 1.11, armRX: 0.46, armRY: -0.21, armRZ: 1.69, elbowR: 1.11,
+  legLX: 1.89, legLZ: -1.25, kneeL: -0.97, legRX: 1.89, legRZ: 1.25, kneeR: -0.97,
+};
+// entry: turned sideways in a skid (right side leading), right hand slapping the deck, left
+// arm thrown up and back, head still looking down the track
+const SLIDE_SKID = {
+  ...SLIDE_CROUCH, rootSquash: 0.86, twist: 0.6, pelvisX: -0.2, headRY: -0.5, pelvisRZ: 0.04,
+  armRX: 0.95, armRY: 0, armRZ: 1.35, elbowR: 0.55,
+  armLX: 0.15, armLY: 0, armLZ: -2.45, elbowL: 0.45,
+};
 
 // Fills P from timed key poses [[time, pose], ...]: smooth (smoothstep) between keys,
 // holds the last one. Keys a pose does not list stay at P's current value.
@@ -880,33 +906,25 @@ function spiderPose(state, P, { t, st, phase }) {
       }
       break;
     }
-    case 'slide': { // power slide: quick drop, lying back on the big head, trailing hand drags, buzzing
-      const imp = Math.max(0, 1 - st / 0.12);  // impact right after the drop
-      const buzz = Math.min(1, st / 0.1);
-      P.rootSquash = 0.84 - 0.08 * imp;
-      P.pelvisY = -0.12 - 0.03 * imp + 0.012 * Math.sin(t * 62) * buzz;
-      P.pelvisRX = 1.1;
-      P.pelvisRY = 0.9;
-      P.pelvisX = -0.36;
-      P.pelvisZ = -0.15;
-      P.pelvisRZ = -0.12 + 0.035 * Math.sin(t * 47) * buzz;
-      P.spineRX = 0.2;
-      P.spineRY = 0.1;
-      P.headRX = 0.6;                          // the head lies back flat (Funko head: keeps the slide low)
-      P.headRY = -0.2;
-      P.headRZ = 0.05 + 0.06 * Math.sin(t * 53) * buzz;
-      P.legRX = 0.4;
-      P.kneeR = -0.05;
-      P.legRZ = 0.1;
-      P.legLX = 0.75;
-      P.legLZ = -0.7;
-      P.kneeL = -1.3;
-      P.armLX = -0.95;     // trailing hand dragging on the ground behind
-      P.armLZ = -0.5;
-      P.elbowL = 0.05;
-      P.armRX = 1.5;       // front fist up
-      P.armRZ = 0.5;
-      P.elbowR = 1.4;
+    case 'slide': { // spider crouch-skate: skids in sideways, slaps a hand down, swings square
+      // into a low spider crouch and skates on hands and feet, then pops up (POP_T)
+      keyframes(P, st, [[0, SLIDE_SKID], [0.08, SLIDE_SKID], [0.2, SLIDE_CROUCH]]);
+      const g = Math.min(1, Math.max(0, (st - 0.16) / 0.14));  // glide fades in after the swing
+      const slap = st > 0.16 && st < 0.3 ? Math.sin(Math.PI * (st - 0.16) / 0.14) : 0; // left hand lands
+      const w = Math.sin(t * 6.5) * g, w2 = Math.sin(t * 13 + 1) * g;
+      P.rootSquash -= 0.035 * slap;
+      P.pelvisY += -0.02 * slap + 0.006 * Math.sin(t * 62) * g;        // track buzz
+      P.pelvisX += 0.035 * w;                                          // skater's weight shift
+      P.pelvisRZ += 0.07 * w;
+      P.spineRZ -= 0.05 * w;
+      P.headRZ -= 0.12 * w;                                            // head stays level
+      P.headRY += 0.06 * Math.sin(t * 3.1) * g;
+      P.armLX += 0.1 * w2;                                             // fingers skipping on the deck
+      P.armRX -= 0.1 * w2;
+      P.elbowL += 0.12 * w2;
+      P.elbowR -= 0.12 * w2;
+      P.legLZ -= 0.06 * w;                                             // knees take the weight in turn
+      P.legRZ -= 0.06 * w;
       break;
     }
     case 'web': { // right arm shoots up-out (clear of the big head), left arm out, legs tucked

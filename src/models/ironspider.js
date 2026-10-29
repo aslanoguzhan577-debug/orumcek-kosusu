@@ -218,6 +218,7 @@ const MECH_DEFAULTS = {
   mUpT: 0.5, mUpB: 0.45, mUpK1: 0.95, mUpK2: 0.9, mUpC: 0.6,
   mLoT: 1.35, mLoB: 0.75, mLoK1: 0.75, mLoK2: 0.6, mLoC: 0.5,
   mSway: 0.06, mFlail: 0,
+  mPitch: 0, mReach: 1, // slide: arm frame turned back upright (the body is pitched forward), telescoped
 };
 
 const MECH_FLARE = {
@@ -247,11 +248,14 @@ function mechPose(state, P, { t, st }) {
       P.mLoT = 1.6; P.mLoB = 0.2; P.mLoK1 = 0.5; P.mLoK2 = 0.45; P.mLoC = 0.5;
       P.mSway = 0.05;
       break;
-    case 'slide': // braced low: planted on the track both sides like skids, buzzing
-      P.mUpT = 1.5; P.mUpB = -0.35; P.mUpK1 = 0.3; P.mUpK2 = 0.9; P.mUpC = 0.5;
-      P.mLoT = 1.95; P.mLoB = -0.05; P.mLoK1 = 0.3; P.mLoK2 = 0.9; P.mLoC = 0.5;
-      P.mSway = 0;
-      P.mFlail = 0.04;
+    case 'slide': // extra spider legs: arched up and out, claws braced on the deck ahead of and
+      // behind the crouch (upright frame: undoes the crouch's forward pitch), skating along
+      P.mUpT = 0.98; P.mUpB = -0.6; P.mUpK1 = 1.2; P.mUpK2 = 0.25; P.mUpC = 0.15;
+      P.mLoT = 1.06; P.mLoB = 0.56; P.mLoK1 = 1.06; P.mLoK2 = 0.26; P.mLoC = 0.16;
+      P.mPitch = 1.65;
+      P.mReach = 1.3;
+      P.mSway = 0.03;
+      P.mFlail = 0.02;
       break;
     case 'stumble':
       P.mFlail = 0.45 * Math.max(0.4, 1 - st);
@@ -397,6 +401,8 @@ const _e = new THREE.Euler();
 const _p = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _qa = new THREE.Quaternion();
+const _qp = new THREE.Quaternion();
+const _X = new THREE.Vector3(1, 0, 0);
 const _d = new THREE.Vector3();
 const _Y = new THREE.Vector3(0, 1, 0);
 const _one = new THREE.Vector3(1, 1, 1);
@@ -419,14 +425,15 @@ function applyMech(mech, pose, { t }, ik) {
 
     armBase(i, _p);
     _q.setFromEuler(_e.set(0, -s * B, -s * T, 'YZX'));
-    let k = 1;
+    if (pose.mPitch) _q.premultiply(_qp.setFromAxisAngle(_X, pose.mPitch));
+    let k = pose.mReach;
     const a = ik[i];
     if (a.w > 0) {
       _d.subVectors(a.target, _p);
       const L = _d.length();
       _d.divideScalar(L || 1);
       _q.slerp(_qa.setFromUnitVectors(_Y, _d), a.w);
-      k = 1 + (THREE.MathUtils.clamp((L - CLAW_LEN) / (3 * SEG), 0.6, a.maxK) - 1) * a.w;
+      k += (THREE.MathUtils.clamp((L - CLAW_LEN) / (3 * SEG), 0.6, a.maxK) - k) * a.w;
       K1 *= 1 - a.w;
       K2 *= 1 - a.w;
       C += (a.curl - C) * a.w;
