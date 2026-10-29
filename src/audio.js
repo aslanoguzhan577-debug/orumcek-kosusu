@@ -194,6 +194,50 @@ function growl(o) {
   lfo.start(t); lfo.stop(t + dur + 0.03);
 }
 
+// Cartoon scream: sawtooth with vibrato through two "aa" formant band-passes.
+// Pitch jumps up fast, then slides down slowly.
+function scream(o) {
+  if (!claim(false, 3)) return;
+  const t = ctx.currentTime + (o.at || 0);
+  const dur = o.dur;
+  const osc = ctx.createOscillator();
+  osc.type = 'sawtooth';
+  const f0 = o.f;
+  osc.frequency.setValueAtTime(f0, t);
+  osc.frequency.linearRampToValueAtTime(f0 * 2.1, t + 0.12);
+  osc.frequency.linearRampToValueAtTime(f0 * 2.3, t + 0.3);
+  osc.frequency.exponentialRampToValueAtTime(f0 * 1.3, t + dur);
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 6.5;
+  const lfoG = ctx.createGain();
+  lfoG.gain.value = f0 * 0.07;
+  lfo.connect(lfoG);
+  lfoG.connect(osc.frequency);
+  const sum = ctx.createGain();
+  const p = sum.gain;
+  p.setValueAtTime(0.0001, t);
+  p.linearRampToValueAtTime(o.vol, t + 0.04);
+  p.setValueAtTime(o.vol, t + dur * 0.7);
+  p.exponentialRampToValueAtTime(0.0001, t + dur);
+  const nodes = [osc, lfo, lfoG, sum];
+  for (const [f, q, g] of [[850, 5, 1], [1300, 6, 0.7]]) {
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = f;
+    bp.Q.value = q;
+    const gn = ctx.createGain();
+    gn.gain.value = g;
+    osc.connect(bp);
+    bp.connect(gn);
+    gn.connect(sum);
+    nodes.push(bp, gn);
+  }
+  sum.connect(master);
+  osc.onended = () => release(nodes, 3);
+  osc.start(t); osc.stop(t + dur + 0.03);
+  lfo.start(t); lfo.stop(t + dur + 0.03);
+}
+
 // ---------- sesler ----------
 const SOUNDS = {
   jump() {
@@ -325,10 +369,42 @@ const SOUNDS = {
     tone({ type: 'sine', f: 1568, dur: 0.2, vol: 0.06, at: 0.1 });
     noise({ dur: 0.15, vol: 0.08, attack: 0.05, filter: 'bandpass', f1: 600, f2: 3000, q: 1 });
   },
+  // ----- intro clip -----
+  i_swing() {
+    noise({ dur: 0.55, vol: 0.22, attack: 0.18, filter: 'bandpass', f1: 450, f2: 1900, q: 1.6 });
+    noise({ dur: 0.4, vol: 0.08, at: 0.1, attack: 0.1, filter: 'highpass', f1: 1500, f2: 4000 });
+  },
+  i_webEmpty() {
+    [[0, 1900], [0.17, 1500]].forEach(([at, f]) => {
+      tone({ type: 'square', f, dur: 0.03, vol: 0.2, at, attack: 0.001, filter: 'highpass', f1: 900 });
+      noise({ dur: 0.02, vol: 0.14, at, attack: 0.001, filter: 'highpass', f1: 3500 });
+      tone({ type: 'sine', f: f * 1.6, dur: 0.06, vol: 0.05, at, attack: 0.001 });
+    });
+  },
+  i_fall() {
+    tone({ type: 'sine', f: 2100, to: 320, dur: 1.0, vol: 0.15, attack: 0.05 });
+    tone({ type: 'triangle', f: 1400, to: 210, dur: 1.0, vol: 0.06, attack: 0.05 });
+    noise({ dur: 1.0, vol: 0.07, attack: 0.3, filter: 'bandpass', f1: 2600, f2: 500, q: 1.2 });
+  },
+  i_roll() {
+    tone({ type: 'sine', f: 140, to: 45, dur: 0.18, vol: 0.45, attack: 0.002 });
+    tone({ type: 'sine', f: 110, to: 40, dur: 0.15, vol: 0.3, at: 0.17, attack: 0.002 });
+    noise({ dur: 0.6, vol: 0.16, attack: 0.03, filter: 'bandpass', f1: 1500, f2: 550, q: 2 });
+    noise({ dur: 0.25, vol: 0.1, at: 0.3, filter: 'lowpass', f1: 900, f2: 300 });
+  },
+  i_roar() {
+    growl({ f: 68, to: 38, dur: 1.7, vol: 0.5, lp: 300, rate: 13, attack: 0.25 });
+    growl({ f: 96, to: 52, dur: 1.5, vol: 0.3, lp: 520, rate: 19, at: 0.05, attack: 0.2 });
+    noise({ dur: 1.0, vol: 0.2, attack: 0.25, filter: 'lowpass', f1: 700, f2: 200 });
+    tone({ type: 'sine', f: 48, to: 30, dur: 1.8, vol: 0.45, attack: 0.3 });
+  },
+  i_scream() {
+    scream({ f: 330, dur: 1.15, vol: 0.55 });
+  },
 };
 
 // ayni sesin cok sik tekrarini engelle (saniye)
-const MIN_GAP = { lane: 0.06, land: 0.08, slide: 0.15, stumble: 0.15, venomNear: 1.5, coin: 0.025, crash: 0.1, web: 0.1 };
+const MIN_GAP = { i_swing: 0.25, lane: 0.06, land: 0.08, slide: 0.15, stumble: 0.15, venomNear: 1.5, coin: 0.025, crash: 0.1, web: 0.1 };
 
 function play(name, detail) {
   if (muted || paused || !ctx || ctx.state === 'closed') return;
@@ -343,8 +419,13 @@ function play(name, detail) {
 
 // durum olaylari once kaydedilir: start sesi, paused bayragi temizlendikten sonra calsin
 // start: yeni oyun, onceden duraklatilmis olabilir
+let startTimer = 0;
+let introActive = false;
 events.addEventListener('start', () => {
   paused = false;
+  // the start jingle waits a moment: when the intro clip begins it takes over (jingle on 'run')
+  clearTimeout(startTimer);
+  startTimer = setTimeout(() => { if (!introActive) play('start'); }, 40);
   if (ctx && ctx.state !== 'running') {
     const p = ctx.resume();
     if (p && p.catch) p.catch(() => {});
@@ -366,5 +447,15 @@ events.addEventListener('resume', () => {
 });
 
 for (const name of Object.keys(SOUNDS)) {
+  if (name === 'start' || name.startsWith('i_')) continue;
   events.addEventListener(name, (e) => play(name, e.detail));
 }
+
+// intro clip phases -> sounds
+const INTRO_SOUND = { swing: 'i_swing', webEmpty: 'i_webEmpty', fall: 'i_fall', roll: 'i_roll', roar: 'i_roar', scream: 'i_scream', run: 'start' };
+events.addEventListener('intro', (e) => {
+  const d = e.detail || {};
+  if (d.phase === 'start') { introActive = true; clearTimeout(startTimer); }
+  else if (d.phase === 'end') { introActive = false; if (d.skipped) play('start'); }
+  else if (INTRO_SOUND[d.phase]) play(INTRO_SOUND[d.phase]);
+});

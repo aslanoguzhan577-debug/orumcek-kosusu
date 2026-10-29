@@ -55,10 +55,11 @@ const el = {
 if (!el.hud || !el.menu) {
   console.warn('[ui] #ui markup missing from index.html');
 }
-const screens = { hud: el.hud, menu: el.menu, help: el.help, pause: el.pauseScr, over: el.over };
+const screens = { intro: $('intro-hint'), hud: el.hud, menu: el.menu, help: el.help, pause: el.pauseScr, over: el.over };
 const slots = el.web ? Array.from(el.web.querySelectorAll('.slot')) : [];
 const muteButtons = Array.from(document.querySelectorAll('[data-mute]'));
 const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+if ($('intro-hint')) $('intro-hint').textContent = coarse ? 'Geçmek için dokun' : 'Geçmek için tıkla veya bir tuşa bas';
 if (el.ironHint) el.ironHint.textContent = coarse ? 'çift dokun' : 'space';
 
 // ---------- state ----------
@@ -107,7 +108,7 @@ function showScreen(name) {
 function wantScreen(now) {
   if (forced) return forced;
   switch (game.state.mode) {
-    case 'running': return 'hud';
+    case 'running': return game.state.intro ? 'intro' : 'hud';
     case 'paused': return 'pause';
     case 'over': return now >= overAt ? 'over' : 'hud';
     default: return 'menu';
@@ -189,7 +190,7 @@ window.addEventListener('keydown', (e) => {
   const tag = e.target && e.target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
   const s = current;
-  if (s === 'hud' || s === 'pause' || s === '') return;
+  if (s === 'hud' || s === 'intro' || s === 'pause' || s === '') return;
   if (e.repeat) { e.stopImmediatePropagation(); return; }
   e.stopImmediatePropagation();
   if (tag === 'BUTTON') return; // native click on Enter / Space

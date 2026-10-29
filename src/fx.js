@@ -235,6 +235,8 @@ class Particles {
 
 // ---------- comic text sprites ----------
 const WORDS = {
+  tiktik:{ t: 'TIK TIK', burst: null,     fill: '#ffffff', stroke: '#6b7280' },
+  aaa:   { t: 'AAAA!',  bubble: true,    fill: '#e0262c' },
   cank:  { t: 'ÇANK!',  burst: '#d8dde6', fill: '#b01a20' },
   gum:   { t: 'GÜM!',   burst: '#ffd23a', fill: '#e0262c' },
   cat:   { t: 'ÇAT!',   burst: '#ffffff', fill: '#1a3cb0' },
@@ -255,6 +257,35 @@ function drawWord(canvas, def, seed) {
   g.lineCap = 'round';
   let rnd = seed;
   const rand = () => { rnd = (rnd * 16807) % 2147483647; return rnd / 2147483647; };
+  if (def.bubble) {
+    // wobbly speech bubble with a tail at the lower left (towards the speaker)
+    const cx = W / 2, cy = H * 0.42, n = 36;
+    g.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const rr = 0.96 + 0.04 * Math.sin(a * 5 + 1) + (rand() - 0.5) * 0.02;
+      const x = cx + Math.cos(a) * rr * W * 0.46;
+      const y = cy + Math.sin(a) * rr * H * 0.36;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.closePath();
+    g.moveTo(W * 0.3, H * 0.66);
+    g.lineTo(W * 0.1, H * 0.95);
+    g.lineTo(W * 0.46, H * 0.74);
+    g.closePath();
+    g.fillStyle = '#ffffff';
+    g.strokeStyle = '#0d0d14';
+    g.lineWidth = 16;
+    g.fill('nonzero');
+    g.stroke();
+    // hide the stroke where the tail joins the bubble
+    g.beginPath();
+    g.moveTo(W * 0.32, H * 0.67);
+    g.lineTo(W * 0.14, H * 0.9);
+    g.lineTo(W * 0.43, H * 0.73);
+    g.closePath();
+    g.fill();
+  }
   if (def.burst) {
     const cx = W / 2, cy = H / 2, n = 20;
     g.beginPath();
@@ -274,14 +305,14 @@ function drawWord(canvas, def, seed) {
     g.stroke();
   }
   let size = def.burst ? 150 : 170;
-  const maxW = def.burst ? W * 0.62 : W * 0.9;
+  const maxW = def.bubble ? W * 0.78 : def.burst ? W * 0.62 : W * 0.9;
   g.font = `${size}px ${FONT}`;
   const w = g.measureText(def.t).width;
   if (w > maxW) { size = Math.floor(size * maxW / w); g.font = `${size}px ${FONT}`; }
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.save();
-  g.translate(W / 2, H / 2 + size * 0.04);
+  g.translate(W / 2, (def.bubble ? H * 0.42 : H / 2) + size * 0.04);
   g.rotate(-0.08);
   g.lineWidth = Math.max(10, size * 0.14);
   g.strokeStyle = def.stroke || '#0d0d14';
@@ -397,11 +428,13 @@ export function initFx(game) {
   }
   let textHead = 0;
   const _v = new THREE.Vector3();
-  function showText(key, x, y, z, widthFrac, life = 0.8, scroll = true) {
+  function showText(key, x, y, z, widthFrac, life = 0.8, scroll = true, wobble = false) {
     const s = texts[textHead];
     textHead = (textHead + 1) % texts.length;
     s.sprite.material.map = wordTex[key];
-    s.sprite.material.rotation = (Math.random() - 0.5) * 0.35;
+    s.rot0 = wobble ? 0 : (Math.random() - 0.5) * 0.35;
+    s.wobble = wobble;
+    s.sprite.material.rotation = s.rot0;
     s.sprite.position.set(x, y, z);
     // size relative to what the camera sees at that distance, so it fits any screen
     _v.set(x, y, z);
@@ -410,6 +443,13 @@ export function initFx(game) {
     const visH = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
     s.baseW = Math.min(visW * widthFrac, visH * 0.45, 7);
     s.aspect = 0.75;
+    // keep the (popped-up) sprite inside the screen: slide it along the camera's right vector
+    _v.set(x, y, z).project(camera);
+    const over = Math.abs(_v.x) + (s.baseW * 1.3) / visW - 0.97;
+    if (over > 0) {
+      _cr.setFromMatrixColumn(camera.matrixWorld, 0);
+      s.sprite.position.addScaledVector(_cr, -Math.sign(_v.x) * over * visW * 0.5);
+    }
     s.t = 0; s.life = life; s.scroll = scroll; s.active = true;
     s.sprite.visible = true;
     s.sprite.material.opacity = 1;
@@ -783,6 +823,78 @@ export function initFx(game) {
   on('venomNear', () => { venomOn = true; dom.venom.hidden = false; });
   on('venomFar', () => { venomOn = false; dom.venom.hidden = true; });
 
+  // ----- start-of-run intro clip (A1 emits intro {phase}); the camera looks from the front -----
+  // Intro effects use scroll = false: they belong to the clip, not to the scrolling world.
+  const _pp = new THREE.Vector3();
+  const _cr = new THREE.Vector3();
+  let introSpeedUntil = 0;
+  let introVenomUntil = 0;
+
+  function introStreak(x, y, z, vy, len, life, a, rot, delay = 0) {
+    const i = normal.spawn(x, y, z, 0, vy, 0, life, len, len * 0.8, SHAPE.streak, 0xf6fbff, a, 0, 0, false, delay);
+    normal.rot[i] = rot;
+    normal.spin[i] = 0;
+  }
+  function hideText(key) {
+    for (const t of texts) if (t.active && t.sprite.material.map === wordTex[key]) { t.active = false; t.sprite.visible = false; }
+  }
+
+  on('intro', (d) => {
+    const ph = d.phase;
+    const now = performance.now();
+    player().root.getWorldPosition(_pp);
+    _cr.setFromMatrixColumn(camera.matrixWorld, 0); // camera right
+    const px = _pp.x, py = _pp.y, pz = _pp.z;
+    switch (ph) {
+      case 'swing':
+        for (let i = 0; i < 3; i++) {
+          introStreak(px + rnd(-0.7, 0.7), py + rnd(0.6, 1.6), pz + rnd(-0.3, 0.3), 0, rnd(1.4, 2.0), 0.3, 0.7, Math.PI / 2 + rnd(-0.5, 0.5));
+        }
+        break;
+      case 'webEmpty': {
+        const wx = px + _cr.x * 0.5, wy = py + 1.1, wz = pz + _cr.z * 0.5;
+        showText('tiktik', wx + _cr.x * 0.9, wy + 0.35, wz + _cr.z * 0.9, 0.3, 1.0, false);
+        puffBurst(wx, wy, wz, 3, 0xc9ccd4, 1.1, 0.6, 0.15, 0.4, 0.4);
+        sparkBurst(normal, wx, wy, wz, 3, [0xffffff, 0xd8dde6], 2.4, 0.18, 0.3);
+        break;
+      }
+      case 'fall':
+        if (!reduceMotion) {
+          for (let i = 0; i < 18; i++) {
+            introStreak(px + rnd(-2.2, 2.2), py + rnd(-1, 2.5), pz + rnd(-1, 1), 7, rnd(1.2, 2.2), 0.45, 0.65, 0, i * 0.05);
+          }
+          introSpeedUntil = now + 1200;
+        }
+        break;
+      case 'roll':
+        puffBurst(px, py + 0.1, pz, Math.round(10 * rm), dustCol, 3.6, 1.2, 0.5, 1.2, 0.5);
+        chunks(px, py + 0.12, pz, Math.round(5 * rm), 3, 3, 2);
+        normal.spawn(px, py + 0.06, pz, 0, 0, 0, 0.35, 0.8, 3.4, SHAPE.flat, 0xf4efe6, 0.9, 0, 0, false);
+        if (!reduceMotion) for (const sx of [-0.6, 0.6]) introStreak(px + sx, py + 0.15, pz, 0, 1.5, 0.4, 0.6, Math.PI / 2);
+        shake(0.1, 0.18);
+        break;
+      case 'roar':
+        introVenomUntil = now + 1400;
+        dom.venom.hidden = false;
+        shake(0.08, 0.9);
+        break;
+      case 'scream':
+        showText('aaa', px + _cr.x * 0.9, py + 2.0, pz + _cr.z * 0.9, 0.44, 1.8, false, true);
+        break;
+      case 'run':
+        hideText('aaa');
+        if (!reduceMotion) introSpeedUntil = now + 900;
+        break;
+      case 'end':
+        hideText('aaa');
+        hideText('tiktik');
+        introSpeedUntil = 0;
+        if (introVenomUntil) { introVenomUntil = 0; if (!venomOn) dom.venom.hidden = true; }
+        break;
+      default:
+    }
+  });
+
   function clearAll() {
     for (const s of systems) s.clear();
     for (const t of texts) { t.active = false; t.sprite.visible = false; }
@@ -791,6 +903,8 @@ export function initFx(game) {
     ironActive = false;
     venomOn = false;
     dom.venom.hidden = true;
+    introSpeedUntil = 0;
+    introVenomUntil = 0;
     slideAcc = 0;
     splashOff();
   }
@@ -871,8 +985,12 @@ export function initFx(game) {
       else if (k < 0.3) sc = 1.25 - 0.25 * ((k - 0.15) / 0.15);
       else sc = 1;
       if (k > 0.72) { const u = (k - 0.72) / 0.28; sc *= 1 - 0.25 * u; s.sprite.material.opacity = 1 - u; }
+      if (s.wobble) { // speech bubble: shakes with fright
+        s.sprite.material.rotation = Math.sin(s.t * 24) * 0.09;
+        sc *= 1 + 0.05 * Math.sin(s.t * 19);
+      }
       s.sprite.scale.set(s.baseW * sc, s.baseW * sc * s.aspect, 1);
-      s.sprite.position.y += dt * 0.6;
+      if (!s.wobble) s.sprite.position.y += dt * 0.6;
       if (s.scroll) s.sprite.position.z += dz;
     }
 
@@ -889,6 +1007,11 @@ export function initFx(game) {
       }
     }
 
+    if (introVenomUntil && performance.now() > introVenomUntil) {
+      introVenomUntil = 0;
+      if (!venomOn) dom.venom.hidden = true;
+    }
+
     // speed lines (cheap: updates the DOM at most ~8x per second, only when the value changes)
     speedAcc += dt;
     if (speedAcc > 0.12) {
@@ -898,6 +1021,7 @@ export function initFx(game) {
         const k = THREE.MathUtils.clamp((st.speed - CONFIG.startSpeed) / Math.max(1, CONFIG.maxSpeed - CONFIG.startSpeed), 0, 1);
         o = k < 0.06 ? 0 : 0.1 + 0.4 * k * k;
       }
+      if (introSpeedUntil > performance.now()) o = Math.max(o, 0.45);
       o = Math.round(o * 40) / 40;
       if (o !== speedO) {
         speedO = o;

@@ -441,3 +441,22 @@
   #ui .fx-venom { animation: none; opacity: .8; }
   #ui .fx-splash.on i { animation-duration: .01s; animation-delay: 0s; }
 }
+
+/* ---------- intro clip hint (G12 follow-up) ---------- */
+#ui .intro-hint {
+  position: absolute;
+  left: 50%;
+  bottom: max(22px, calc(env(safe-area-inset-bottom) + 14px));
+  transform: translateX(-50%) rotate(-1.5deg);
+  padding: 8px 18px 6px;
+  background: var(--yellow);
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-family: var(--font-h);
+  font-size: 20px;
+  letter-spacing: .06em;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: ui-blink 1.2s infinite;
+}
