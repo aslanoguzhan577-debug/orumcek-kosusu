@@ -511,10 +511,12 @@
 @keyframes heart-up { to { transform: translateY(-115vh) rotate(25deg); opacity: .2; } }
 
 /* karakter seçimi */
-#ui .skin-row { display: flex; gap: 12px; width: 100%; }
-#ui .skin-card { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 6px; background: #fff; border: 4px solid var(--ink); border-radius: 16px; box-shadow: 4px 4px 0 var(--ink); font-family: var(--font-h); font-size: 18px; letter-spacing: .05em; color: var(--ink); cursor: pointer; }
+#ui .skin-row { display: flex; flex-wrap: wrap; gap: 12px; width: 100%; }
+#ui .skin-card { flex: 1 1 40%; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 6px; background: #fff; border: 4px solid var(--ink); border-radius: 16px; box-shadow: 4px 4px 0 var(--ink); font-family: var(--font-h); font-size: 18px; letter-spacing: .05em; color: var(--ink); cursor: pointer; }
 #ui .skin-card b { font-weight: 400; }
 #ui .skin-card.on { background: var(--yellow); transform: rotate(-1.5deg) scale(1.04); }
 #ui .skin-ico { width: 84px; height: 84px; display: flex; align-items: center; justify-content: center; font-size: 46px; border: 3px solid var(--ink); border-radius: 50%; }
 #ui .skin-ico.spider { background: #d3202f; }
 #ui .skin-ico.kitty { background: #fff; }
+#ui .skin-ico.gwen { background: linear-gradient(135deg, #fff 50%, #ec2f93 50%); }
+#ui .skin-ico.miles { background: #0d0f19; }
