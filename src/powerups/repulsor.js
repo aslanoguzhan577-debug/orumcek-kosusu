@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { game } from '../game.js';
 import { CONFIG } from '../config.js';
 import { createIronMan } from '../models/ironman.js';
+import { getJetStartCount, useJetStart } from '../shop.js';
 
 const FLY_HEIGHT = 4.8;             // altitude during horizontal flight
 const ARRIVE_TIME = 0.40;           // swoop in from behind camera
@@ -214,6 +215,7 @@ export class RepulsorBoost {
   get available() {
     return !this.active
       && !this.used
+      && getJetStartCount() > 0
       && game.state.mode === 'running'
       && !game.state.intro
       && game.state.time <= WINDOW_SECONDS;
@@ -227,6 +229,7 @@ export class RepulsorBoost {
 
   activate() {
     if (!this.available) return;
+    if (!useJetStart()) return;
     this.active = true;
     this.used = true;
     this.elapsed = 0;

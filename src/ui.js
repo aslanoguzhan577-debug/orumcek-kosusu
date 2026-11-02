@@ -246,6 +246,45 @@ function paintMarket() {
     el.mkList.appendChild(row);
   }
 
+  // C) Iron Man Jet Başlangıcı Satın Alma (+1 Uçuş Hakkı)
+  {
+    const item = shop.CONSUMABLE_ITEMS.jetStart;
+    const count = shop.getJetStartCount();
+    const max = item.maxCount || 3;
+    const isFull = count >= max;
+    const cost = item.cost;
+
+    const row = document.createElement('div');
+    row.className = 'mk-item consumable iron-spider';
+    const cv = document.createElement('canvas'); cv.width = cv.height = 96;
+    drawPowerIcon(cv, 'ironSpider');
+
+    const info = document.createElement('div'); info.className = 'mk-info';
+    const nm = document.createElement('b'); nm.textContent = item.name;
+    const du = document.createElement('small');
+    du.innerHTML = `Mevcut: <strong style="color:var(--yellow);">${count} / ${max}</strong> · ${item.desc}`;
+    info.append(nm, du);
+
+    const buy = document.createElement('button');
+    buy.type = 'button';
+    buy.className = 'btn small mk-buy' + (isFull ? '' : ' gold');
+    if (isFull) {
+      buy.textContent = 'MAKS';
+      buy.disabled = true;
+    } else {
+      buy.disabled = wallet < cost;
+      buy.append(document.createTextNode(fmt(cost) + ' '), Object.assign(document.createElement('i'), { className: 'coin-ico' }));
+      buy.addEventListener('click', () => {
+        if (shop.buyJetStart()) {
+          paintMarket();
+          if (game.state.mode === 'running') updateHud();
+        }
+      });
+    }
+    row.append(cv, info, buy);
+    el.mkList.appendChild(row);
+  }
+
   // 2. SÜRE YÜKSELTMELERİ (DURATION UPGRADES)
   const secUpgrades = document.createElement('div');
   secUpgrades.className = 'mk-section-title';
@@ -685,7 +724,7 @@ function updateHud() {
   if (el.repulsor && game.repulsor) {
     const rep = game.repulsor;
     const wl = rep.windowLeft;
-    const shouldShow = !st.intro && st.mode === 'running' && wl > 0 && !rep.active && !rep.used;
+    const shouldShow = rep.available; // includes the bought jet-start stock
     if (shouldShow !== cache.repulsorShow) {
       cache.repulsorShow = shouldShow;
       el.repulsor.hidden = !shouldShow;

@@ -18,6 +18,7 @@ export const SKILL_UPGRADE_CONFIG = {
 export const CONSUMABLE_ITEMS = {
   ironCore:   { name: 'Iron Spider Kullanım Hakkı', desc: '+1 Zırh Çekirdeği (Space / Çift dokun)', cost: 100, maxCount: (CONFIG && CONFIG.iron && CONFIG.iron.maxCount) || 5 },
   heroCharge: { name: 'Kahraman Şarjı / Ağ',        desc: '+1 Özel Yetenek / Ağ Şarjı [E]',        cost: 75,  maxCount: 1 },
+  jetStart:   { name: 'Iron Man Jet Başlangıcı',    desc: 'Koşu başında 2000 m uçuş (ilk 7 sn, HUD butonu)', cost: 400, maxCount: 3 },
 };
 
 function defaults() {
@@ -25,6 +26,7 @@ function defaults() {
     totalCoins: 250,
     upgrades: { magnet: 0, spiderSense: 0, ironSpider: 0, heroSpecial: 0 },
     bankedHeroCharge: 0,
+    jetStarts: 0,
   };
 }
 
@@ -36,6 +38,8 @@ function load() {
     if (Number.isFinite(coins) && coins >= 0) d.totalCoins = coins;
     const heroCharge = Number(saved?.bankedHeroCharge);
     if (Number.isFinite(heroCharge) && heroCharge >= 0) d.bankedHeroCharge = Math.floor(heroCharge);
+    const jetStarts = Number(saved?.jetStarts);
+    if (Number.isInteger(jetStarts) && jetStarts >= 0 && jetStarts <= CONSUMABLE_ITEMS.jetStart.maxCount) d.jetStarts = jetStarts;
     for (const key of Object.keys(SKILL_UPGRADE_CONFIG)) {
       const lv = Number(saved?.upgrades?.[key]);
       if (Number.isInteger(lv) && lv >= 0 && lv <= SKILL_UPGRADE_CONFIG[key].maxLevel) {
@@ -57,6 +61,7 @@ export function getPlayerData() {
     totalCoins: data.totalCoins,
     upgrades: { ...data.upgrades },
     bankedHeroCharge: data.bankedHeroCharge || 0,
+    jetStarts: data.jetStarts || 0,
     ironCount: getIronCoreCount(),
   };
 }
@@ -136,6 +141,28 @@ export function buyHeroCharge() {
     data.totalCoins -= item.cost;
     data.bankedHeroCharge = Math.min(max, (data.bankedHeroCharge || 0) + 1);
   }
+  save();
+  return true;
+}
+
+export function getJetStartCount() {
+  return data.jetStarts || 0;
+}
+
+export function buyJetStart() {
+  const item = CONSUMABLE_ITEMS.jetStart;
+  if (!item || data.totalCoins < item.cost) return false;
+  const max = item.maxCount || 3;
+  if (getJetStartCount() >= max) return false;
+  data.totalCoins -= item.cost;
+  data.jetStarts = Math.min(max, getJetStartCount() + 1);
+  save();
+  return true;
+}
+
+export function useJetStart() {
+  if (getJetStartCount() <= 0) return false;
+  data.jetStarts = getJetStartCount() - 1;
   save();
   return true;
 }
