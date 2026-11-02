@@ -60,18 +60,6 @@ export class WebPowerup {
     // Airborne up triggers special skill or web zip
     player.hooks.onAirUp = () => this.tryActivate();
 
-    // Action keys: Q, E, F
-    window.addEventListener('keydown', (e) => {
-      if (e.repeat) return;
-      if (e.code === 'KeyQ' || e.code === 'KeyE' || e.code === 'KeyF') {
-        const tag = e.target && e.target.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-        if (game.state && game.state.mode === 'running') {
-          this.tryActivate();
-        }
-      }
-    });
-
     // --- web line: white core + dark rim, a unit cylinder stretched hand -> anchor ---
     const geo = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true).translate(0, 0.5, 0);
     this.line = new THREE.Group();

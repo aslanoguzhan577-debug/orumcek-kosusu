@@ -390,17 +390,6 @@ onButton(el.iron, () => {
   if (game.iron && game.state.mode === 'running') game.iron.activate();
 });
 
-const HERO_SPECIAL_KEYS = new Set(['KeyE', 'KeyQ', 'KeyF']);
-window.addEventListener('keydown', (e) => {
-  if (HERO_SPECIAL_KEYS.has(e.code)) {
-    const tag = e.target && e.target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-    if (game.state && game.state.mode === 'running') {
-      e.preventDefault();
-      triggerHeroSpecial();
-    }
-  }
-});
 // ---------- keyboard ----------
 // Runs before input.js (capture). Outside a run, game keys must not leak into the game
 // (e.g. P / Esc would resume a game that is hidden behind the menu overlay).

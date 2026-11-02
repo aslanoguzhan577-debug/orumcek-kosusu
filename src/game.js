@@ -40,6 +40,7 @@ export const game = {
   // Systems that move or collide check game.halted.
   halted: false,
   speedOverride: null,
+  naturalSpeed: CONFIG.startSpeed, // un-boosted speed; a boost can't leave state.speed raised for good
 
   // Placeholder control: while true, a tap / any key starts the run from the menu,
   // a tap resumes from pause and restarts after game over.
@@ -155,13 +156,10 @@ export const game = {
 
     if (running && !this.halted) {
       state.time += dt;
-      if (this.speedOverride != null) {
-        state.speed = this.speedOverride;
-      } else {
-        const accel = state.speed < CONFIG.cruiseSpeed ? CONFIG.acceleration
-          : state.speed < CONFIG.maxSpeed ? CONFIG.acceleration2 : CONFIG.acceleration3;
-        state.speed = Math.min(CONFIG.topSpeed, state.speed + accel * dt);
-      }
+      const accel = this.naturalSpeed < CONFIG.cruiseSpeed ? CONFIG.acceleration
+        : this.naturalSpeed < CONFIG.maxSpeed ? CONFIG.acceleration2 : CONFIG.acceleration3;
+      this.naturalSpeed = Math.min(CONFIG.topSpeed, this.naturalSpeed + accel * dt);
+      state.speed = this.speedOverride != null ? this.speedOverride : this.naturalSpeed;
       state.distance += state.speed * dt;
       this.world.update(dt, state.speed);
       for (const s of this.systems) if (s.beforePlayer) s.beforePlayer(dt);
@@ -181,6 +179,7 @@ export const game = {
     state.distance = 0;
     state.time = 0;
     state.speed = CONFIG.startSpeed;
+    this.naturalSpeed = CONFIG.startSpeed;
     state.webCharges = 0;
     this.halted = false;
     this.speedOverride = null;

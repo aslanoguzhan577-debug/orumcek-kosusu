@@ -33,7 +33,7 @@ function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
     const coins = Number(saved?.totalCoins);
-    if (Number.isFinite(coins) && coins >= 0) d.totalCoins = Math.max(coins, 250);
+    if (Number.isFinite(coins) && coins >= 0) d.totalCoins = coins;
     const heroCharge = Number(saved?.bankedHeroCharge);
     if (Number.isFinite(heroCharge) && heroCharge >= 0) d.bankedHeroCharge = Math.floor(heroCharge);
     for (const key of Object.keys(SKILL_UPGRADE_CONFIG)) {
