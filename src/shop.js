@@ -7,11 +7,12 @@ import { CONFIG } from './config.js';
 const SAVE_KEY = 'orumcek_kosusu_save';
 const IRON_PRIMARY_KEY = (CONFIG && CONFIG.iron && CONFIG.iron.storageKey) || 'spidey.iron';
 const IRON_FALLBACK_KEY = 'orumcek_kosusu_iron_count';
+const IRON_DURATION = (CONFIG && CONFIG.iron && CONFIG.iron.duration) || 12;
 
 export const SKILL_UPGRADE_CONFIG = {
   magnet:      { name: 'Mıknatıs',            baseDuration: 5,  stepDuration: 0.2, baseCost: 50,  costMultiplier: 1.35, maxLevel: 25 },
   spiderSense: { name: 'Örümcek Hissi',       baseDuration: 5,  stepDuration: 0.2, baseCost: 50,  costMultiplier: 1.35, maxLevel: 25 },
-  ironSpider:  { name: 'Iron Spider Zırhı',   baseDuration: 10, stepDuration: 0.5, baseCost: 100, costMultiplier: 1.4,  maxLevel: 20 },
+  ironSpider:  { name: 'Iron Spider Zırhı',   baseDuration: IRON_DURATION, stepDuration: 0.5, baseCost: 100, costMultiplier: 1.4,  maxLevel: 20 },
   heroSpecial: { name: 'Özel Kahraman Gücü',  baseDuration: 6,  stepDuration: 0.5, baseCost: 120, costMultiplier: 1.4,  maxLevel: 20 },
 };
 

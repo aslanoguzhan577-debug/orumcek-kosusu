@@ -17,6 +17,7 @@ export const CONFIG = {
   acceleration: 0.15,      // m/s gained per second, first phase
   acceleration2: 0.014,    // m/s gained per second, second phase
   acceleration3: 0.012,    // m/s gained per second, third phase
+  boostFadeTime: 0.6,      // s: a skill's speed boost eases back to the natural speed
   scorePerMeter: 1,
 
   // --- Player body / hitbox ---

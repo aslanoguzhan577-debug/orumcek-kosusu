@@ -303,7 +303,10 @@ function paintMarket() {
     const info = document.createElement('div'); info.className = 'mk-info';
     const nm = document.createElement('b'); nm.textContent = `${c.name} · Sv. ${lvl}`;
     const du = document.createElement('small');
-    du.textContent = max ? `${+cur.toFixed(1)} sn (en yüksek seviye)` : `${+cur.toFixed(1)} sn → ${+(cur + c.stepDuration).toFixed(1)} sn`;
+    // heroSpecial: her kahramanın kendi taban süresi var, yükseltme sadece ek bonus
+    du.textContent = key === 'heroSpecial'
+      ? (max ? `+${+(lvl * c.stepDuration).toFixed(1)} sn (en yüksek seviye)` : `+${+(lvl * c.stepDuration).toFixed(1)} sn → +${+((lvl + 1) * c.stepDuration).toFixed(1)} sn (her kahramanın süresine eklenir)`)
+      : (max ? `${+cur.toFixed(1)} sn (en yüksek seviye)` : `${+cur.toFixed(1)} sn → ${+(cur + c.stepDuration).toFixed(1)} sn`);
     info.append(nm, du);
     const buy = document.createElement('button'); buy.type = 'button'; buy.className = 'btn small mk-buy';
     if (max) { buy.textContent = 'MAX'; buy.disabled = true; }

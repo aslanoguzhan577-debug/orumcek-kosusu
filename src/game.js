@@ -42,6 +42,7 @@ export const game = {
   speedOverride: null,
   hitStopT: 0,      // seconds of freeze frame left (hero specials' impacts)
   naturalSpeed: CONFIG.startSpeed, // un-boosted speed; a boost can't leave state.speed raised for good
+  fadeRate: 0,      // m/s per second a finished boost falls back to naturalSpeed; 0 = no fall
 
   // Placeholder control: while true, a tap / any key starts the run from the menu,
   // a tap resumes from pause and restarts after game over.
@@ -169,7 +170,19 @@ export const game = {
       const accel = this.naturalSpeed < CONFIG.cruiseSpeed ? CONFIG.acceleration
         : this.naturalSpeed < CONFIG.maxSpeed ? CONFIG.acceleration2 : CONFIG.acceleration3;
       this.naturalSpeed = Math.min(CONFIG.topSpeed, this.naturalSpeed + accel * dt);
-      state.speed = this.speedOverride != null ? this.speedOverride : this.naturalSpeed;
+      if (this.speedOverride != null) {
+        // a boost is instant: the jet's 800 m/s must reach its distance without ramping
+        this.fadeRate = 0;
+        state.speed = this.speedOverride;
+      } else if (state.speed > this.naturalSpeed) {
+        // the boost just ended: ease down to the natural speed instead of hitting a wall
+        if (!this.fadeRate) this.fadeRate = (state.speed - this.naturalSpeed) / CONFIG.boostFadeTime;
+        state.speed = Math.max(this.naturalSpeed, state.speed - this.fadeRate * dt);
+        if (state.speed === this.naturalSpeed) this.fadeRate = 0;
+      } else {
+        this.fadeRate = 0;
+        state.speed = this.naturalSpeed;
+      }
       state.distance += state.speed * dt;
       this.world.update(dt, state.speed);
       for (const s of this.systems) if (s.beforePlayer) s.beforePlayer(dt);
@@ -193,6 +206,7 @@ export const game = {
     state.webCharges = 0;
     this.halted = false;
     this.speedOverride = null;
+    this.fadeRate = 0;
     this.hitStopT = 0;
     state.ironTime = 0;
     // state.ironCount is persistent inventory (G10 loads/saves it) — left alone.
