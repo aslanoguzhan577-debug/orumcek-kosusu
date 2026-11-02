@@ -1,4 +1,4 @@
-// repulsor.js — Iron Man Repulsor Boost:
+// repulsor.js — Iron Man Repulsor Boost (jet start, a market item; stock: shop.js):
 // In the first 7 seconds of any run, press the bottom-left button.
 // Iron Man swoops in from behind, grabs the player from behind/above,
 // rotates both characters into a horizontal rocket flight pose, and fires
@@ -11,6 +11,7 @@ import { game } from '../game.js';
 import { CONFIG } from '../config.js';
 import { createIronMan } from '../models/ironman.js';
 import { getJetStartCount, useJetStart } from '../shop.js';
+import { puffBurst, sparkBurst, spark, burst, sticker, impactFrame, hitStop, kick, edgeLines } from '../vfxCore.js';
 
 const FLY_HEIGHT = 4.8;             // altitude during horizontal flight
 const ARRIVE_TIME = 0.40;           // swoop in from behind camera
@@ -25,150 +26,45 @@ function smoothstep(t) {
   return c * c * (3 - 2 * c);
 }
 
-/**
- * Creates an authentic Iron Man Arc-Reactor Repulsor Thruster:
- * - Linear, collimated laser beam geometry ("çizgisel")
- * - High-tech Arc-Reactor Cyan & Electric Blue color palette
- * - Blinding pure-white plasma laser core
- * - 4 fine linear streak filaments trailing back
- * - 3 Concentric energy shock-diamond rings along the beam
- * - Emitter lens ring at nozzle
- */
+// Toon repulsor flame: one cone per boot / palm, banded by the view angle (white-hot core,
+// cyan, blue rim) with a flicker; one shared material, no lights.
+const FLAME_VERT = /* glsl */`
+varying vec3 vN;
+varying vec3 vV;
+varying float vT;
+void main() {
+  vT = -position.y;                       // 0 at the nozzle, 1 at the tip
+  vec4 mv = viewMatrix * curveWorld(modelMatrix * vec4(position, 1.0));
+  vN = normalize(normalMatrix * normal);
+  vV = normalize(-mv.xyz);
+  gl_Position = projectionMatrix * mv;
+}`;
+const FLAME_FRAG = /* glsl */`
+varying vec3 vN;
+varying vec3 vV;
+varying float vT;
+void main() {
+  float f = abs(dot(normalize(vN), normalize(vV))) * (1.0 - vT * 0.6);
+  vec3 col = f > 0.5 ? vec3(1.0) : f > 0.22 ? vec3(0.5, 0.91, 1.0) : vec3(0.18, 0.48, 1.0);
+  gl_FragColor = vec4(col, 1.0);
+}`;
+const flameGeo = new THREE.ConeGeometry(1, 1, 12, 1, true).rotateX(Math.PI).translate(0, -0.5, 0); // base at 0, tip at -1
+let flameMat = null;
+
 function createThrusterAssembly() {
+  flameMat = flameMat || new THREE.ShaderMaterial({ vertexShader: FLAME_VERT, fragmentShader: FLAME_FRAG, side: THREE.DoubleSide, fog: false });
   const group = new THREE.Group();
-
-  // 1. Hot white linear laser core beam
-  const coreGeo = new THREE.CylinderGeometry(0.022, 0.038, 3.2, 12, 1, true);
-  coreGeo.translate(0, -1.6, 0);
-  const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.98,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-  group.add(coreMesh);
-
-  // 2. Arc-Reactor Cyan Plasma Column
-  const plasmaGeo = new THREE.CylinderGeometry(0.048, 0.082, 2.8, 12, 1, true);
-  plasmaGeo.translate(0, -1.4, 0);
-  const plasmaMat = new THREE.MeshBasicMaterial({
-    color: 0x00f0ff,
-    transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const plasmaMesh = new THREE.Mesh(plasmaGeo, plasmaMat);
-  group.add(plasmaMesh);
-
-  // 3. Deep electric cobalt-blue outer ion sheath
-  const auraGeo = new THREE.CylinderGeometry(0.078, 0.14, 2.2, 12, 1, true);
-  auraGeo.translate(0, -1.1, 0);
-  const auraMat = new THREE.MeshBasicMaterial({
-    color: 0x0055ff,
-    transparent: true,
-    opacity: 0.45,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const auraMesh = new THREE.Mesh(auraGeo, auraMat);
-  group.add(auraMesh);
-
-  // 4. Linear Laser Streak Filaments ("çizgisel" laser lines)
-  const streakGroup = new THREE.Group();
-  const streakMat = new THREE.MeshBasicMaterial({
-    color: 0x80ffff,
-    transparent: true,
-    opacity: 0.8,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const streaks = [];
-  const streakAngles = [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2];
-  for (const a of streakAngles) {
-    const sGeo = new THREE.CylinderGeometry(0.006, 0.009, 3.8, 4, 1, true);
-    sGeo.translate(0, -1.9, 0);
-    const sMesh = new THREE.Mesh(sGeo, streakMat);
-    const r = 0.038;
-    sMesh.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
-    streakGroup.add(sMesh);
-    streaks.push(sMesh);
-  }
-  group.add(streakGroup);
-
-  // 5. Shock-Diamond Energy Rings along the beam
-  const ringGroup = new THREE.Group();
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: 0x00ffff,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const ringDistances = [-0.45, -1.15, -2.0];
-  const ringMeshes = [];
-  for (let i = 0; i < ringDistances.length; i++) {
-    const rGeo = new THREE.RingGeometry(0.025, 0.065 + i * 0.02, 16);
-    rGeo.rotateX(Math.PI / 2);
-    const rMesh = new THREE.Mesh(rGeo, ringMat);
-    rMesh.position.y = ringDistances[i];
-    ringGroup.add(rMesh);
-    ringMeshes.push(rMesh);
-  }
-  group.add(ringGroup);
-
-  // 6. Nozzle Emitter Arc-Disc at base
-  const nozzleGeo = new THREE.RingGeometry(0.015, 0.08, 16);
-  nozzleGeo.rotateX(Math.PI / 2);
-  const nozzleMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.98,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const nozzleMesh = new THREE.Mesh(nozzleGeo, nozzleMat);
-  group.add(nozzleMesh);
-
+  const flame = new THREE.Mesh(flameGeo, flameMat);
+  flame.frustumCulled = false;
+  group.add(flame);
+  group.visible = false;
   return {
     group,
     setPower(power, time) {
-      if (power <= 0.01) {
-        group.visible = false;
-        return;
-      }
-      group.visible = true;
-
-      // High-frequency reactor micro-humming (40-60Hz)
-      const hum = 1 + (Math.sin(time * 52) * 0.06 + Math.cos(time * 36) * 0.04);
-      const lenHum = power * (1 + (Math.sin(time * 44) * 0.12 + Math.random() * 0.06));
-
-      // Core beams maintain sleek collimated profile
-      coreMesh.scale.set(power * hum, lenHum, power * hum);
-      plasmaMesh.scale.set(power * hum, lenHum * 0.95, power * hum);
-      auraMesh.scale.set(power * hum, lenHum * 0.85, power * hum);
-
-      // Streak filaments rotate subtly with intense linear speed
-      streakGroup.rotation.y = time * 8;
-      for (let i = 0; i < streaks.length; i++) {
-        const sLen = lenHum * (0.95 + Math.sin(time * 30 + i) * 0.15);
-        streaks[i].scale.set(power, sLen, power);
-      }
-
-      // Energy rings pulse and travel down the beam
-      for (let i = 0; i < ringMeshes.length; i++) {
-        const pulse = 1 + Math.sin(time * 24 + i * 2) * 0.2;
-        ringMeshes[i].scale.set(pulse, pulse, pulse);
-      }
-
-      nozzleMesh.scale.set(power * hum, power * hum, power * hum);
+      group.visible = power > 0.01;
+      if (!group.visible) return;
+      const flick = 1 + Math.sin(time * 60) * 0.08 + Math.sin(time * 37) * 0.06;
+      flame.scale.set(0.13 * power, 1.25 * power * flick, 0.13 * power);
     },
   };
 }
@@ -190,10 +86,6 @@ export class RepulsorBoost {
     this.ironRoot.visible = false;
     this.ironModel.setState('jump');
     scene.add(this.ironRoot);
-
-    // Dynamic Arc-Reactor Cyan Light on Iron Man
-    this.engineLight = new THREE.PointLight(0x00e5ff, 0, 14);
-    this.ironRoot.add(this.engineLight);
 
     // Build linear cyan thrusters (2 boots, 2 hands)
     this.thrusters = [];
@@ -230,6 +122,11 @@ export class RepulsorBoost {
   activate() {
     if (!this.available) return;
     if (!useJetStart()) return;
+    this._launch();
+  }
+
+  // the flight itself (activate() has paid for it)
+  _launch() {
     this.active = true;
     this.used = true;
     this.elapsed = 0;
@@ -239,14 +136,11 @@ export class RepulsorBoost {
     // Target: advance until score/distance reaches 2000!
     this.targetDistance = game.state.distance < 2000 ? 2000 : (game.state.distance + 2000);
 
-    // Show Iron Man, start high behind camera
+    // Show Iron Man, high above and behind the player (out of the camera's near zone)
     this.ironRoot.visible = true;
     this.ironModel.setState('jump');
-    this.ironRoot.position.set(
-      this.player.x,
-      this.player.y + 6.0,
-      this.player.root.position.z + 10.0
-    );
+    this.ironRoot.position.set(this.player.x + 2.5, this.player.y + 8.0, this.player.root.position.z + 3.0);
+    this._trailT = 0;
     this.ironRoot.rotation.set(-0.6, 0, 0);
 
     // Thrusters start firing with arc-reactor cyan energy
@@ -255,7 +149,17 @@ export class RepulsorBoost {
 
   _setThrusterPower(p, time) {
     for (const th of this.thrusters) th.setPower(p, time);
-    this.engineLight.intensity = p * 4.5;
+  }
+
+  // repulsor exhaust: short white / cyan streaks off the boots (player frame)
+  _exhaust(n, back) {
+    const r = this.ironRoot;
+    for (let i = 0; i < n; i++) {
+      const s = i % 2 ? 1 : -1;
+      spark(r.position.x + s * 0.12, r.position.y + 0.05, r.position.z + 0.3,
+        s * (0.5 + Math.random()), -0.5 - Math.random(), back * (0.7 + Math.random() * 0.6),
+        0.14 + Math.random() * 0.1, 0.07, i % 3 ? 0x7fe9ff : 0xffffff, false);
+    }
   }
 
   beforePlayer(dt) {
@@ -280,10 +184,11 @@ export class RepulsorBoost {
         const targetZ = pz + 0.38;
 
         this.ironRoot.position.set(
-          px,
-          THREE.MathUtils.lerp(this.player.y + 6.0, targetY, sk),
-          THREE.MathUtils.lerp(pz + 10.0, targetZ, sk)
+          THREE.MathUtils.lerp(px + 2.5, px, sk),
+          THREE.MathUtils.lerp(this.player.y + 8.0, targetY, sk),
+          THREE.MathUtils.lerp(pz + 3.0, targetZ, sk)
         );
+        this._exhaust(1, 6);
         this.ironRoot.rotation.x = THREE.MathUtils.lerp(-0.6, 0, sk);
 
         this._setThrusterPower(0.65 + sk * 0.35, this.elapsed);
@@ -298,6 +203,11 @@ export class RepulsorBoost {
 
           // Tilt camera up to capture the ascent
           if (game.cameraRig) game.cameraRig.setTilt(true);
+          // the grab: a blast of smoke off the track, FWOOSH!
+          const p = this.player;
+          puffBurst({ x: p.x, y: p.floorY + 0.05, z: 0 }, { n: 10, ring: true, radius: 0.6, speed: 4.5, size: 0.75, rise: 0.8, colors: [0xeeeef2, 0xd6d8e0], scroll: false });
+          sticker('fwoosh', new THREE.Vector3(p.x + (p.x > 0.5 ? -1.2 : 1.2), p.y + 2.4, -1.4), { follow: p.root, life: 0.8 });
+          kick(0.3);
         }
         break;
       }
@@ -322,10 +232,20 @@ export class RepulsorBoost {
 
         this._setThrusterPower(0.85 + sk * 0.15, this.elapsed);
 
+        this._exhaust(2, 8);
         if (k >= 1) {
           this.phase = 'fly';
           this.elapsed = 0;
           this.flightTime = 0;
+          // sonic boom: vapour rings, freeze frame, comic panel, speed lines
+          const at = new THREE.Vector3(px, h + 0.3, pz + 0.6);
+          burst('ring', at, { size: 0.8, grow: 6, life: 0.45 });
+          burst('ring', at, { size: 0.4, grow: 3.5, life: 0.35 });
+          hitStop(0.05);
+          impactFrame({ at, bg: 0xe8f7ff, dot: 0xbfe6ff, line: 0xc8202f });
+          sparkBurst(at, { n: 14, speed: 7, colors: [0xffffff, 0x7fe9ff, 0xffd23a], scroll: false });
+          edgeLines(0.85);
+          kick(-0.5);
         }
         break;
       }
@@ -355,6 +275,7 @@ export class RepulsorBoost {
 
         // Arc-reactor linear thrusters at full power with subtle reactor pulse
         this._setThrusterPower(1.0, this.elapsed);
+        this._exhaust(2, 14);
 
         // Continuous subtle rocket rumble
         if (game.cameraRig && Math.random() < 0.4) {
@@ -371,6 +292,7 @@ export class RepulsorBoost {
 
           // Decelerate
           game.speedOverride = CONFIG.cruiseSpeed;
+          edgeLines(0);
         }
         break;
       }
@@ -412,6 +334,8 @@ export class RepulsorBoost {
             game.cameraRig.setTilt(false);
             game.cameraRig.shake(0.12, 0.25);
           }
+          puffBurst({ x: px, y: this.player.floorY + 0.05, z: 0 }, { n: 8, ring: true, radius: 0.5, speed: 3.5, size: 0.6, rise: 0.5, colors: [0xeeeef2, 0xd6d8e0], scroll: false });
+          kick(0.25);
         }
         break;
       }
@@ -426,8 +350,14 @@ export class RepulsorBoost {
         this.ironRoot.rotation.x = -0.7;
 
         this._setThrusterPower(1.2, this.elapsed);
+        this._trailT -= dt;
+        if (this._trailT <= 0) { // smoke trail up into the sky
+          this._trailT = 0.035;
+          puffBurst({ x: this.ironRoot.position.x, y: this.ironRoot.position.y - 0.2, z: this.ironRoot.position.z }, { n: 1, size: 0.55, speed: 0.4, rise: 0.2, life: 0.55, colors: [0xffffff, 0xe6e8ee] });
+        }
 
         if (k >= 1) {
+          burst('star', this.ironRoot.position, { size: 0.3, grow: 1.4, life: 0.35, spin: 4, scroll: true });
           this.ironRoot.visible = false;
           this._setThrusterPower(0, 0);
           this.phase = 'idle';
@@ -452,6 +382,7 @@ export class RepulsorBoost {
       game.speedOverride = null;
       if (game.cameraRig) game.cameraRig.setTilt(false);
       if (game.obstacles) game.obstacles.grace(0);
+      edgeLines(0);
     }
     this.active = false;
     this.used = false;

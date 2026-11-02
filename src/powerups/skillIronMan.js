@@ -1,60 +1,102 @@
-// skillIronMan.js — Iron Man Arc Reactor Unibeam Special Skill
-// AAA Visual Effects, Multi-Layer Energy Beam, 3D Obstacle Shattering, and Dynamic Camera Shake.
+// skillIronMan.js — Iron Man "Unibeam" special skill.
+//
+// Gameplay (unchanged): 1 charge, 2.2 s; everything in his lane up to 200 m ahead is destroyed,
+// hits are absorbed, 1.5 s grace at the end.
+// Look ("comic + vinyl", vfxCore.js; everything built at load, no lights):
+//   * lock-on (first 0.3 s): red reticles snap onto the obstacles ahead while the arc reactor
+//     charges (the player is protected, nothing is destroyed yet);
+//   * fire: freeze frame, cream / red comic panel, BWOOM!, the camera kicks back; a thick toon
+//     beam (white-hot core, cyan sheath, deep blue rim, ink outline) leaves the chest with a
+//     bright tip racing ahead; shock rings run down the beam; every target bursts into rubble
+//     when the tip reaches it;
+//   * the beam thins out over the last 0.3 s.
 
 import * as THREE from 'three';
 import { emit } from '../events.js';
+import { game } from '../game.js';
 import {
-  createGlowTexture,
-  shatterObstacle,
-  triggerCameraShake,
-  triggerFlashLight,
-  create3LayerUnibeam,
+  INK, canvasTex, chunkBurst, sparkBurst, burst, sticker, impactFrame, hitStop, kick, sfx, triggerCameraShake,
 } from '../vfxCore.js';
 
-// ------------------------------------------------------------------ UI SVG ICON
 export const UNIBEAM_SVG_ICON = `<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <radialGradient id="arcGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="40%" stop-color="#00e5ff" stop-opacity="0.95" />
-      <stop offset="80%" stop-color="#0077ff" stop-opacity="0.45" />
-      <stop offset="100%" stop-color="#002244" stop-opacity="0" />
-    </radialGradient>
-    <filter id="arcFilter" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="2.2" result="blur" />
-      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-    </filter>
-  </defs>
-  <!-- Outer Reactor Casing Rings -->
-  <circle cx="32" cy="32" r="30" stroke="#00e5ff" stroke-width="2.5" opacity="0.45" />
-  <circle cx="32" cy="32" r="26" stroke="#00e5ff" stroke-width="1.8" stroke-dasharray="6 3" />
-  <circle cx="32" cy="32" r="22" stroke="#ffffff" stroke-width="1.2" opacity="0.85" />
-
-  <!-- 8 Segmented Induction Magnetic Coils -->
-  <g stroke="#00e5ff" stroke-width="2.4" stroke-linecap="round">
-    <line x1="32" y1="6" x2="32" y2="12" />
-    <line x1="32" y1="52" x2="32" y2="58" />
-    <line x1="6" y1="32" x2="12" y2="32" />
-    <line x1="52" y1="32" x2="58" y2="32" />
-    <line x1="13.6" y1="13.6" x2="17.8" y2="17.8" />
-    <line x1="46.2" y1="46.2" x2="50.4" y2="50.4" />
-    <line x1="50.4" y1="13.6" x2="46.2" y2="17.8" />
-    <line x1="17.8" y1="46.2" x2="13.6" y2="50.4" />
-  </g>
-
-  <!-- Triangular Geometric Core Reticle -->
-  <polygon points="32,16 45.8,40 18.2,40" stroke="#00e5ff" stroke-width="2" fill="none" opacity="0.9" />
-  <polygon points="32,48 45.8,24 18.2,24" stroke="#38bdf8" stroke-width="1.5" fill="none" opacity="0.65" />
-
-  <!-- Central Arc Core Glow & Energy Plasma Lens -->
-  <circle cx="32" cy="32" r="14" fill="url(#arcGlow)" filter="url(#arcFilter)" />
-  <circle cx="32" cy="32" r="7.5" fill="#ffffff" />
-  <circle cx="32" cy="32" r="4.2" fill="#dcf8ff" />
+  <circle cx="32" cy="32" r="29" fill="#c8202f" stroke="#1c1016" stroke-width="4"/>
+  <circle cx="32" cy="32" r="20" fill="#ffd23a" stroke="#1c1016" stroke-width="3"/>
+  <polygon points="32,17 45,40 19,40" fill="#e8f7ff" stroke="#1c1016" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="32" cy="33" r="6" fill="#ffffff" stroke="#1c1016" stroke-width="2"/>
 </svg>`;
 
-const _v3 = new THREE.Vector3();
+const DURATION = 2.2;
+const LOCK = 0.3;        // reticles lock on, then the beam fires
+const LEN = 200;         // beam length (m)
+const SHOOT = 0.14;      // the tip reaches the end of the beam
+const RETICLES = 6;
+const PALETTE = { red: 0xc8202f, gold: 0xffd23a, cyan: 0x7fe9ff, white: 0xffffff };
 
-// ------------------------------------------------------------------ IRON MAN SPECIAL SKILL CLASS
+const _p = new THREE.Vector3();
+const _m = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _s = new THREE.Vector3();
+const _k = new THREE.Vector3();
+
+// toon beam: banded across its width (white-hot core along the middle, cyan sheath, blue rim;
+// the view vector is flattened onto the beam's cross-section, so it works seen end-on too),
+// energy bands running forward; bends with the curved world
+const BEAM_VERT = /* glsl */`
+uniform float uLen;
+varying vec3 vN;
+varying vec3 vV;
+varying float vZ;
+void main() {
+  vec3 pos = position;
+  pos.z *= uLen;
+  vZ = -pos.z;
+  vec4 w = modelMatrix * vec4(pos, 1.0);
+  vec3 ax = normalize(mat3(modelMatrix) * vec3(0.0, 0.0, 1.0));
+  vec3 v = cameraPosition - w.xyz;
+  vV = v - ax * dot(v, ax);
+  vN = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * curveWorld(w);
+}`;
+const BEAM_FRAG = /* glsl */`
+uniform float uTime;
+varying vec3 vN;
+varying vec3 vV;
+varying float vZ;
+void main() {
+  float f = abs(dot(normalize(vN), normalize(vV)));
+  vec3 col = f > 0.55 ? vec3(1.0) : f > 0.25 ? vec3(0.5, 0.91, 1.0) : vec3(0.16, 0.42, 0.95);
+  float band = step(fract(vZ * 0.12 - uTime * 7.0), 0.18);
+  col = mix(col, vec3(1.0), band * 0.6 * step(0.25, f));
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+function drawReticle(g, W) {
+  g.clearRect(0, 0, W, W);
+  const c = W / 2;
+  g.lineCap = 'round';
+  const pass = (w, col) => {
+    g.lineWidth = w;
+    g.strokeStyle = col;
+    for (let i = 0; i < 4; i++) { // four arcs
+      const a = i * Math.PI / 2 + 0.25;
+      g.beginPath(); g.arc(c, c, W * 0.36, a, a + Math.PI / 2 - 0.5); g.stroke();
+    }
+    for (let i = 0; i < 4; i++) { // ticks pointing in
+      const a = i * Math.PI / 2;
+      g.beginPath();
+      g.moveTo(c + Math.cos(a) * W * 0.46, c + Math.sin(a) * W * 0.46);
+      g.lineTo(c + Math.cos(a) * W * 0.26, c + Math.sin(a) * W * 0.26);
+      g.stroke();
+    }
+  };
+  pass(11, '#1c1016');
+  pass(5, '#ffffff');
+  g.fillStyle = '#1c1016';
+  g.beginPath(); g.arc(c, c, 7, 0, 6.283); g.fill();
+  g.fillStyle = '#ffffff';
+  g.beginPath(); g.arc(c, c, 3.5, 0, 6.283); g.fill();
+}
+
 export class IronManSkill {
   constructor({ scene, player, obstacles, cameraRig }) {
     this.scene = scene;
@@ -65,348 +107,236 @@ export class IronManSkill {
     this.active = false;
     this.charges = 1;
     this.maxCharges = 1;
-    this.duration = 2.2;
+    this.duration = DURATION;
     this.timeRemaining = 0;
+    this.t = 0;
+    this.fired = false;
     this.unibeamSvgIcon = UNIBEAM_SVG_ICON;
 
-    // Build 3-layer Unibeam system (length 200m, radius 0.55m, plasma 0x00e5ff)
-    // Layer 1: Core Cylinder (#ffffff)
-    // Layer 2: Pulsing Plasma Cylinder (#00e5ff)
-    // Layer 3: 12 Torus Shock Rings + Chest PointLight
-    this.beam = create3LayerUnibeam(200, 0.55, 0x00e5ff);
-    this.beam.root.visible = false;
-    if (this.scene) {
-      this.scene.add(this.beam.root);
-    }
+    // beam: one shader cylinder (40 length segments, so the curved world can bend it) + ink hull
+    this.root = new THREE.Group();
+    this.root.name = 'unibeam';
+    this.root.visible = false;
+    const geo = new THREE.CylinderGeometry(1, 1, 1, 18, 40, true).rotateX(Math.PI / 2).translate(0, 0, -0.5);
+    this.beamMat = new THREE.ShaderMaterial({
+      uniforms: { uLen: { value: LEN }, uTime: { value: 0 } },
+      vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG, fog: false,
+    });
+    this.inkMat = new THREE.ShaderMaterial({
+      uniforms: { uLen: this.beamMat.uniforms.uLen, uTime: this.beamMat.uniforms.uTime },
+      vertexShader: BEAM_VERT, fragmentShader: 'void main() { gl_FragColor = vec4(0.11, 0.063, 0.086, 1.0); }',
+      side: THREE.BackSide, fog: false,
+    });
+    this.beam = new THREE.Mesh(geo, this.beamMat);
+    this.ink = new THREE.Mesh(geo, this.inkMat);
+    for (const m of [this.beam, this.ink]) { m.frustumCulled = false; this.root.add(m); }
+    // shock rings running down the beam: one instanced torus (1 draw call)
+    this.rings = new THREE.InstancedMesh(new THREE.TorusGeometry(1, 0.11, 6, 24), new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false }), 6);
+    this.rings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.rings.frustumCulled = false;
+    this.root.add(this.rings);
+    // muzzle flare at the chest (always faces the camera)
+    const flareTex = canvasTex(128, 128, (g, W) => {
+      const c = W / 2;
+      g.clearRect(0, 0, W, W);
+      g.fillStyle = '#7fe9ff';
+      g.beginPath();
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2, r = i % 2 ? W * 0.2 : W * 0.48;
+        i ? g.lineTo(c + Math.cos(a) * r, c + Math.sin(a) * r) : g.moveTo(c + Math.cos(a) * r, c + Math.sin(a) * r);
+      }
+      g.closePath();
+      g.fill();
+      g.fillStyle = '#ffffff';
+      g.beginPath(); g.arc(c, c, W * 0.2, 0, 6.283); g.fill();
+    });
+    this.flare = new THREE.Sprite(new THREE.SpriteMaterial({ map: flareTex, fog: false, depthWrite: false }));
+    this.flare.renderOrder = 13;
+    this.root.add(this.flare);
+    this.tip = new THREE.Sprite(new THREE.SpriteMaterial({ map: flareTex, fog: false, depthWrite: false }));
+    this.tip.renderOrder = 13;
+    this.root.add(this.tip);
+    scene.add(this.root);
 
-    // Arc Reactor Chest Flare & Swirling Energy Vortex VFX
-    this._createChestVFX();
-
-    // Hook collision systems for auto-absorption while active
-    if (this.obstacles && this.obstacles.hooks) {
-      const prevFrontHit = this.obstacles.hooks.onFrontHit;
-      this.obstacles.hooks.onFrontHit = (hit) => {
-        if (this.absorbHit(hit)) return true;
-        if (typeof prevFrontHit === 'function') return prevFrontHit(hit);
-        return false;
-      };
+    // lock-on reticles
+    const retTex = canvasTex(128, 128, drawReticle);
+    this.reticles = [];
+    for (let i = 0; i < RETICLES; i++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: retTex, color: 0xffffff, depthTest: false, depthWrite: false, fog: false }));
+      s.renderOrder = 27;
+      s.visible = false;
+      scene.add(s);
+      this.reticles.push({ s, o: null, t: 0 });
     }
   }
 
-  // Calculate current chest Arc Reactor position in world space
   getChestPosition() {
-    if (!this.player) return _v3.set(0, 0.9, 0);
-    const chestY = this.player.sliding ? (this.player.y + 0.45) : (this.player.y + 0.88);
-    return _v3.set(this.player.x, chestY, -0.15);
+    const p = this.player;
+    return _p.set(p.x, p.y + (p.sliding ? 0.45 : 0.88), -0.3);
   }
 
-  // Create Arc Reactor chest emitter disc, counter-rotating energy rings, and swirling charge sparks
-  _createChestVFX() {
-    const group = new THREE.Group();
-    group.name = 'arcReactorChestVFX';
-
-    // 1. Arc Reactor Central Glow Sprite
-    const glowTex = createGlowTexture('#00e5ff', '#ffffff', 128);
-    const glowMat = new THREE.MeshBasicMaterial({
-      map: glowTex,
-      transparent: true,
-      opacity: 0.95,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const glowGeo = new THREE.PlaneGeometry(0.85, 0.85);
-    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-    group.add(glowMesh);
-
-    // 2. Dual Concentric Tech Energy Rings at Chest
-    const ringGeo1 = new THREE.RingGeometry(0.12, 0.38, 32);
-    const ringMat1 = new THREE.MeshBasicMaterial({
-      color: 0x00e5ff,
-      transparent: true,
-      opacity: 0.82,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const ring1 = new THREE.Mesh(ringGeo1, ringMat1);
-    group.add(ring1);
-
-    const ringGeo2 = new THREE.RingGeometry(0.42, 0.52, 32);
-    const ringMat2 = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.65,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const ring2 = new THREE.Mesh(ringGeo2, ringMat2);
-    group.add(ring2);
-
-    // 3. 14 Swirling Core Charge Sparks
-    const sparkGeo = new THREE.PlaneGeometry(0.16, 0.16);
-    const sparkTex = createGlowTexture('#38bdf8', '#ffffff', 64);
-    const sparkMat = new THREE.MeshBasicMaterial({
-      map: sparkTex,
-      transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-
-    const sparks = [];
-    for (let i = 0; i < 14; i++) {
-      const s = new THREE.Mesh(sparkGeo, sparkMat.clone());
-      group.add(s);
-      sparks.push({
-        mesh: s,
-        angle: (i / 14) * Math.PI * 2,
-        baseRadius: 0.32 + (i % 3) * 0.14,
-        speed: 8.5 + (i % 4) * 2.5,
-        zOffset: -0.05 * (i % 4),
-      });
-    }
-
-    this.chestGroup = group;
-    this.chestGlowMesh = glowMesh;
-    this.chestRing1 = ring1;
-    this.chestRing2 = ring2;
-    this.chestSparks = sparks;
-
-    if (this.scene) {
-      this.scene.add(group);
-    }
-    group.visible = false;
+  // obstacles in the line of fire (his lane, up to 200 m)
+  _inLine(o) {
+    return Math.abs(o.x - this.player.x) <= 2.0 && o.z >= -LEN && o.z <= 4.0;
   }
 
-  // Update dynamic chest animations and swirling vortex particles
-  _updateChestVFX(time, dt, chestPos) {
-    if (!this.chestGroup) return;
-    this.chestGroup.visible = true;
-    this.chestGroup.position.copy(chestPos);
-
-    // Pulse glow
-    const pulse = 1.0 + Math.sin(time * 36) * 0.22;
-    this.chestGlowMesh.scale.set(pulse, pulse, 1.0);
-    this.chestGlowMesh.rotation.z = time * 2.2;
-
-    this.chestRing1.rotation.z = -time * 4.2;
-    this.chestRing2.rotation.z = time * 3.6;
-
-    for (let i = 0; i < this.chestSparks.length; i++) {
-      const sp = this.chestSparks[i];
-      sp.angle += sp.speed * dt;
-      const r = sp.baseRadius * (0.8 + Math.sin(time * 22 + i) * 0.25);
-      sp.mesh.position.set(
-        Math.cos(sp.angle) * r,
-        Math.sin(sp.angle) * r,
-        sp.zOffset + Math.sin(time * 30 + i) * 0.05
-      );
-      sp.mesh.scale.setScalar(0.75 + Math.sin(time * 24 + i) * 0.3);
-    }
-  }
-
-  // Annihilate obstacles in player's lane up to 200m ahead into 3D debris and orange-blue sparks
-  _destroyObstaclesInRange() {
-    if (!this.obstacles || !this.obstacles.active) return;
+  _destroyObstaclesInRange(fx = true) {
     const list = this.obstacles.active;
-    const px = this.player ? this.player.x : 0;
-
     for (let i = list.length - 1; i >= 0; i--) {
       const o = list[i];
-      // Karakterle aynı şeritteki (Math.abs(o.x - player.x) <= 2.0) ve 200m ileriye kadar (o.z >= -200 && o.z <= 4.0)
-      if (Math.abs(o.x - px) <= 2.0 && o.z >= -200.0 && o.z <= 4.0) {
-        const shatterPos = { x: o.x, y: 1.0, z: o.z };
-
-        // 3D enkaz parçaları + turuncu kıvılcımlar (orange sparks #ff8800)
-        shatterObstacle(this.scene, o, {
-          color: 0x00e5ff,
-          emissive: 0x0099ff,
-          sparkColor: '#ff8800',
-          blastForce: 14.5,
-        });
-
-        // Eşzamanlı mavi-beyaz plazma kıvılcım patlaması (cyan sparks #00e5ff)
-        shatterObstacle(this.scene, shatterPos, {
-          color: 0xffffff,
-          emissive: 0x00e5ff,
-          sparkColor: '#00e5ff',
-          blastForce: 11.5,
-        });
-
-        // Engeli oyundan kaldır ve crash efekti tetikle
-        this.obstacles.remove(o);
-        emit('crash', { position: new THREE.Vector3(o.x, 1.0, o.z) });
+      if (!this._inLine(o)) continue;
+      if (fx) {
+        const cy = o.parts && o.parts[0] ? (o.parts[0].y0 + o.parts[0].y1) * 0.5 : 1;
+        const z = Math.min(o.z, -1);
+        const delay = this.t < LOCK + SHOOT ? Math.max(0, (-z / LEN) * SHOOT - (this.t - LOCK)) : 0;
+        const at = { x: o.x, y: cy, z };
+        chunkBurst(at, { n: 10, force: 9, size: 0.26, colors: [0xc9c3d6, PALETTE.red, PALETTE.gold], delay });
+        sparkBurst(at, { n: 8, speed: 8, colors: [PALETTE.cyan, 0xffffff], delay });
       }
+      this.obstacles.remove(o);
     }
   }
 
-  // ------------------------------------------------------------------ ACTIVATE
   activate() {
     if (this.active || this.charges <= 0) return false;
-
     this.charges--;
     this.active = true;
-    this.duration = 2.2;
-    this.timeRemaining = 2.2;
+    this.duration = DURATION;
+    this.timeRemaining = DURATION;
+    this.t = 0;
+    this.fired = false;
+    this.root.visible = false;
 
-    const chestPos = this.getChestPosition();
-
-    // Attach & show 3-layer Unibeam
-    this.beam.root.visible = true;
-    this.beam.root.position.copy(chestPos);
-
-    // Göğüste mavi PointLight patlaması
-    triggerFlashLight(this.scene, chestPos, 0x00e5ff, 8.5, 0.65);
-
-    // Güçlü kamera sarsıntısı: triggerCameraShake(cameraRig, 0.42, 0.55)
-    triggerCameraShake(this.cameraRig, 0.42, 0.55);
-
-    // Initial obstacle clear along beam path
-    this._destroyObstaclesInRange();
-
-    emit('unibeam', { position: chestPos.clone() });
-    emit('ironOn', { position: chestPos.clone() });
-
+    // lock-on: reticles on the nearest targets in the lane
+    const targets = this.obstacles.active.filter((o) => this._inLine(o) && o.z > -70).sort((a, b) => b.z - a.z);
+    this.reticles.forEach((r, i) => {
+      r.o = targets[i] || null;
+      r.t = -i * 0.035;
+      r.s.visible = false;
+    });
+    const chest = this.getChestPosition();
+    burst('glow', chest, { color: PALETTE.cyan, size: 0.3, grow: 1.2, life: LOCK, additive: true, follow: this.player.root });
+    this.obstacles.grace(LOCK + 0.2);
+    sfx('ironOn', { position: chest.clone() });
+    emit('unibeam', { position: chest.clone() });
     return true;
   }
 
-  // ------------------------------------------------------------------ UPDATE
-  update(time, dt) {
-    if (!this.active) {
-      if (this.chestGroup) this.chestGroup.visible = false;
-      return;
-    }
-
-    this.timeRemaining -= dt;
-    const chestPos = this.getChestPosition();
-
-    // Keep beam tracking player's chest
-    this.beam.root.position.copy(chestPos);
-    this.beam.update(time, dt);
-
-    // Update chest visual effects
-    this._updateChestVFX(time, dt, chestPos);
-
-    // Continuous beam annihilation of obstacles entering the line of fire
+  _fire() {
+    this.fired = true;
+    const chest = this.getChestPosition();
+    this.root.visible = true;
+    hitStop(0.06);
+    impactFrame({ at: chest, bg: 0xfff4d6, dot: 0xffd99a, line: PALETTE.red });
+    sticker('bwoom', _s.set(this.player.x + (this.player.x > 0.5 ? -1.2 : 1.2), this.player.y + 2.3, -1.4), { follow: this.player.root, life: 0.8 });
+    kick(-0.45); // recoil
+    triggerCameraShake(this.cameraRig, 0.22, 0.35);
+    sparkBurst(chest, { n: 14, speed: 7, colors: [PALETTE.cyan, 0xffffff, PALETTE.gold], scroll: false });
+    sfx('venomBlastNova', { position: chest.clone() });
+    for (const r of this.reticles) r.s.visible = false;
     this._destroyObstaclesInRange();
+    this._updateBeam(chest, 0); // the freeze frame already shows the beam leaving the chest
+  }
 
-    // Soft fade-out during the final 0.45 seconds
-    if (this.timeRemaining <= 0.45) {
-      const fade = Math.max(0, this.timeRemaining / 0.45);
-      this.beam.coreMesh.material.opacity = 0.95 * fade;
-      this.beam.plasmaMesh.material.opacity = 0.75 * fade;
-      if (this.beam.unibeamLight) {
-        this.beam.unibeamLight.intensity = (5.0 + Math.sin(time * 40) * 2.5) * fade;
-      }
-      for (let i = 0; i < this.beam.rings.length; i++) {
-        this.beam.rings[i].material.opacity *= fade;
-      }
-      if (this.chestGlowMesh) {
-        this.chestGlowMesh.material.opacity = 0.95 * fade;
-      }
+  update(time, dt) {
+    if (!this.active) return;
+    this.timeRemaining -= dt;
+    this.t += dt;
+    const chest = this.getChestPosition();
+
+    if (!this.fired) {
+      this._updateReticles(dt);
+      if (this.t >= LOCK) this._fire();
+    } else {
+      this._updateBeam(chest, dt);
+      this._destroyObstaclesInRange();
+      if (Math.random() < 0.3) this.cameraRig.shake(0.03, 0.08);
     }
+    if (this.timeRemaining <= 0) this.deactivate(true);
+  }
 
-    // Expiry
-    if (this.timeRemaining <= 0) {
-      this.deactivate(true);
+  _updateReticles(dt) {
+    const cam = this.cameraRig.camera;
+    for (const r of this.reticles) {
+      r.t += dt;
+      if (!r.o || r.t < 0 || !this.obstacles.active.includes(r.o)) { r.s.visible = false; continue; }
+      const o = r.o;
+      const cy = o.parts && o.parts[0] ? (o.parts[0].y0 + o.parts[0].y1) * 0.5 : 1;
+      r.s.position.set(o.x, cy, Math.min(o.z, -1));
+      const dist = cam.position.distanceTo(r.s.position);
+      const size = dist * 0.12;
+      const k = Math.min(1, r.t / 0.12);
+      const locked = k >= 1;
+      r.s.scale.setScalar(size * (2.2 - 1.2 * (1 - (1 - k) ** 3)) * (locked ? 1 + 0.12 * Math.sin(r.t * 40) : 1));
+      r.s.material.rotation = (1 - k) * 1.6;
+      r.s.material.color.setHex(locked ? PALETTE.red : 0xffffff);
+      r.s.visible = true;
     }
   }
 
-  // ------------------------------------------------------------------ ABSORB HIT
+  _updateBeam(chest, dt) {
+    const age = this.t - LOCK;
+    const fade = Math.min(1, Math.max(0, this.timeRemaining / 0.3));
+    const pulse = 1 + Math.sin(age * 60) * 0.06;
+    const r = 0.3 * fade * pulse;
+    const reach = Math.min(1, age / SHOOT);
+    this.root.position.copy(chest);
+    this.beamMat.uniforms.uLen.value = LEN * reach;
+    this.beamMat.uniforms.uTime.value += dt;
+    this.beam.scale.set(r, r, 1);
+    this.ink.scale.set(r * 1.25 + 0.025, r * 1.25 + 0.025, 1);
+    // muzzle + racing tip
+    const f = (0.9 + 0.25 * Math.sin(age * 50)) * Math.max(fade, 0.2);
+    this.flare.scale.setScalar(f * 1.1);
+    this.flare.material.rotation = age * 6;
+    this.tip.visible = reach < 1;
+    this.tip.position.set(0, 0, -LEN * reach);
+    this.tip.scale.setScalar(1.6 + reach * 6);
+    // shock rings: born at the chest, race forward, grow, shrink away
+    for (let i = 0; i < 6; i++) {
+      const k = ((age * 1.6 + i / 6) % 1);
+      const z = -k * 45;
+      const s = (r + 0.12) * (1 + k * 1.6) * (1 - k * k);
+      this.rings.setMatrixAt(i, _m.compose(_s.set(0, 0, z), _q, _k.setScalar(s)));
+    }
+    this.rings.instanceMatrix.needsUpdate = true;
+  }
+
   absorbHit(hit) {
     if (!this.active) return false;
-
     const hitPos = (hit && hit.position) ? hit.position : this.getChestPosition();
-
     if (hit && hit.obstacle) {
-      // Unibeam vaporizes obstacle into debris and sparks
-      shatterObstacle(this.scene, hit.obstacle, {
-        color: 0x00e5ff,
-        emissive: 0x00bfff,
-        sparkColor: '#ff8800',
-        blastForce: 15.0,
-      });
-      shatterObstacle(this.scene, hitPos, {
-        color: 0xffffff,
-        emissive: 0x00e5ff,
-        sparkColor: '#00e5ff',
-        blastForce: 12.0,
-      });
+      chunkBurst(hitPos, { n: 12, force: 10, size: 0.26, colors: [0xc9c3d6, PALETTE.red, PALETTE.gold] });
+      sparkBurst(hitPos, { n: 10, speed: 9, colors: [PALETTE.cyan, 0xffffff] });
       this.obstacles.remove(hit.obstacle);
     }
-
-    triggerCameraShake(this.cameraRig, 0.38, 0.45);
-    if (this.obstacles && typeof this.obstacles.grace === 'function') {
-      this.obstacles.grace(1.5);
-    }
-
-    emit('crash', { position: hitPos.clone() });
+    triggerCameraShake(this.cameraRig, 0.2, 0.3);
+    this.obstacles.grace(1.5);
+    sfx('crash', { position: hitPos.clone() });
     return true;
   }
 
-  // ------------------------------------------------------------------ DEACTIVATE
   deactivate(expired = false) {
     if (!this.active) return;
-
     this.active = false;
     this.timeRemaining = 0;
-
-    if (this.beam?.root) {
-      this.beam.root.visible = false;
-      // Reset opacities for subsequent uses
-      this.beam.coreMesh.material.opacity = 0.95;
-      this.beam.plasmaMesh.material.opacity = 0.75;
-    }
-
-    if (this.chestGroup) {
-      this.chestGroup.visible = false;
-    }
-
-    // Atış sonrasında grace period verir
-    if (this.obstacles && typeof this.obstacles.grace === 'function') {
-      this.obstacles.grace(1.5);
-    }
-
-    emit('unibeamEnd');
-    emit('ironOff');
+    this.root.visible = false;
+    for (const r of this.reticles) { r.s.visible = false; r.o = null; }
+    this.obstacles.grace(1.5);
+    sfx('ironOff');
+    emit('unibeamEnd', { expired });
   }
 
-  // ------------------------------------------------------------------ RESET
   reset() {
     this.deactivate(false);
     this.charges = this.maxCharges;
   }
 
-  // ------------------------------------------------------------------ DISPOSE
   dispose() {
-    this.deactivate(false);
-
-    if (this.beam) {
-      if (this.scene && this.beam.root) {
-        this.scene.remove(this.beam.root);
-      }
-      this.beam.dispose();
-    }
-
-    if (this.chestGroup) {
-      if (this.scene) {
-        this.scene.remove(this.chestGroup);
-      }
-      this.chestGroup.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
-        }
-      });
-    }
+    this.reset();
   }
 }
 
-// ------------------------------------------------------------------ FACTORY FUNCTION
 export function createIronManSkill({ scene, player, obstacles, cameraRig }) {
   return new IronManSkill({ scene, player, obstacles, cameraRig });
 }

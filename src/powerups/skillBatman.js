@@ -1,214 +1,125 @@
-// skillBatman.js — Batman "Gece Pelerini Süzülüşü - 800 Metre" Special Skill
-// Subway Surfers AAA-Grade Character Special Skill Module for Batman
+// skillBatman.js — Batman "Gece Pelerini" (Night Glide, 8 s) special skill.
 //
-// FEATURING:
-// 1. Distance-Based Glide (800 Meters):
-//    - Strictly distance-governed: (currentDistance - startDistance < 800)
-//    - Smooth proportional progress depletion: progress = Math.max(0, 1 - (dist - startDist) / 800)
-// 2. Aerodynamic Glide Position:
-//    - Batman pitches forward horizontally into aerodynamic glide stance (rotation.x = 0.52)
-//    - Catching thermals hover lift (beforePlayer floorY offset) eliminating ground jitter
-//    - Stumble & trip immunity during the flight
-// 3. 24x12 Multi-Segmented Bat-Wing Glider Mantle:
-//    - 24 horizontal x 12 vertical segments (325 vertices) THREE.PlaneGeometry
-//    - Scalloped trailing bat wing contour with swept aerodynamic tips
-//    - Real-time sine-wave wind physics: pos.z = sin(x*5 + time*22)*0.12*yRatio + harmonic flutter
-//    - Obsidian satin mantle with luminous aerodynamic wind sheath & yellow bat emblem
-// 4. Wingtip Wind Trails (Rüzgar Çizgileri):
-//    - High-velocity swirling wingtip vortex ribbons with THREE.AdditiveBlending and depthWrite: false
-//    - Soft radial gradient glow falloff via createGlowTexture
-// 5. 3D Little Black Bat Swarm Particles:
-//    - Swarm of articulated 3D bats with scalloped wings flapping at 35Hz
-//    - Glowing atmospheric wisps trailing behind into the night air
-// 6. Collision Absorption (absorbHit):
-//    - Sweeping night cloak flings obstacles away, shattering them into 3D debris & gold sparks
-//    - Radial bat-vortex cloak shockwave, camera shake, dynamic flash light, 1.5s grace exit
-// 7. Iconic Bat Silhouette SVG String (BAT_SVG_ICON):
-//    - High-definition sharp bat emblem exported for UI HUD bar and badges
+// Gameplay (unchanged): time based (8 s); he climbs to 3.6 m over the first 0.8 s,
+// glides pitched forward, lands over the last 1.0 s; stumble immunity; a hit is absorbed
+// (lane cleared, 1.5 s grace) and ends the glide.
+// Look ("comic + vinyl", vfxCore.js; everything built at load, pooled, no lights):
+//   * the Bat-Signal lights up on the clouds when he takes off, a searchlight sweeping up to it;
+//   * a big toon bat-wing glider cape (navy satin, cool moonlit rim, yellow bat emblem on the
+//     back) that unfurls with a snap and ripples in the wind;
+//   * two thick wind ribbons peel off the wingtips;
+//   * a swarm of real-size bat silhouettes flaps out of the cape and away ahead of him;
+//   * a hit: freeze frame, yellow comic panel, KAPOW!, a burst of bats, the cape folds away.
 
 import * as THREE from 'three';
-import { createGlowTexture, shatterObstacle, triggerFlashLight } from '../vfxCore.js';
 import { emit } from '../events.js';
 import { game } from '../game.js';
-import { CONFIG } from '../config.js';
+import { toonMaterial } from '../models/toon.js';
+import {
+  ToonPool, canvasTex, chunkBurst, sparkBurst, sticker, impactFrame, hitStop, kick, sfx,
+} from '../vfxCore.js';
 
-// ------------------------------------------------------------------ CONFIG & CONSTANTS
-export const BATMAN_GLIDE_DISTANCE = 800; // 800 meters total glide
-export const FLY_ALTITUDE = 3.6;          // High flight altitude in meters (clears 2.88m trains & 0.8m barriers)
-export const TAKEOFF_DIST = 40;           // Smooth climb distance in meters
-export const LANDING_DIST = 50;           // Smooth landing distance in meters
-export const TAKEOFF_TIME = 0.8;          // Smooth climb fallback duration (seconds)
-export const LANDING_TIME = 1.0;          // Smooth landing fallback duration (seconds)
-const GLIDE_PITCH_ANGLE = 0.52;           // Forward aerodynamic glide pitch in radians (~30 deg)
-const CAPE_SEGMENTS_X = 24;               // 24 columns
-const CAPE_SEGMENTS_Y = 12;               // 12 rows
-const CAPE_WINGSPAN = 2.8;                // 2.8 meters wingspan
-const CAPE_LENGTH = 1.6;                  // 1.6 meters length
+export const BATMAN_GLIDE_TIME = 8;
+export const FLY_ALTITUDE = 3.6;
+export const TAKEOFF_TIME = 0.8;
+export const LANDING_TIME = 1.0;
+const GLIDE_PITCH_ANGLE = 0.52;
+const CAPE_SEGMENTS_X = 24;
+const CAPE_SEGMENTS_Y = 12;
+const CAPE_WINGSPAN = 2.8;
+const CAPE_LENGTH = 1.6;
+const NAVY = 0x23263a, YELLOW = 0xf4c922, BAT = 0x17171f;
+const TRAIL_N = 12;
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
+const _v = new THREE.Vector3(), _s = new THREE.Vector3(), _d = new THREE.Vector3(), _side = new THREE.Vector3(), _view = new THREE.Vector3();
 
-// Helper: smoothstep easing 0 -> 1
 function smoothstep(t) {
   const c = Math.max(0, Math.min(1, t));
   return c * c * (3 - 2 * c);
 }
 
-// ------------------------------------------------------------------ BAT SVG ICON (HUD / UI)
 export const BAT_SVG_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60" width="100%" height="100%" fill="currentColor">
-  <path d="M 50 16
-    C 52 11, 54 6, 56 2
-    C 57 8, 60 11, 65 13
-    C 75 8, 86 11, 98 20
-    C 92 28, 89 38, 92 50
-    C 83 45, 73 47, 65 54
-    C 60 46, 54 45, 50 51
-    C 46 45, 40 46, 35 54
-    C 27 47, 17 45, 8 50
-    C 11 38, 8 28, 2 20
-    C 14 11, 25 8, 35 13
-    C 40 11, 43 8, 44 2
-    C 46 6, 48 11, 50 16 Z" />
+  <path d="M 50 16 C 52 11, 54 6, 56 2 C 57 8, 60 11, 65 13 C 75 8, 86 11, 98 20 C 92 28, 89 38, 92 50
+    C 83 45, 73 47, 65 54 C 60 46, 54 45, 50 51 C 46 45, 40 46, 35 54 C 27 47, 17 45, 8 50
+    C 11 38, 8 28, 2 20 C 14 11, 25 8, 35 13 C 40 11, 43 8, 44 2 C 46 6, 48 11, 50 16 Z" />
 </svg>`;
 
-// ------------------------------------------------------------------ 3D ARTICULATED BAT PARTICLE
-function create3DBatMesh() {
-  const batGroup = new THREE.Group();
-
-  // Central sleek fuselage body
-  const bodyGeo = new THREE.ConeGeometry(0.042, 0.22, 6);
-  bodyGeo.rotateX(Math.PI / 2);
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color: 0x111116,
-    roughness: 0.35,
-    metalness: 0.5,
-  });
-  const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
-  batGroup.add(bodyMesh);
-
-  // Bat pointed ears
-  const earGeo = new THREE.ConeGeometry(0.016, 0.05, 4);
-  const earMat = bodyMat;
-  const leftEar = new THREE.Mesh(earGeo, earMat);
-  leftEar.position.set(-0.022, 0.02, 0.08);
-  leftEar.rotation.x = -0.2;
-  leftEar.rotation.z = -0.3;
-  batGroup.add(leftEar);
-
-  const rightEar = new THREE.Mesh(earGeo, earMat);
-  rightEar.position.set(0.022, 0.02, 0.08);
-  rightEar.rotation.x = -0.2;
-  rightEar.rotation.z = 0.3;
-  batGroup.add(rightEar);
-
-  // Scalloped bat wings (left & right)
-  const leftWingGroup = new THREE.Group();
-  leftWingGroup.position.set(-0.035, 0.005, 0);
-
-  const leftWingShape = new THREE.Shape();
-  leftWingShape.moveTo(0, 0);
-  leftWingShape.lineTo(-0.25, 0.07);
-  leftWingShape.lineTo(-0.22, -0.05);
-  leftWingShape.quadraticCurveTo(-0.16, -0.02, -0.13, -0.07);
-  leftWingShape.quadraticCurveTo(-0.07, -0.02, 0, -0.04);
-  leftWingShape.closePath();
-
-  const wingGeo = new THREE.ShapeGeometry(leftWingShape);
-  const wingMat = new THREE.MeshStandardMaterial({
-    color: 0x0c0d12,
-    roughness: 0.45,
-    metalness: 0.3,
-    side: THREE.DoubleSide,
-  });
-  const leftWingMesh = new THREE.Mesh(wingGeo, wingMat);
-  leftWingMesh.rotation.x = Math.PI / 2;
-  leftWingGroup.add(leftWingMesh);
-  batGroup.add(leftWingGroup);
-
-  const rightWingGroup = new THREE.Group();
-  rightWingGroup.position.set(0.035, 0.005, 0);
-
-  const rightWingShape = new THREE.Shape();
-  rightWingShape.moveTo(0, 0);
-  rightWingShape.lineTo(0.25, 0.07);
-  rightWingShape.lineTo(0.22, -0.05);
-  rightWingShape.quadraticCurveTo(0.16, -0.02, 0.13, -0.07);
-  rightWingShape.quadraticCurveTo(0.07, -0.02, 0, -0.04);
-  rightWingShape.closePath();
-
-  const rightWingGeo = new THREE.ShapeGeometry(rightWingShape);
-  const rightWingMesh = new THREE.Mesh(rightWingGeo, wingMat);
-  rightWingMesh.rotation.x = Math.PI / 2;
-  rightWingGroup.add(rightWingMesh);
-  batGroup.add(rightWingGroup);
-
-  // Glowing shadow wisp trailing behind bat
-  const glowGeo = new THREE.PlaneGeometry(0.24, 0.24);
-  const glowTex = createGlowTexture('#334466', '#88ccff', 64);
-  const glowMat = new THREE.MeshBasicMaterial({
-    map: glowTex,
-    transparent: true,
-    opacity: 0.65,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-  glowMesh.position.set(0, 0, -0.07);
-  batGroup.add(glowMesh);
-
-  return {
-    root: batGroup,
-    leftWing: leftWingGroup,
-    rightWing: rightWingGroup,
-    glowMesh,
-    active: false,
-    age: 0,
-    maxAge: 1.0,
-    vel: new THREE.Vector3(),
-    rotVel: new THREE.Vector3(),
-    flapOffset: Math.random() * Math.PI * 2,
-  };
+// the same bat outline, in metres (1 m wide), y up
+const BAT_PTS = [[50, 16], [52, 11], [54, 6], [56, 2], [57, 8], [60, 11], [65, 13], [75, 8], [86, 11], [98, 20], [92, 28], [89, 38], [92, 50],
+  [83, 45], [73, 47], [65, 54], [60, 46], [54, 45], [50, 51], [46, 45], [40, 46], [35, 54], [27, 47], [17, 45], [8, 50],
+  [11, 38], [8, 28], [2, 20], [14, 11], [25, 8], [35, 13], [40, 11], [43, 8], [44, 2], [46, 6], [48, 11]];
+function batPath(g, cx, cy, s) {
+  g.beginPath();
+  BAT_PTS.forEach(([x, y], i) => (i ? g.lineTo : g.moveTo).call(g, cx + (x - 50) * s, cy + (y - 28) * s));
+  g.closePath();
 }
 
-// ------------------------------------------------------------------ WINGTIP WIND TRAILS
-function createWindTrails() {
-  const group = new THREE.Group();
-  group.name = 'batmanWindTrails';
+// Bat-Signal: a soft lit oval on the clouds with the bat cut out of it
+function drawSignal(g, W, H) {
+  g.clearRect(0, 0, W, H);
+  const grad = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W / 2);
+  grad.addColorStop(0, 'rgba(255,246,200,0.95)');
+  grad.addColorStop(0.62, 'rgba(255,232,140,0.85)');
+  grad.addColorStop(0.8, 'rgba(255,225,120,0.35)');
+  grad.addColorStop(1, 'rgba(255,225,120,0)');
+  g.save();
+  g.scale(1, H / W);
+  g.fillStyle = grad;
+  g.beginPath(); g.arc(W / 2, W / 2, W / 2, 0, 6.283); g.fill();
+  g.restore();
+  g.fillStyle = '#1c2440';
+  batPath(g, W / 2, H / 2, W * 0.0068);
+  g.fill();
+}
 
-  const trailCount = 14;
-  const trails = [];
-  const trailGeo = new THREE.PlaneGeometry(0.07, 1.9, 1, 4);
-  trailGeo.rotateX(Math.PI / 2); // Stretch along Z axis
+function drawEmblem(g, W, H) {
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = '#f4c922';
+  g.strokeStyle = '#1c1016';
+  g.lineWidth = 8;
+  g.beginPath(); g.ellipse(W / 2, H / 2, W * 0.46, H * 0.44, 0, 0, 6.283); g.fill(); g.stroke();
+  g.fillStyle = '#1c1016';
+  batPath(g, W / 2, H / 2 + 2, W * 0.0085);
+  g.fill();
+}
 
-  const trailTex = createGlowTexture('#66aacc', '#ffffff', 128);
-  const trailMat = new THREE.MeshBasicMaterial({
-    map: trailTex,
-    transparent: true,
-    opacity: 0.8,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
+function drawBeam(g, W, H) {
+  const grad = g.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, 'rgba(255,240,180,0)');
+  grad.addColorStop(0.5, 'rgba(255,240,180,1)');
+  grad.addColorStop(1, 'rgba(255,240,180,0)');
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, W, H);
+}
 
-  for (let i = 0; i < trailCount; i++) {
-    const mesh = new THREE.Mesh(trailGeo, trailMat.clone());
-    group.add(mesh);
-    const isLeft = i % 2 === 0;
-    trails.push({
-      mesh,
-      isLeft,
-      offsetZ: (i / trailCount) * 2.6,
-      speed: 13.0 + (i % 5) * 2.2,
-      baseX: isLeft ? -1.35 : 1.35,
-      baseY: -0.36 + ((i % 3) - 1) * 0.08,
-      vortexRadius: 0.09 + (i % 4) * 0.025,
-      vortexSpeed: 24.0 + (i % 3) * 6.0,
-      phase: (i / trailCount) * Math.PI * 2,
-    });
+// flat bat silhouettes facing the camera; the flap squashes the wings, no tumbling
+class BatPool extends ToonPool {
+  update(dt, dz) {
+    let alive = 0, top = 0;
+    const m = _m, q = _q, e = _e, v = _v, s = _s;
+    for (let i = 0; i < this.used; i++) {
+      if (this.life[i] <= 0) continue;
+      const k = i * 3;
+      alive++;
+      top = i + 1;
+      this.life[i] -= dt;
+      if (this.life[i] <= 0) { this.mesh.setMatrixAt(i, m.makeScale(0, 0, 0)); continue; }
+      const t = 1 - this.life[i] / this.max[i];
+      this.p[k] += this.vel[k] * dt; this.p[k + 1] += this.vel[k + 1] * dt; this.p[k + 2] += this.vel[k + 2] * dt + (this.scroll[i] ? dz : 0);
+      this.rot[k] += dt * 26; // flap clock
+      const flap = Math.abs(Math.sin(this.rot[k] + this.rot[k + 1]));
+      const sc = this.s0[i] * (t < 0.1 ? t / 0.1 : t > 0.8 ? (1 - t) / 0.2 : 1);
+      q.setFromEuler(e.set(0, 0, Math.sin(this.rot[k] * 0.3 + this.rot[k + 1]) * 0.35));
+      this.mesh.setMatrixAt(i, m.compose(v.set(this.p[k], this.p[k + 1], this.p[k + 2]), q, s.set(sc * (0.75 + 0.25 * flap), sc * (0.3 + 0.7 * flap), sc)));
+    }
+    this.used = top;
+    this.mesh.count = top;
+    this.mesh.visible = alive > 0;
+    this.mesh.instanceMatrix.needsUpdate = true;
   }
-
-  return { group, trails };
 }
 
-// ------------------------------------------------------------------ BATMAN SPECIAL SKILL CLASS
 export class BatmanSkill {
   constructor({ scene, player, obstacles, cameraRig, chaser } = {}) {
     this.scene = scene;
@@ -222,270 +133,161 @@ export class BatmanSkill {
     this.label = 'GECE PELERİNİ';
     this.batSvgIcon = BAT_SVG_ICON;
 
-    // Flight altitude offset (clears 2.88m trains & 0.8m barriers; read by main.js for shadow)
     this.FLY_ALTITUDE = FLY_ALTITUDE;
-    this.TAKEOFF_DIST = TAKEOFF_DIST;
-    this.LANDING_DIST = LANDING_DIST;
     this.TAKEOFF_TIME = TAKEOFF_TIME;
     this.LANDING_TIME = LANDING_TIME;
     this.currentFlyOffset = 0;
     this.elapsed = 0;
     this.timeAlive = 0;
 
-    // Distance tracking (800 meters total)
-    this.maxDistance = BATMAN_GLIDE_DISTANCE;
-    this.startDistance = 0;
-    this.distanceTraveled = 0;
-    this.distanceRemaining = this.maxDistance;
+    this.maxTime = BATMAN_GLIDE_TIME;
+    this.timeRemaining = this.maxTime;
     this.progress = 1.0;
-
-    // UI compatibility properties
-    this.maxTime = this.maxDistance;
-    this.timeRemaining = this.maxDistance;
-    this._elapsedTime = 0;
     this._origCapes = [];
+    this._unfurl = -1;
+    this._fold = -1;
+    this._batT = 0;
+    this._signalT = -1;
 
-    // Cape Group (anchored to player.root at upper spine/shoulders)
+    // cape (on the player, at the shoulders)
     this.capeGroup = new THREE.Group();
     this.capeGroup.name = 'batmanGliderCape';
     this.capeGroup.position.set(0, 0.96, -0.08);
     this.capeGroup.visible = false;
+    this._buildCape();
+    player.root.add(this.capeGroup);
 
-    // 1. Multi-segmented 24x12 Bat-Wing Glider Mantle
-    this._buildCapeGeometry();
-
-    // 2. Wingtip Wind Trails
-    this.windTrails = createWindTrails();
-    this.capeGroup.add(this.windTrails.group);
-
-    // 3. 3D Little Black Bat Swarm
-    this.batPoolSize = 24;
-    this.batPool = [];
-    this.batGroup = new THREE.Group();
-    this.batGroup.name = 'batmanBatSwarm';
-    this.capeGroup.add(this.batGroup);
-
-    for (let i = 0; i < this.batPoolSize; i++) {
-      const bat = create3DBatMesh();
-      bat.root.visible = false;
-      this.batGroup.add(bat.root);
-      this.batPool.push(bat);
+    // wingtip wind ribbons: two tapered strips in world space (1 draw call)
+    this.trail = new Float32Array(2 * TRAIL_N * 3);
+    this.trailCount = 0;
+    const tg = new THREE.BufferGeometry();
+    tg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(2 * TRAIL_N * 2 * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    const idx = [];
+    for (let r = 0; r < 2; r++) for (let i = 0; i < TRAIL_N - 1; i++) {
+      const a = (r * TRAIL_N + i) * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
+    tg.setIndex(idx);
+    this.ribbons = new THREE.Mesh(tg, new THREE.MeshBasicMaterial({ color: 0xeef3ff, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    this.ribbons.frustumCulled = false;
+    this.ribbons.visible = false;
+    this.ribbons.renderOrder = 6;
+    scene.add(this.ribbons);
 
-    // Attach cape group to player root
-    if (this.player && this.player.root) {
-      this.player.root.add(this.capeGroup);
-    }
+    // bat swarm (1 draw call)
+    const shape = new THREE.Shape(BAT_PTS.map(([x, y]) => new THREE.Vector2((x - 50) / 96, (28 - y) / 96)));
+    this.bats = new BatPool(scene, new THREE.ShapeGeometry(shape), 40, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), 0);
+    this.bats.mesh.renderOrder = 7;
 
-    // Transient shockwaves for collision absorb
-    this.transientFX = [];
-
-    // Unified collision hooks integration
-    if (this.obstacles && this.obstacles.hooks) {
-      const prevFront = this.obstacles.hooks.onFrontHit;
-      this.obstacles.hooks.onFrontHit = (hit) => {
-        if (this.active && this.absorbHit(hit)) return true;
-        return prevFront ? prevFront(hit) : false;
-      };
-
-      const prevSide = this.obstacles.hooks.onSideHit;
-      this.obstacles.hooks.onSideHit = (hit) => {
-        if (this.active && this.absorbHit(hit)) return true;
-        return prevSide ? prevSide(hit) : false;
-      };
-    }
-
-    if (this.chaser && this.chaser.hooks) {
-      const prevCatch = this.chaser.hooks.absorbCatch;
-      this.chaser.hooks.absorbCatch = () => {
-        if (this.active && this.absorbHit()) return true;
-        return prevCatch ? prevCatch() : false;
-      };
-    }
+    // Bat-Signal on the clouds + its searchlight
+    this.signal = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTex(256, 160, drawSignal), fog: false, depthWrite: false, transparent: true, opacity: 0 }));
+    this.signal.position.set(6, 34, -120);
+    this.signal.scale.set(30, 18.75, 1);
+    this.signal.visible = false;
+    this.signal.frustumCulled = false;
+    scene.add(this.signal);
+    this.beam = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({
+      map: canvasTex(64, 8, drawBeam), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide,
+    }));
+    this.beam.position.set(-34, 0, -70);
+    this.beam.visible = false;
+    this.beam.frustumCulled = false;
+    scene.add(this.beam);
   }
 
-  // ------------------------------------------------------------------ 24x12 CAPE BUILDER
-  _buildCapeGeometry() {
-    // 24 width segments (25 cols), 12 height segments (13 rows) -> 325 vertices
-    const cols = CAPE_SEGMENTS_X;
-    const rows = CAPE_SEGMENTS_Y;
-    const totalVerts = (cols + 1) * (rows + 1);
-
+  _buildCape() {
+    const cols = CAPE_SEGMENTS_X, rows = CAPE_SEGMENTS_Y;
+    const total = (cols + 1) * (rows + 1);
     const geo = new THREE.PlaneGeometry(CAPE_WINGSPAN, CAPE_LENGTH, cols, rows);
     this.capeGeo = geo;
-
-    // Sculpt base vertex positions into authentic bat wing glider silhouette
-    const baseArr = new Float32Array(totalVerts * 3);
+    const base = new Float32Array(total * 3);
     const pos = geo.attributes.position;
-
-    for (let i = 0; i < totalVerts; i++) {
-      const iy = Math.floor(i / (cols + 1)); // 0 (top shoulders) to 12 (bottom hem)
-      const ix = i % (cols + 1);            // 0 (left tip) to 24 (right tip)
-
-      const u = (ix / cols) * 2 - 1;        // -1.0 to 1.0 (horizontal span)
-      const v = iy / rows;                  // 0.0 (top) to 1.0 (bottom)
-      const absU = Math.abs(u);
-
-      // Flaring bat wingspan profile
-      const spanFactor = (v < 0.35)
-        ? (0.35 + 0.65 * (v / 0.35))
-        : (1.0 - 0.14 * Math.pow((v - 0.35) / 0.65, 2));
-      const bx = u * (CAPE_WINGSPAN * 0.5) * Math.max(0.32, spanFactor);
-
-      // Scalloped trailing edge with 3 distinct curved bat arches per wing
-      const arch = Math.sin(absU * Math.PI * 3.0);
-      const scallopCut = (v > 0.55) ? ((v - 0.55) / 0.45) * (0.16 * (1.0 - Math.abs(arch))) : 0;
-      const wingtipLift = (v > 0.4) ? Math.pow(absU, 2.5) * 0.16 : 0;
-      const by = -v * CAPE_LENGTH + scallopCut + wingtipLift;
-
-      // Aerodynamic camber profile (airfoil arch in Z)
-      const camber = Math.sin(v * Math.PI * 0.75) * 0.15 - Math.pow(absU, 1.8) * 0.12;
-      const bz = camber - 0.03;
-
-      const i3 = i * 3;
-      baseArr[i3] = bx;
-      baseArr[i3 + 1] = by;
-      baseArr[i3 + 2] = bz;
-
+    for (let i = 0; i < total; i++) {
+      const iy = Math.floor(i / (cols + 1)), ix = i % (cols + 1);
+      const u = (ix / cols) * 2 - 1, v = iy / rows, au = Math.abs(u);
+      const span = v < 0.35 ? 0.35 + 0.65 * (v / 0.35) : 1.0 - 0.14 * Math.pow((v - 0.35) / 0.65, 2);
+      const bx = u * (CAPE_WINGSPAN * 0.5) * Math.max(0.32, span);
+      const arch = Math.sin(au * Math.PI * 3.0);
+      const scallop = v > 0.55 ? ((v - 0.55) / 0.45) * (0.16 * (1.0 - Math.abs(arch))) : 0;
+      const tipLift = v > 0.4 ? Math.pow(au, 2.5) * 0.16 : 0;
+      const by = -v * CAPE_LENGTH + scallop + tipLift;
+      const bz = Math.sin(v * Math.PI * 0.75) * 0.15 - Math.pow(au, 1.8) * 0.12 - 0.03;
+      base[i * 3] = bx; base[i * 3 + 1] = by; base[i * 3 + 2] = bz;
       pos.setXYZ(i, bx, by, bz);
     }
-
-    pos.needsUpdate = true;
+    pos.setUsage(THREE.DynamicDrawUsage);
     geo.computeVertexNormals();
-    this.capeBasePositions = baseArr;
-
-    // Solid obsidian mantle material
-    const mantleMat = new THREE.MeshStandardMaterial({
-      color: 0x0a0b10,
-      roughness: 0.35,
-      metalness: 0.4,
-      side: THREE.DoubleSide,
-      depthWrite: true,
-    });
-    this.capeMesh = new THREE.Mesh(geo, mantleMat);
+    this.capeBasePositions = base;
+    this.capeMesh = new THREE.Mesh(geo, toonMaterial(NAVY, {
+      side: THREE.DoubleSide, rim: { color: 0x9fb4e6, threshold: 0.55, strength: 0.75 }, gloss: { color: 0x6f7fb0, threshold: 0.93, strength: 0.5 },
+    }));
     this.capeGroup.add(this.capeMesh);
-
-    // Luminous aerodynamic wind sheath overlay (AdditiveBlending)
-    const sheathGeo = geo.clone();
-    const sheathTex = createGlowTexture('#2b4c7e', '#88ccee', 128);
-    const sheathMat = new THREE.MeshBasicMaterial({
-      map: sheathTex,
-      transparent: true,
-      opacity: 0.32,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    this.sheathMesh = new THREE.Mesh(sheathGeo, sheathMat);
-    this.sheathMesh.position.z = 0.015;
-    this.capeGroup.add(this.sheathMesh);
-
-    // Glowing yellow bat emblem centered on back
-    const emblemGeo = new THREE.PlaneGeometry(0.55, 0.32);
-    const emblemTex = createGlowTexture('#f4c922', '#ffffff', 128);
-    const emblemMat = new THREE.MeshBasicMaterial({
-      map: emblemTex,
-      transparent: true,
-      opacity: 0.85,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    this.emblemMesh = new THREE.Mesh(emblemGeo, emblemMat);
-    this.emblemMesh.position.set(0, -0.32, 0.05);
+    this.emblemMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.38), new THREE.MeshBasicMaterial({ map: canvasTex(256, 160, drawEmblem), transparent: true, depthWrite: false }));
+    this.emblemMesh.position.set(0, -0.36, 0.12);
     this.capeGroup.add(this.emblemMesh);
   }
 
-  // ------------------------------------------------------------------ HERO CONFIG FOR UI
-  getHeroConfig(skin = 'batman') {
-    return {
-      name: 'batman',
-      duration: this.maxDistance,
-      distance: this.maxDistance,
-      label: this.label,
-      icon: this.batSvgIcon,
-      className: 'batman',
-    };
+  getHeroConfig() {
+    return { name: 'batman', duration: this.maxTime, label: this.label, icon: this.batSvgIcon, className: 'batman' };
   }
 
-  // ------------------------------------------------------------------ ACTIVATE (DISTANCE-BASED)
-  activate(startDistance) {
+  activate(duration) {
     if (this.active || game.halted || (this.player && this.player.controlsLocked)) return false;
-
-    // Capture starting distance strictly
-    const dist = (typeof startDistance === 'number' && Number.isFinite(startDistance))
-      ? startDistance
-      : (game.state?.distance || game.distance || 0);
-
-    this.startDistance = dist;
-    this.distanceTraveled = 0;
-    this.distanceRemaining = this.maxDistance;
+    const dur = (typeof duration === 'number' && Number.isFinite(duration) && duration > 0) ? duration : BATMAN_GLIDE_TIME;
+    this.maxTime = dur;
+    this.timeRemaining = dur;
+    this.elapsed = 0;
     this.progress = 1.0;
     this.active = true;
-    this.timeRemaining = this.maxDistance;
-    this.maxTime = this.maxDistance;
-    this.elapsed = 0;
     this.timeAlive = 0;
     this.currentFlyOffset = 0;
+    this.trailCount = 0;
+    this._unfurl = 0;
+    this._fold = -1;
+    this._signalT = 0;
 
-    // Reveal custom 24x12 cape
     this.capeGroup.visible = true;
-
-    // Hide default walking cape on Batman character to avoid overlap
+    this.capeGroup.scale.set(1, 0.2, 1);
     this._hideDefaultCape();
-
-    // Gliding stance: clear trip/stumble, camera shake burst, grace period
-    if (this.player && typeof this.player.clearOverride === 'function') this.player.clearOverride();
-    if (this.obstacles && typeof this.obstacles.grace === 'function') this.obstacles.grace(0.4);
+    this.player.clearOverride();
+    this.obstacles.grace(0.4);
     if (this.chaser && this.chaser.isNear && typeof this.chaser._dropBack === 'function') this.chaser._dropBack();
-    if (this.cameraRig && typeof this.cameraRig.shake === 'function') this.cameraRig.shake(0.22, 0.35);
 
-    emit('batmanGlideStart', { distance: this.startDistance, maxDistance: this.maxDistance });
-    emit('specialOn', { mode: 'batman', duration: this.maxDistance, distance: this.maxDistance });
+    // the cape snaps open with a flurry of bats
+    const p = this.player;
+    for (let i = 0; i < 12; i++) this._spawnBat(p, i % 2 ? 1 : -1, 1.4);
+    kick(0.3);
+    this.cameraRig.shake(0.1, 0.25);
+
+    emit('batmanGlideStart', { duration: this.maxTime });
+    emit('specialOn', { mode: 'batman', duration: this.maxTime });
     return true;
   }
 
-  // ------------------------------------------------------------------ BEFORE PLAYER (FLIGHT AERODYNAMICS)
+  _spawnBat(p, side, speed = 1) {
+    const x = p.x + side * (0.9 + Math.random() * 0.6);
+    this.bats.spawn(x, p.y + 0.6 + Math.random() * 0.6, 0.1,
+      side * (1 + Math.random() * 3) * speed, (1.5 + Math.random() * 2.5) * speed, -(5 + Math.random() * 7) * speed,
+      0.9 + Math.random() * 0.5, 0.45 + Math.random() * 0.3, 1, BAT, { scroll: false });
+  }
+
   beforePlayer(dt) {
     if (!this.active && this.currentFlyOffset <= 0.001) return;
-
     if (this.active && !game.halted) {
       this.timeAlive += dt;
       this.elapsed += dt;
-
-      // Current distance progression
-      const gameDist = (game.state && typeof game.state.distance === 'number')
-        ? game.state.distance
-        : (game.distance || 0);
-      const distTraveled = Math.max(this.distanceTraveled, Math.max(0, gameDist - this.startDistance));
-      const distRemaining = Math.max(0, this.maxDistance - distTraveled);
-
-      // Smooth takeoff: 0 -> 1 over TAKEOFF_DIST (or TAKEOFF_TIME)
+      const remaining = Math.max(0, this.maxTime - this.elapsed);
       let takeoffRatio = 1.0;
-      if (distTraveled < this.TAKEOFF_DIST) {
-        takeoffRatio = smoothstep(distTraveled / this.TAKEOFF_DIST);
-      }
-      if (this.elapsed < this.TAKEOFF_TIME) {
-        takeoffRatio = Math.max(takeoffRatio, smoothstep(this.elapsed / this.TAKEOFF_TIME));
-      }
-
-      // Smooth landing: 1 -> 0 over the last LANDING_DIST
+      if (this.elapsed < this.TAKEOFF_TIME) takeoffRatio = smoothstep(this.elapsed / this.TAKEOFF_TIME);
       let landingRatio = 1.0;
-      if (distRemaining < this.LANDING_DIST) {
-        landingRatio = smoothstep(distRemaining / this.LANDING_DIST);
-      }
-
+      if (remaining < this.LANDING_TIME) landingRatio = smoothstep(remaining / this.LANDING_TIME);
       const liftRatio = Math.max(0, Math.min(1, Math.min(takeoffRatio, landingRatio)));
-
-      // Aerodynamic cruise bobbing
       const bob = Math.sin(this.timeAlive * 3.0) * 0.1;
       this.currentFlyOffset = (this.FLY_ALTITUDE + bob) * liftRatio;
     } else {
-      // Smooth descent back to ground level if deactivated prematurely or finished
       this.currentFlyOffset = Math.max(0, this.currentFlyOffset - dt * 3.5);
     }
-
-    if (this.player && this.currentFlyOffset > 0.001) {
+    if (this.currentFlyOffset > 0.001) {
       this.player.floorY += this.currentFlyOffset;
       if (this.player.grounded || this.player.y < this.player.floorY) {
         this.player.y = this.player.floorY;
@@ -493,473 +295,217 @@ export class BatmanSkill {
         this.player.grounded = true;
       }
     }
-
-    // Stumble & trip immunity during the flight
-    if (this.player && (this.active || this.currentFlyOffset > 0.5)) {
-      if (this.player.overrideState === 'stumble' || this.player.override === 'stumble') {
-        this.player.clearOverride();
-      }
-    }
+    if ((this.active || this.currentFlyOffset > 0.5) && this.player.override === 'stumble') this.player.clearOverride();
   }
 
-  // ------------------------------------------------------------------ UPDATE
-  update(timeOrDt, dtOrDist, currentDistance) {
-    // Accommodate update(time, dt, currentDistance) or update(dt)
-    let time, dt, dist;
-    if (arguments.length === 1) {
-      dt = timeOrDt;
-      this.timeAlive = (this.timeAlive || 0) + dt;
-      time = this.timeAlive;
-      dist = game.state?.distance || game.distance || (this.startDistance + this.distanceTraveled);
-    } else if (arguments.length === 2) {
-      if (typeof dtOrDist === 'number' && dtOrDist > 5.0) {
-        dt = timeOrDt;
-        dist = dtOrDist;
-        this.timeAlive = (this.timeAlive || 0) + dt;
-        time = this.timeAlive;
-      } else {
-        time = timeOrDt;
-        dt = dtOrDist;
-        this.timeAlive = time;
-        dist = game.state?.distance || game.distance || (this.startDistance + this.distanceTraveled);
-      }
-    } else {
-      time = timeOrDt;
-      dt = dtOrDist;
-      this.timeAlive = time;
-      dist = (typeof currentDistance === 'number' && Number.isFinite(currentDistance))
-        ? currentDistance
-        : (game.state?.distance || game.distance || (this.startDistance + this.distanceTraveled));
-    }
+  update(dt) {
+    this.timeAlive += dt;
+    const time = this.timeAlive;
+    const running = game.state.mode === 'running' && !game.halted;
+    const dz = running ? game.state.speed * dt : 0;
+    this.bats.update(dt, dz);
+    this._updateSignal(dt);
+    this._updateCapeOpen(dt);
+    if (!this.active || game.halted) { if (!this.active) this.ribbons.visible = false; return; }
 
-    // Update transient cloak-sweep shockwave debris & light bursts
-    this._updateTransientFX(dt);
-
-    if (!this.active || game.halted) return;
-
-    // Distance progression calculation: strictly (currentDistance - startDistance < 800)
-    this.distanceTraveled = Math.max(0, dist - this.startDistance);
-    this.distanceRemaining = Math.max(0, this.maxDistance - this.distanceTraveled);
-    this.progress = Math.max(0, Math.min(1, 1 - (this.distanceTraveled / this.maxDistance)));
-
-    // Mirror to timeRemaining for HUD/UI bar bindings
-    this.timeRemaining = this.distanceRemaining;
-
-    // Check distance expiry
-    if (this.distanceTraveled >= this.maxDistance) {
+    const remaining = Math.max(0, this.maxTime - this.elapsed);
+    this.timeRemaining = remaining;
+    this.progress = Math.max(0, Math.min(1, remaining / this.maxTime));
+    if (this.elapsed >= this.maxTime) {
       this.deactivate(true);
       return;
     }
 
-    // 1. Horizontal aerodynamic glide position pitch (rotation.x = 0.52)
-    // Pitch blends smoothly in during takeoff, remains at 0.52 during cruise, blends back on landing
-    if (this.player && this.player.root) {
-      let pitchBlend = 1.0;
-      if (this.distanceTraveled < this.TAKEOFF_DIST) {
-        pitchBlend = smoothstep(this.distanceTraveled / this.TAKEOFF_DIST);
-      } else if (this.distanceRemaining < this.LANDING_DIST) {
-        pitchBlend = smoothstep(this.distanceRemaining / this.LANDING_DIST);
-      }
-      const targetPitch = GLIDE_PITCH_ANGLE * pitchBlend;
-      this.player.root.rotation.x = THREE.MathUtils.lerp(
-        this.player.root.rotation.x,
-        targetPitch,
-        Math.min(1, dt * 11)
-      );
-    }
+    let pitchBlend = 1.0;
+    if (this.elapsed < this.TAKEOFF_TIME) pitchBlend = smoothstep(this.elapsed / this.TAKEOFF_TIME);
+    else if (remaining < this.LANDING_TIME) pitchBlend = smoothstep(remaining / this.LANDING_TIME);
+    this.player.root.rotation.x = THREE.MathUtils.lerp(this.player.root.rotation.x, GLIDE_PITCH_ANGLE * pitchBlend, Math.min(1, dt * 11));
 
-    // 2. Real-time sine-wave wind physics on 24x12 cape vertices:
-    // pos.z = sin(x*5 + time*22)*0.12*yRatio + aerodynamic harmonics
     this._updateCapePhysics(time);
-
-    // 3. Update wingtip wind trails
-    this._updateWindTrails(time, dt);
-
-    // 4. Update 3D little black bat silhouette swarm
-    this._updateBatSwarm(time, dt);
+    this._updateRibbons(dz);
+    this._batT -= dt;
+    if (this._batT <= 0) {
+      this._batT = 0.16;
+      this._spawnBat(this.player, Math.random() < 0.5 ? -1 : 1);
+    }
   }
 
-  // ------------------------------------------------------------------ REAL-TIME CAPE SINE WAVE PHYSICS
+  // the Bat-Signal: fades in on the clouds, holds, fades out; the searchlight sweeps up to it
+  _updateSignal(dt) {
+    if (this._signalT < 0) return;
+    this._signalT += dt;
+    const t = this._signalT;
+    const a = t < 0.35 ? t / 0.35 : t < 2.1 ? 1 : Math.max(0, 1 - (t - 2.1) / 0.5);
+    this.signal.visible = this.beam.visible = a > 0;
+    this.signal.material.opacity = a;
+    const flick = 0.9 + Math.sin(t * 37) * 0.05;
+    this.signal.scale.set(30 * flick * (0.85 + 0.15 * Math.min(1, t / 0.35)), 18.75 * flick, 1);
+    this.beam.material.opacity = a * 0.35;
+    // beam from the street (left) to the signal: length / angle toward it
+    const dx = this.signal.position.x - this.beam.position.x, dy = this.signal.position.y - this.beam.position.y, dzz = this.signal.position.z - this.beam.position.z;
+    const len = Math.hypot(dx, dy, dzz);
+    this.beam.scale.set(9 + 9 * Math.min(1, t / 0.35), len * Math.min(1, t / 0.25), 1);
+    this.beam.lookAt(this.signal.position);
+    this.beam.rotateX(Math.PI / 2);
+    if (a <= 0 && t > 1) this._signalT = -1;
+  }
+
+  _updateCapeOpen(dt) {
+    const g = this.capeGroup;
+    if (this._unfurl >= 0) {
+      this._unfurl += dt;
+      const t = this._unfurl;
+      const y = t < 0.12 ? 0.2 + (t / 0.12) * 0.95 : t < 0.26 ? 1.15 - ((t - 0.12) / 0.14) * 0.15 : 1;
+      g.scale.set(t < 0.12 ? 0.7 + t * 2.5 : 1, y, 1);
+      if (t > 0.26) this._unfurl = -1;
+    }
+    if (this._fold >= 0) {
+      this._fold += dt;
+      const k = Math.max(0, 1 - this._fold / 0.25);
+      g.scale.set(0.3 + 0.7 * k, k, 1);
+      if (k <= 0) {
+        this._fold = -1;
+        g.visible = false;
+        g.scale.set(1, 1, 1);
+        this._restoreDefaultCape();
+      }
+    }
+  }
+
   _updateCapePhysics(time) {
     const pos = this.capeGeo.attributes.position;
-    const arr = pos.array;
-    const base = this.capeBasePositions;
-    const count = pos.count;
-    const cols = CAPE_SEGMENTS_X;
-    const rows = CAPE_SEGMENTS_Y;
-
-    for (let i = 0; i < count; i++) {
+    const arr = pos.array, base = this.capeBasePositions;
+    const cols = CAPE_SEGMENTS_X, rows = CAPE_SEGMENTS_Y;
+    for (let i = 0; i < pos.count; i++) {
       const i3 = i * 3;
-      const bx = base[i3];
-      const by = base[i3 + 1];
-      const bz = base[i3 + 2];
-
-      const iy = Math.floor(i / (cols + 1));
-      const ix = i % (cols + 1);
-      const u = (ix / cols) * 2 - 1;
-      const absU = Math.abs(u);
-      const yRatio = iy / rows; // 0 at shoulders, 1 at trailing hem
-
-      // Primary sine wave physics: pos.z = sin(x*5 + time*22)*0.12*yRatio
-      const wave1 = Math.sin(bx * 5.0 + time * 22.0) * 0.12 * yRatio;
-
-      // High-frequency turbulent flutter harmonics
-      const wave2 = Math.sin(bx * 11.0 - time * 32.0) * 0.038 * yRatio;
-
-      // Chordwise aerodynamic wave
-      const waveChord = Math.cos(by * 7.0 + time * 18.0) * 0.045 * yRatio;
-
-      // Wingtip turbulence and flap lift
-      const tipFlap = Math.cos(time * 26.0 + absU * 4.0) * 0.055 * yRatio * absU;
-
-      arr[i3] = bx + Math.sin(time * 12.0 + by * 3.5) * 0.02 * yRatio;
-      arr[i3 + 1] = by + Math.cos(time * 14.0 + bx * 4.5) * 0.02 * yRatio;
-      arr[i3 + 2] = bz + wave1 + wave2 + waveChord + tipFlap;
+      const bx = base[i3], by = base[i3 + 1], bz = base[i3 + 2];
+      const iy = Math.floor(i / (cols + 1)), ix = i % (cols + 1);
+      const au = Math.abs((ix / cols) * 2 - 1);
+      const yr = iy / rows;
+      const z = Math.sin(bx * 5.0 + time * 22.0) * 0.12 * yr + Math.sin(bx * 11.0 - time * 32.0) * 0.038 * yr
+        + Math.cos(by * 7.0 + time * 18.0) * 0.045 * yr + Math.cos(time * 26.0 + au * 4.0) * 0.055 * yr * au;
+      arr[i3] = bx + Math.sin(time * 12.0 + by * 3.5) * 0.02 * yr;
+      arr[i3 + 1] = by + Math.cos(time * 14.0 + bx * 4.5) * 0.02 * yr;
+      arr[i3 + 2] = bz + z;
     }
-
     pos.needsUpdate = true;
     this.capeGeo.computeVertexNormals();
-
-    // Mirror to sheath mesh
-    const sheathPos = this.sheathMesh.geometry.attributes.position;
-    sheathPos.copy(pos);
-    sheathPos.needsUpdate = true;
-
-    // Pulsing sheath & emblem intensity
-    this.sheathMesh.material.opacity = 0.28 + Math.sin(time * 16.0) * 0.12;
-    this.emblemMesh.material.opacity = 0.75 + Math.sin(time * 20.0) * 0.2;
   }
 
-  // ------------------------------------------------------------------ WINGTIP WIND TRAILS UPDATE
-  _updateWindTrails(time, dt) {
-    const trails = this.windTrails.trails;
-    for (let i = 0; i < trails.length; i++) {
-      const tr = trails[i];
-      tr.offsetZ += dt * tr.speed;
-      if (tr.offsetZ > 2.8) {
-        tr.offsetZ = -0.2;
+  // wingtip ribbons: new head points at the wingtips, older points left in the world
+  _updateRibbons(dz) {
+    const T = this.trail;
+    for (let r = 0; r < 2; r++) {
+      for (let i = TRAIL_N - 1; i > 0; i--) {
+        const a = (r * TRAIL_N + i) * 3, b = (r * TRAIL_N + i - 1) * 3;
+        T[a] = T[b]; T[a + 1] = T[b + 1]; T[a + 2] = T[b + 2] + dz;
       }
-
-      const swirlAngle = time * tr.vortexSpeed + tr.phase + tr.offsetZ * 3.8;
-      const r = tr.vortexRadius * (1.0 + tr.offsetZ * 0.85);
-
-      tr.mesh.position.set(
-        tr.baseX + Math.cos(swirlAngle) * r,
-        tr.baseY + Math.sin(swirlAngle) * r,
-        -tr.offsetZ
-      );
-
-      const alpha = Math.max(0, 1.0 - (tr.offsetZ / 2.8));
-      tr.mesh.material.opacity = alpha * 0.85;
-      tr.mesh.scale.set(1.0 + tr.offsetZ * 0.4, 1.0, 1.0 + tr.offsetZ * 0.6);
     }
+    this.capeGroup.updateWorldMatrix(true, false);
+    const tip = _v;
+    for (let r = 0; r < 2; r++) {
+      this.capeGroup.localToWorld(tip.set((r ? 1 : -1) * 1.3 * this.capeGroup.scale.x, -0.55, 0.05));
+      const a = r * TRAIL_N * 3;
+      T[a] = tip.x; T[a + 1] = tip.y; T[a + 2] = tip.z;
+    }
+    this.trailCount = Math.min(TRAIL_N, this.trailCount + 1);
+    const pos = this.ribbons.geometry.attributes.position;
+    const cam = this.cameraRig.camera.position;
+    const d = _d, side = _side, view = _view, p = _s;
+    for (let r = 0; r < 2; r++) {
+      for (let i = 0; i < TRAIL_N; i++) {
+        const j = Math.min(i, this.trailCount - 1);
+        const c = (r * TRAIL_N + j) * 3;
+        p.set(T[c], T[c + 1], T[c + 2]);
+        const n = (r * TRAIL_N + Math.min(j + 1, this.trailCount - 1)) * 3, m = (r * TRAIL_N + Math.max(j - 1, 0)) * 3;
+        d.set(T[n] - T[m], T[n + 1] - T[m + 1], T[n + 2] - T[m + 2]);
+        view.subVectors(cam, p).normalize();
+        side.crossVectors(d, view).normalize();
+        const w = 0.13 * (1 - i / (TRAIL_N - 1)) * (p.z > 2.5 ? 0 : 1); // tapers, never near the lens
+        const v = (r * TRAIL_N + i) * 2;
+        pos.setXYZ(v, p.x + side.x * w, p.y + side.y * w, p.z + side.z * w);
+        pos.setXYZ(v + 1, p.x - side.x * w, p.y - side.y * w, p.z - side.z * w);
+      }
+    }
+    pos.needsUpdate = true;
+    this.ribbons.visible = this.trailCount > 2;
   }
 
-  // ------------------------------------------------------------------ 3D BAT SWARM UPDATE
-  _updateBatSwarm(time, dt) {
-    // Periodic spawn of little 3D bats from wingtips and cape hem
-    if (Math.random() < 0.65) {
-      const bat = this.batPool.find((b) => !b.active);
-      if (bat) {
-        bat.active = true;
-        bat.age = 0;
-        bat.maxAge = 0.75 + Math.random() * 0.45;
-        bat.root.visible = true;
-
-        const isLeft = Math.random() < 0.5;
-        const spawnX = (isLeft ? -1 : 1) * (1.15 + Math.random() * 0.35);
-        const spawnY = -0.3 + (Math.random() - 0.5) * 0.25;
-        const spawnZ = -0.15;
-
-        bat.root.position.set(spawnX, spawnY, spawnZ);
-        bat.vel.set(
-          (Math.random() - 0.5) * 5.0 + (isLeft ? -1.5 : 1.5),
-          (Math.random() - 0.5) * 3.2,
-          -(16.0 + Math.random() * 12.0)
-        );
-        bat.rotVel.set(
-          (Math.random() - 0.5) * 4.0,
-          (Math.random() - 0.5) * 6.0,
-          (Math.random() - 0.5) * 4.0
-        );
-      }
-    }
-
-    // Animate active bats
-    for (let i = 0; i < this.batPool.length; i++) {
-      const bat = this.batPool[i];
-      if (!bat.active) continue;
-
-      bat.age += dt;
-      if (bat.age >= bat.maxAge) {
-        bat.active = false;
-        bat.root.visible = false;
-        continue;
-      }
-
-      // High-frequency wing flapping (35 Hz)
-      const flapAngle = Math.sin(time * 36.0 + bat.flapOffset) * 0.68;
-      bat.leftWing.rotation.y = flapAngle;
-      bat.rightWing.rotation.y = -flapAngle;
-      bat.leftWing.rotation.z = flapAngle * 0.4;
-      bat.rightWing.rotation.z = -flapAngle * 0.4;
-
-      // Flight trajectory
-      bat.root.position.x += bat.vel.x * dt;
-      bat.root.position.y += bat.vel.y * dt;
-      bat.root.position.z += bat.vel.z * dt;
-
-      bat.root.rotation.x += bat.rotVel.x * dt;
-      bat.root.rotation.y += bat.rotVel.y * dt;
-      bat.root.rotation.z += bat.rotVel.z * dt;
-
-      // Scale down and fade as bat disperses into darkness
-      const k = bat.age / bat.maxAge;
-      const scale = Math.max(0.01, 1.0 - k * 0.7);
-      bat.root.scale.setScalar(scale);
-      bat.glowMesh.material.opacity = Math.max(0, 0.7 * (1.0 - k));
-    }
-  }
-
-  // ------------------------------------------------------------------ COLLISION ABSORPTION (absorbHit)
   absorbHit(hit) {
     if (!this.active) return false;
-
-    // Obstacle hit location
-    const hitPos = (hit && hit.position)
-      ? hit.position.clone()
-      : new THREE.Vector3(this.player.x, 1.0, 0);
-
-    // 1. Shatter obstacle with high-force 3D debris & glowing golden bat sparks
-    shatterObstacle(this.scene, hitPos, {
-      color: 0x16161f,
-      emissive: 0x242436,
-      sparkColor: '#f4c922',
-      blastForce: 16.5,
-    });
-
-    // 2. Remove the collided obstacle safely
-    if (hit?.obstacle && this.obstacles) {
-      this.obstacles.remove(hit.obstacle);
+    const p = this.player;
+    const hitPos = (hit && hit.position) ? hit.position.clone() : new THREE.Vector3(p.x, 1.0, 0);
+    hitPos.z = Math.min(hitPos.z, -0.5);
+    if (hit?.obstacle) this.obstacles.remove(hit.obstacle);
+    const list = this.obstacles.active;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const o = list[i];
+      if (Math.abs(o.x - p.x) <= 2.2 && o.z > -7.0 && (o.z - o.length) < 2.5) this.obstacles.remove(o);
     }
-
-    // 3. Clear clearing corridor ahead to ensure completely safe exit
-    if (this.obstacles && this.obstacles.active) {
-      const list = this.obstacles.active;
-      for (let i = list.length - 1; i >= 0; i--) {
-        const o = list[i];
-        if (Math.abs(o.x - this.player.x) <= 2.2 && o.z > -7.0 && (o.z - o.length) < 2.5) {
-          this.obstacles.remove(o);
-        }
-      }
-    }
-
-    // 4. Dynamic Dark Knight Cloak Sweep Shockwave Disc (AdditiveBlending)
-    this._spawnCloakShockwave(hitPos);
-
-    // 5. Radial bat swarm blast (burst of 10 bats shooting outward)
-    this._spawnRadialBatBurst(hitPos);
-
-    // 6. Camera shake & dynamic flash light
-    if (this.cameraRig) this.cameraRig.shake(0.42, 0.48);
-    triggerFlashLight(this.scene, hitPos, 0xf4c922, 6.0, 0.4);
-
-    // 7. Emit events
+    hitStop(0.08);
+    impactFrame({ at: new THREE.Vector3(p.x, p.y + 0.9, 0), bg: YELLOW, dot: 0xd9a800, line: 0x1c2440 });
+    sticker('kapow', new THREE.Vector3(p.x + (p.x > 0.5 ? -1.2 : 1.2), p.y + 2.3, -1.4), { follow: p.root, life: 0.85 });
+    chunkBurst(hitPos, { n: 10, force: 9, size: 0.24, colors: [0x2a2d3a, 0xc9c3d6, YELLOW] });
+    sparkBurst(hitPos, { n: 12, speed: 8, colors: [YELLOW, 0xffffff] });
+    for (let i = 0; i < 14; i++) this._spawnBat(p, i % 2 ? 1 : -1, 1.8);
+    kick(0.4);
+    this.cameraRig.shake(0.24, 0.35);
+    sfx('crash', { position: hitPos.clone() });
     emit('batmanCloakSweep', { position: hitPos.clone() });
-    emit('crash', { position: hitPos.clone() });
-
-    // 8. Grant safety grace period and exit glide safely
-    if (this.obstacles) this.obstacles.grace(1.5);
+    this.obstacles.grace(1.5);
     this.deactivate(false);
-
     return true;
   }
 
-  // ------------------------------------------------------------------ TRANSIENT CLOAK SHOCKWAVE
-  _spawnCloakShockwave(pos) {
-    if (!this.scene) return;
-
-    const g = new THREE.Group();
-    const groundY = (this.player && this.player.floorY != null ? this.player.floorY : 0) + 0.04;
-    g.position.set(pos.x, groundY, pos.z);
-
-    const size = 4.2;
-    const planeGeo = new THREE.PlaneGeometry(size, size);
-    planeGeo.rotateX(-Math.PI / 2);
-    const planeTex = createGlowTexture('#f4c922', '#ffffff', 128);
-    const planeMat = new THREE.MeshBasicMaterial({
-      map: planeTex,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      opacity: 0.95,
-    });
-    const planeMesh = new THREE.Mesh(planeGeo, planeMat);
-    g.add(planeMesh);
-
-    this.scene.add(g);
-    this.transientFX.push({
-      root: g,
-      planeMat,
-      planeGeo,
-      age: 0,
-      duration: 0.45,
-      maxScale: 2.8,
-    });
-  }
-
-  // ------------------------------------------------------------------ RADIAL BAT BURST ON ABSORB
-  _spawnRadialBatBurst(pos) {
-    for (let i = 0; i < 10; i++) {
-      const bat = this.batPool.find((b) => !b.active);
-      if (!bat) break;
-
-      bat.active = true;
-      bat.age = 0;
-      bat.maxAge = 0.6 + Math.random() * 0.35;
-      bat.root.visible = true;
-
-      const angle = (i / 10) * Math.PI * 2;
-      const speed = 14.0 + Math.random() * 8.0;
-
-      bat.root.position.set(0, 0, 0);
-      bat.vel.set(
-        Math.cos(angle) * speed,
-        Math.random() * 6.0 + 2.0,
-        Math.sin(angle) * speed - 10.0
-      );
-      bat.rotVel.set(
-        (Math.random() - 0.5) * 12.0,
-        (Math.random() - 0.5) * 12.0,
-        (Math.random() - 0.5) * 12.0
-      );
-    }
-  }
-
-  // ------------------------------------------------------------------ UPDATE TRANSIENT FX
-  _updateTransientFX(dt) {
-    if (!this.transientFX || this.transientFX.length === 0) return;
-
-    for (let i = this.transientFX.length - 1; i >= 0; i--) {
-      const fx = this.transientFX[i];
-      fx.age += dt;
-
-      if (game.state?.mode === 'running' && !game.halted) {
-        fx.root.position.z += (game.state?.speed || 15) * dt;
-      }
-
-      const k = fx.age / fx.duration;
-      if (k >= 1.0) {
-        if (this.scene) this.scene.remove(fx.root);
-        fx.planeGeo.dispose();
-        fx.planeMat.dispose();
-        this.transientFX.splice(i, 1);
-      } else {
-        const s = 0.3 + (fx.maxScale - 0.3) * Math.sin(k * Math.PI * 0.5);
-        fx.root.scale.set(s, s, s);
-        fx.planeMat.opacity = Math.max(0, 0.95 * (1.0 - k));
-      }
-    }
-  }
-
-  // ------------------------------------------------------------------ DEACTIVATE
   deactivate(expired = false) {
     if (!this.active) return;
     this.active = false;
-    this.distanceRemaining = 0;
     this.progress = 0;
     this.timeRemaining = 0;
-
-    // Hide custom cape
-    if (this.capeGroup) this.capeGroup.visible = false;
-
-    // Restore default character cape
-    this._restoreDefaultCape();
-
-    // Smoothly restore player rotation back to upright
-    if (this.player && this.player.root) {
-      this.player.root.rotation.x = 0;
-    }
-
-    // Safety grace period on soft landing (1.5s protection duration)
-    if (this.obstacles && typeof this.obstacles.grace === 'function') {
-      this.obstacles.grace(1.5);
-    }
-
+    this._fold = 0; // folds away, then the model's own cape comes back
+    this._unfurl = -1;
+    this.ribbons.visible = false;
+    this.player.root.rotation.x = 0;
+    this.obstacles.grace(1.5);
     emit('batmanGlideEnd', { expired });
     emit('specialOff', { mode: 'batman', expired });
   }
 
-  // ------------------------------------------------------------------ GET REMAINING DISTANCE & PROGRESS
-  getRemainingDistance(currentDistance) {
-    if (!this.active) return 0;
-    const dist = (typeof currentDistance === 'number' && Number.isFinite(currentDistance))
-      ? currentDistance
-      : (game.state?.distance || game.distance || (this.startDistance + this.distanceTraveled));
-    return Math.max(0, this.maxDistance - (dist - this.startDistance));
-  }
-
-  getProgress(currentDistance) {
-    if (!this.active) return 0;
-    return Math.max(0, Math.min(1, this.getRemainingDistance(currentDistance) / this.maxDistance));
-  }
-
-  // ------------------------------------------------------------------ HIDE / RESTORE DEFAULT CAPE
+  // the model's cape answers to a 4 x 8 plane signature (a stand-in mesh, see models/batman.js)
   _hideDefaultCape() {
     this._origCapes = [];
-    if (!this.player || !this.player.root) return;
     this.player.root.traverse((obj) => {
-      if (obj.isMesh && obj !== this.capeMesh && obj !== this.sheathMesh && obj !== this.emblemMesh) {
-        if (obj.geometry && obj.geometry.parameters &&
-            obj.geometry.parameters.widthSegments === 4 &&
-            obj.geometry.parameters.heightSegments === 8) {
-          obj.visible = false;
-          this._origCapes.push(obj);
-        }
+      if (!obj.isMesh || obj.parent === this.capeGroup) return;
+      const prm = obj.geometry && obj.geometry.parameters;
+      if (prm && prm.widthSegments === 4 && prm.heightSegments === 8) {
+        obj.visible = false;
+        this._origCapes.push(obj);
       }
     });
   }
 
   _restoreDefaultCape() {
-    if (this._origCapes && this._origCapes.length > 0) {
-      this._origCapes.forEach((c) => {
-        c.visible = true;
-      });
-      this._origCapes = [];
-    }
+    for (const c of this._origCapes) c.visible = true;
+    this._origCapes = [];
   }
 
-  // ------------------------------------------------------------------ DISPOSE
-  dispose() {
+  reset() {
     this.deactivate(false);
+    this._fold = this._unfurl = this._signalT = -1;
+    this.capeGroup.visible = false;
+    this.capeGroup.scale.set(1, 1, 1);
+    this._restoreDefaultCape();
+    this.currentFlyOffset = 0;
+    this.ribbons.visible = false;
+    this.signal.visible = this.beam.visible = false;
+    this.bats.clear();
+  }
 
-    if (this.capeGroup && this.player && this.player.root) {
-      this.player.root.remove(this.capeGroup);
-    }
-
-    if (this.capeGroup) {
-      this.capeGroup.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
-        }
-      });
-    }
-
-    if (this.transientFX) {
-      this.transientFX.forEach((fx) => {
-        if (this.scene) this.scene.remove(fx.root);
-        if (fx.planeGeo) fx.planeGeo.dispose();
-        if (fx.planeMat) fx.planeMat.dispose();
-      });
-      this.transientFX = [];
-    }
+  dispose() {
+    this.reset();
   }
 }
 
-// ------------------------------------------------------------------ FACTORY FUNCTION & EXPORTS
 export function createBatmanSkill(params = {}) {
   return new BatmanSkill(params);
 }

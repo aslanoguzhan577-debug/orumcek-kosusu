@@ -303,7 +303,7 @@ export class HeroSpecials {
     if (skin === 'cap') return { name: 'cap', duration: 8.0, label: 'SHIELD SURF', icon: '🛡️', className: 'cap' };
     if (skin === 'miles') return { name: 'miles', duration: 7.0, label: 'VENOM BLAST', icon: '⚡', className: 'miles' };
     if (skin === 'kitty') return { name: 'kitty', duration: 8.0, label: 'UÇAN KALP', icon: '💖', className: 'kitty' };
-    if (skin === 'batman') return { name: 'batman', distance: 800, duration: 25.0, label: 'GECE PELERİNİ', icon: '🦇', className: 'batman', isDistance: true };
+    if (skin === 'batman') return { name: 'batman', duration: 8.0, label: 'GECE PELERİNİ', icon: '🦇', className: 'batman' };
     if (skin === 'raimi') return { name: 'raimi', duration: 3.0, label: 'MANCINIK AĞ', icon: '🕸️', className: 'raimi', maxCharges: 2 };
     if (skin === 'ironman') return { name: 'ironman', duration: 2.2, label: 'UNIBEAM', icon: '💥', className: 'ironman' };
     if (skin === 'panther') return { name: 'panther', duration: 5.5, label: 'VİBRANYUM ŞOK', icon: '🟣', className: 'panther' };
@@ -407,10 +407,9 @@ export class HeroSpecials {
     }
 
     if (skin === 'batman') {
-      const startDist = (game.state && typeof game.state.distance === 'number') ? game.state.distance : (game.world?.distance || 0);
-      this.startDistance = startDist;
-      if (!this.skills.batman.activate(startDist)) return false;
-      this._start(skin, 800);
+      this.startDistance = (game.state && typeof game.state.distance === 'number') ? game.state.distance : (game.world?.distance || 0); // ui.js still reads it for the bar
+      if (!this.skills.batman.activate(dur)) return false;
+      this._start(skin, dur);
       return true;
     }
 
@@ -481,10 +480,8 @@ export class HeroSpecials {
     this.timeAlive += dt;
 
     if (this.mode === 'batman') {
-      const curDist = (game.state && typeof game.state.distance === 'number') ? game.state.distance : (game.world?.distance || 0);
-      const traveled = Math.max(0, curDist - this.startDistance);
-      this.timeRemaining = Math.max(0, 800 - traveled);
-      if (traveled >= 800 || !this.skills.batman.active) this.deactivate(true);
+      this.timeRemaining = this.skills.batman.timeRemaining;
+      if (!this.skills.batman.active || this.timeRemaining <= 0) this.deactivate(true);
       return;
     }
     if (this.mode === 'kitty') {

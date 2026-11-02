@@ -683,14 +683,7 @@ function updateHud() {
       el.ironBar.hidden = false;
       el.ironBar.classList.remove(...HERO_SKINS);
       el.ironBar.classList.add(mode);
-      let k = 0;
-      if (mode === 'batman') {
-        const curDist = (typeof st.distance === 'number') ? st.distance : (hs.startDistance || 0);
-        const startDist = hs.startDistance || 0;
-        k = Math.min(1, Math.max(0, (800 - (curDist - startDist)) / 800));
-      } else {
-        k = Math.min(1, Math.max(0, hs.timeRemaining / (hs.maxTime || 1)));
-      }
+      const k = Math.min(1, Math.max(0, hs.timeRemaining / (hs.maxTime || 1)));
       const q = Math.round(k * 200) / 200;
       if (q !== cache.barScale) { cache.barScale = q; el.ironFill.style.transform = `scaleX(${q})`; }
       const low = k < 0.2;

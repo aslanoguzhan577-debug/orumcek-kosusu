@@ -566,7 +566,8 @@ export function initFx(game) {
   let simTime = 0;
   let ironActive = false;
 
-  const on = (name, fn) => events.addEventListener(name, (e) => fn(e.detail || {}));
+  // detail.quiet: a hero special drew its own effect, only the sound plays (vfxCore sfx())
+  const on = (name, fn) => events.addEventListener(name, (e) => { if (!e.detail || !e.detail.quiet) fn(e.detail || {}); });
 
   on('coin', (d) => {
     const p = posOf(d, 1);

@@ -15,12 +15,13 @@
 //   impactFrame(opts)                   1-2 frames of a flat comic panel behind the hero
 //   edgeLines(alpha)                    thin speed lines at the screen edges (0 = off)
 //   hitStop(s) / kick(m)                freeze frame / camera dolly punch
-//   sfx(name, detail)                   play a sound event without fx.js's generic reaction
+//   sfx(name, detail)                   play a sound event; fx.js skips its generic reaction
 //   ghostLayer(model, material)         per-mesh sibling copies of a character (ghosts, overlays)
 //   rigOf(model)                        shoulder / elbow / hand / hip / knee groups of a model
+//   ToonPool, canvasTex                 for a skill's own instanced pool / canvas texture (at load)
 // Compatibility (next round's files use these, signatures unchanged): createGlowTexture,
-// shatterObstacle, updateShatterDebris, triggerFlashLight, updateFlashLights, triggerCameraFov,
-// updateCameraFov, triggerCameraShake, create3LayerUnibeam.
+// shatterObstacle, updateShatterDebris, triggerFlashLight, triggerCameraFov, updateCameraFov,
+// triggerCameraShake.
 
 import * as THREE from 'three';
 import { events, emit } from './events.js';
@@ -61,7 +62,7 @@ export function createGlowTexture(primaryColor = '#ffffff', coreColor = '#ffffff
   return tex;
 }
 
-function canvasTex(w, h, draw) {
+export function canvasTex(w, h, draw) {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
@@ -91,6 +92,11 @@ const STICKERS = {
   whoom: ['WHOOM!', '#efe3ff', '#6b3fb8'],
   thwip: ['THWIP!', '#ffffff', '#2b4fa8'],
   gong: ['GONG!', '#f2f4f8', '#2f57b5'],
+  yay: ['YAY!', '#ffe3ee', '#e0457b'],
+  boing: ['BOING!', '#ffffff', '#e0457b'],
+  kapow: ['KAPOW!', '#f4c922', '#1c2440'],
+  bwoom: ['BWOOM!', '#ffd23a', '#c8202f'],
+  fwoosh: ['FWOOSH!', '#e8f7ff', '#c8202f'],
 };
 
 function drawSticker([text, burst, fill], seed) {
@@ -178,10 +184,44 @@ function drawStar(g, W) {
   g.fill();
 }
 
+function drawHeart(g, W) {
+  g.clearRect(0, 0, W, W);
+  const c = W / 2;
+  const heart = (k) => {
+    g.beginPath();
+    g.moveTo(c, c + W * 0.36 * k);
+    g.bezierCurveTo(c - W * 0.5 * k, c + W * 0.02 * k, c - W * 0.42 * k, c - W * 0.38 * k, c, c - W * 0.16 * k);
+    g.bezierCurveTo(c + W * 0.42 * k, c - W * 0.38 * k, c + W * 0.5 * k, c + W * 0.02 * k, c, c + W * 0.36 * k);
+    g.closePath();
+  };
+  g.lineJoin = 'round';
+  heart(0.95);
+  g.fillStyle = '#ffffff';
+  g.fill();
+  g.lineWidth = 6;
+  g.strokeStyle = INK_CSS;
+  g.stroke();
+  g.fillStyle = 'rgba(255,255,255,0.9)';
+  g.beginPath();
+  g.ellipse(c - W * 0.18, c - W * 0.12, W * 0.07, W * 0.04, -0.6, 0, 6.283);
+  g.fill();
+}
+
+function drawRing(g, W) {
+  g.clearRect(0, 0, W, W);
+  const c = W / 2;
+  g.lineWidth = 12;
+  g.strokeStyle = INK_CSS;
+  g.beginPath(); g.arc(c, c, W * 0.42, 0, 6.283); g.stroke();
+  g.lineWidth = 7;
+  g.strokeStyle = '#ffffff';
+  g.beginPath(); g.arc(c, c, W * 0.42, 0, 6.283); g.stroke();
+}
+
 // ------------------------------------------------------------------ pooled toon instances
 // Fixed slots (ring buffer); a dead slot gets a zero matrix. The outline shares the instance
 // matrices. count = highest used slot + 1, hidden when nothing is alive.
-class ToonPool {
+export class ToonPool {
   constructor(scene, geo, n, mat, outline, outlineGeo, squashY = 1) {
     this.n = n;
     this.squashY = squashY;
@@ -413,12 +453,8 @@ export function initVfx({ scene, cameraRig }) {
   const camera = cameraRig.camera;
   V = { scene, cameraRig, camera, time: 0 };
 
-  // sounds without fx.js's generic flash/text: a listener registered after audio.js's
-  // (import time) and before fx.js's (initFx, later in main.js) swallows "quiet" events.
-  for (const name of ['crash', 'hulkSmash', 'capShieldGong', 'venomBlastNova', 'web']) {
-    events.addEventListener(name, (e) => { if (e.detail && e.detail.quiet) e.stopImmediatePropagation(); });
-  }
   events.addEventListener('gameover', () => resetVfx());
+  events.addEventListener('start', () => resetVfx()); // every run start, whatever the path
 
   // textures
   V.stickers = {};
@@ -426,6 +462,8 @@ export function initVfx({ scene, cameraRig }) {
   for (const key in STICKERS) V.stickers[key] = canvasTex(256, 128, drawSticker(STICKERS[key], (seed += 17)));
   V.halftone = canvasTex(128, 128, drawHalftone);
   V.star = canvasTex(128, 128, drawStar);
+  V.heart = canvasTex(128, 128, drawHeart);
+  V.ring = canvasTex(128, 128, drawRing);
   V.glow = createGlowTexture('#ffffff', '#ffffff', 64);
   if (document.fonts && document.fonts.load) {
     document.fonts.load("64px 'Bangers'").then(() => {
@@ -446,7 +484,7 @@ export function initVfx({ scene, cameraRig }) {
 
   // stickers + flat bursts (sprites)
   V.sprites = [];
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 9; i++) {
     const sticker = i < 3;
     const mat = new THREE.SpriteMaterial({ map: sticker ? V.stickers.smash : V.halftone, depthTest: !sticker, depthWrite: false, fog: false, transparent: true });
     const sp = new THREE.Sprite(mat);
@@ -597,12 +635,12 @@ export function sticker(key, pos, o = {}) {
   s.sp.visible = true;
 }
 
-/** Flat sprite pop. kind: 'halftone' | 'star' | 'glow'. opts: { color, size, grow, life, spin, additive, follow } */
+/** Flat sprite pop. kind: 'halftone' | 'star' | 'heart' | 'ring' | 'glow'. opts: { color, size, grow, life, spin, additive, follow } */
 export function burst(kind, pos, o = {}) {
   if (!V) return;
   const s = takeSprite(false);
   const m = s.sp.material;
-  m.map = kind === 'star' ? V.star : kind === 'glow' ? V.glow : V.halftone;
+  m.map = V[kind] || V.halftone;
   m.color.set(o.color ?? 0xffffff);
   m.blending = o.additive ? THREE.AdditiveBlending : THREE.NormalBlending;
   m.depthTest = o.depthTest !== false;
@@ -685,6 +723,7 @@ export function kick(metres) {
   if (V && V.cameraRig.kick) V.cameraRig.kick(metres);
 }
 
+// fx.js skips events marked quiet (only the sound plays)
 export function sfx(name, detail = {}) {
   emit(name, { ...detail, quiet: true });
 }
@@ -871,8 +910,6 @@ export function triggerFlashLight(scene, position, color = 0xffffff, intensity =
   return null;
 }
 
-export function updateFlashLights() {}
-
 let activeFovTween = null;
 
 export function triggerCameraFov(camera, targetFov, duration = 0.35, onComplete = null) {
@@ -895,57 +932,4 @@ export function updateCameraFov(dt) {
 
 export function triggerCameraShake(cameraRig, strength = 0.35, duration = 0.35) {
   if (cameraRig && typeof cameraRig.shake === 'function') cameraRig.shake(strength, duration);
-}
-
-/** Iron Man's beam (built once at load by skillIronMan). No PointLight any more: unibeamLight is null. */
-export function create3LayerUnibeam(length = 200, radius = 0.55, plasmaColor = 0x00e5ff) {
-  const root = new THREE.Group();
-  root.name = 'unibeam3Layer';
-  const tube = (r0, r1, segs, color, opacity) => {
-    const geo = new THREE.CylinderGeometry(r0, r1, length, segs, 1, true);
-    geo.rotateX(Math.PI / 2);
-    geo.translate(0, 0, -length / 2);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-    const mesh = new THREE.Mesh(geo, mat);
-    root.add(mesh);
-    return mesh;
-  };
-  const coreMesh = tube(radius * 0.45, radius * 0.45, 16, 0xffffff, 0.95);
-  const plasmaMesh = tube(radius, radius * 1.25, 24, plasmaColor, 0.75);
-  const torusGeo = new THREE.TorusGeometry(radius * 1.6, 0.08, 12, 28);
-  const torusMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
-  const rings = [];
-  for (let i = 0; i < 12; i++) {
-    const ring = new THREE.Mesh(torusGeo, torusMat.clone());
-    ring.position.z = -(i / 12) * length;
-    root.add(ring);
-    rings.push(ring);
-  }
-  return {
-    root,
-    coreMesh,
-    plasmaMesh,
-    rings,
-    unibeamLight: null,
-    update(time, dt) {
-      const pulse = 1.0 + Math.sin(time * 30) * 0.18;
-      coreMesh.scale.set(pulse, pulse, 1.0);
-      const p2 = 1.0 + Math.cos(time * 24) * 0.22;
-      plasmaMesh.scale.set(p2, p2, 1.0);
-      plasmaMesh.material.opacity = 0.65 + Math.sin(time * 35) * 0.25;
-      for (const ring of rings) {
-        ring.position.z -= 160 * dt;
-        if (ring.position.z < -length) ring.position.z += length;
-        const depth = Math.abs(ring.position.z) / length;
-        ring.scale.setScalar(1.0 + depth * 1.5);
-        ring.material.opacity = (1.0 - depth * 0.7) * (0.6 + Math.random() * 0.4);
-      }
-    },
-    dispose() {
-      root.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) obj.material.dispose();
-      });
-    },
-  };
 }
