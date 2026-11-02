@@ -40,6 +40,7 @@ export const game = {
   // Systems that move or collide check game.halted.
   halted: false,
   speedOverride: null,
+  hitStopT: 0,      // seconds of freeze frame left (hero specials' impacts)
   naturalSpeed: CONFIG.startSpeed, // un-boosted speed; a boost can't leave state.speed raised for good
 
   // Placeholder control: while true, a tap / any key starts the run from the menu,
@@ -88,6 +89,11 @@ export const game = {
     this._resetRun();
     state.mode = 'menu';
     if (this.cameraRig) this.cameraRig.snap(this.player);
+  },
+
+  // Freeze frame: the whole simulation holds for a moment (the frame keeps rendering).
+  hitStop(seconds) {
+    if (state.mode === 'running' && !state.intro) this.hitStopT = Math.max(this.hitStopT, seconds);
   },
 
   // Freeze the world for the catch sequence (see halted).
@@ -148,6 +154,10 @@ export const game = {
   // Called once per frame by main.js with a capped dt.
   update(dt) {
     if (state.mode === 'paused') return;
+    if (this.hitStopT > 0 && state.mode === 'running') { // a freeze never outlives the run
+      this.hitStopT -= dt;
+      return;
+    }
     if (state.intro) {
       this.intro.update(dt); // the clip drives player, Venom and camera; the world waits
       return;
@@ -183,6 +193,7 @@ export const game = {
     state.webCharges = 0;
     this.halted = false;
     this.speedOverride = null;
+    this.hitStopT = 0;
     state.ironTime = 0;
     // state.ironCount is persistent inventory (G10 loads/saves it) — left alone.
     this.world.reset();

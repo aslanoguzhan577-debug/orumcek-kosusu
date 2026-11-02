@@ -117,6 +117,7 @@ player.hooks.onDoubleAction = () => {
 };
 // Menu skin choice: the suit power-up swaps back to whichever skin is chosen.
 game.skins = skins;
+web.heroSpecials.prepare(skins); // per-skin effect layers, built at load
 game.skin = skin;
 game.setSkin = (name) => {
   if (!skins[name]) return;

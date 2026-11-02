@@ -4,6 +4,9 @@
 // closer on wide screens), so the hero stays as big as the lanes allow.
 // rig.shake(strength, seconds) gives a small decaying shake (for G11 effects).
 // rig.setTilt(on) lifts the view a little (G9 web zip).
+// rig.kick(m) punches the view m metres toward the hero (negative: away), springing back;
+// rig.setDolly(back, follow) eases the camera `back` metres away and follows `follow` (0..1)
+// of a jump instead of jumpFollow (hero specials).
 // rig.setShot(position, lookAt) blends to a fixed shot (G8 catch cam); rig.clearShot()
 // blends back. snap() drops both instantly (run start / menu).
 // Curved world (curve.js): the view yaws toward the road ahead and banks a little.
@@ -16,6 +19,7 @@ import { game } from './game.js';
 
 const lerp = THREE.MathUtils.lerp;
 const clamp = THREE.MathUtils.clamp;
+const _d = new THREE.Vector3();
 
 export class CameraRig {
   constructor(camera) {
@@ -36,6 +40,20 @@ export class CameraRig {
     this._shotLook = new THREE.Vector3();
     this._pos = new THREE.Vector3();
     this._look = new THREE.Vector3();
+    this.dolly = 0;
+    this._dollyTo = 0;
+    this._follow = 0;
+    this._followTo = 0;
+    this._kick = 0;
+  }
+
+  kick(metres) {
+    this._kick += metres;
+  }
+
+  setDolly(back = 0, follow = 0) {
+    this._dollyTo = back;
+    this._followTo = follow;
   }
 
   setTilt(on) {
@@ -101,6 +119,7 @@ export class CameraRig {
     this._tiltOn = false;
     this.shotBlend = 0;
     this._shotOn = false;
+    this.dolly = this._dollyTo = this._follow = this._followTo = this._kick = 0;
     this._place();
   }
 
@@ -116,7 +135,11 @@ export class CameraRig {
     const ky = 1 - Math.exp(-c.dampY * dt);
     this.block += ((this._blocked(player) ? 1 : 0) - this.block) * (1 - Math.exp(-c.blockRate * dt));
     this.x += (player.x * lerp(this.follow, Math.max(this.follow, c.followBlocked), this.block) - this.x) * kx;
-    const targetY = player.floorY + (player.y - player.floorY) * c.jumpFollow;
+    const kd = 1 - Math.exp(-4 * dt);
+    this.dolly += (this._dollyTo - this.dolly) * kd;
+    this._follow += (this._followTo - this._follow) * kd;
+    this._kick *= Math.exp(-12 * dt);
+    const targetY = player.floorY + (player.y - player.floorY) * Math.max(c.jumpFollow, this._follow);
     this.refY += (targetY - this.refY) * ky;
     this.tilt += ((this._tiltOn ? 1 : 0) - this.tilt) * (1 - Math.exp(-c.tiltRate * dt));
     this.shotBlend += ((this._shotOn ? 1 : 0) - this.shotBlend) * (1 - Math.exp(-c.shotRate * dt));
@@ -153,6 +176,8 @@ export class CameraRig {
     // yaw toward the bent road ahead (the bend fades out by itself in the catch cam)
     const camZ = this._pos.z;
     this._look.x += curve.offsetAt(-c.curveLook) * c.curveYaw * (c.lookAhead + camZ) / (c.curveLook + camZ);
+    const back = this.dolly - this._kick;
+    if (back) this._pos.addScaledVector(_d.subVectors(this._pos, this._look).normalize(), back);
     if (this.shotBlend > 0.001) {
       this._pos.lerp(this._shotPos, this.shotBlend);
       this._look.lerp(this._shotLook, this.shotBlend);

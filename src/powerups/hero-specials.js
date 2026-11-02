@@ -1,47 +1,29 @@
-// powerups/hero-specials.js — Subway Surfers-Grade Character Special Skills:
+// powerups/hero-specials.js — hero special skills manager + Hulk, Captain America, Miles.
+// Look: "Spider-Verse comic + vinyl toy" (vfxCore.js): cel-shaded outlined shapes, halftone,
+// stickers, impact frames, hit-stop, squash & stretch. Everything is built at load and pooled.
 //
-// 1. HULK -> "Hulk Smash" (6.0s duration, max 1 charge):
-//    - Glowing radioactive green fissure ground cracks extending from feet.
-//    - Heavy stomp shockwave rings radiating on the ground with concrete dust particles.
-//    - Multi-layer raging gamma plasma aura: inner emerald core sphere, outer corona,
-//      electric lightning tendrils.
-//    - Smashes all obstacles in front/sides without dying. Smashed obstacles burst into
-//      heavy concrete debris + comic "SMASH!" / "GÜM!" / "BAM!" floaters + green flash.
-//      Debounced to max 1 crash FX per 120ms.
-//    - Stumble immunity during smash.
-//    - Safety grace(0.5) on expiry.
-//
-// 2. CAPTAIN AMERICA -> "Shield Surfing" (8.0s duration, max 1 charge):
-//    - 3D Vibranium Shield spinning under his boots (brushed metal, concentric
-//      red/silver/blue rings, 3D extruded star, foot grip pads).
-//    - Hover height: exactly 0.32m above ground (0.22m sliding), adjusted via beforePlayer
-//      on player.floorY to eliminate jitter.
-//    - Hurdle (0.8m) and trains (2.88m) CANNOT be cleared without jumping! Must jump!
-//    - Aerodynamic wind wake ribbons streaming off the shield while jumping.
-//    - Continuous high-velocity friction spark stream trailing behind on the pavement +
-//      cyan kinetic energy cushion disc.
-//    - Collision absorption: Vibranium kinetic blast absorbs the impact, metallic gong sound,
-//      circular expanding vibranium shockwave ring, ends surfing safely, grants 1.5s grace,
-//      player continues running without dying.
-//
-// 3. MILES MORALES -> "Venom Bio-Electricity" (7.0s duration, max 1 charge):
-//    - Spider-Verse / Insomniac authentic bio-electricity: multi-branching golden yellow &
-//      electric orange lightning bolts crackling rapidly across suit, hands, and feet.
-//    - Trailing electric streamers and sparks flowing behind his back as he runs at +10 m/s fixed speed boost.
-//    - Pulsing amber/orange bio-luminescent point light and ground glow.
-//    - Collision absorption: Blinding "VENOM BLAST" electric nova explosion, radial lightning ring,
-//      shockwave, obstacle instantly vaporized into sparks, ends skill safely, grants 1.5s grace,
-//      player continues running without dying!
+// 1. HULK "Gamma Smash" (6 s): crouch -> hop -> slam (or a ground pound when used mid-air):
+//    freeze frame, cream/green comic panel, the ground breaks into tilted toon slabs with gamma
+//    light in the gaps, rubble + dust, SMASH!. Hulk runs 12 % bigger, every step thumps the
+//    camera; everything in reach bursts into rubble (same reach / grace as before).
+// 2. CAPTAIN AMERICA "Shield Surf" (8 s): a big glossy shield (rings + raised star) under his
+//    boots, 0.32 m hover (0.22 sliding), rail sparks streaming back. A block: GONG!, star burst,
+//    freeze frame, the shield flips back onto his back and the skill ends (1.5 s grace).
+// 3. MILES "Venom Strike" (7 s, +10 m/s): animates "on twos" (12 fps), thin gold bio-electric
+//    arcs hug his arms and legs, red / cyan chromatic ghosts glitch in now and then, BZZT! +
+//    halftone burst on activation, a camouflage flicker at the end. A block: ZZAP! and the
+//    skill ends (1.5 s grace).
+// Kitty, Batman, Raimi, Iron Man and Black Panther live in their own skill files.
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { emit } from '../events.js';
 import { game } from '../game.js';
-import { laneX } from '../world.js';
+import { toonMaterial, addOutline } from '../models/toon.js';
 import {
-  updateShatterDebris,
-  updateFlashLights,
-  updateCameraFov,
+  initVfx, updateVfx, resetVfx, VFX_TEXTURES, INK, updateCameraFov,
+  chunkBurst, puffBurst, sparkBurst, spark, sticker, burst, groundRing, impactFrame,
+  hitStop, kick, sfx, ghostLayer, ghostMaterial, rigOf,
 } from '../vfxCore.js';
 import { createHelloKittySkill } from './skillHelloKitty.js';
 import { createBatmanSkill } from './skillBatman.js';
@@ -51,544 +33,214 @@ import { createBlackPantherSkill } from './skillBlackPanther.js';
 
 export const HERO_SKINS = ['hulk', 'cap', 'miles', 'kitty', 'batman', 'raimi', 'ironman', 'panther'];
 
-// ------------------------------------------------------------------ REALISTIC VFX TEXTURE LOADER
-const texLoader = new THREE.TextureLoader();
+// every canvas texture of the effects (filled at construction, read by main.js's warm-up)
+export const HERO_SPECIAL_TEXTURES = VFX_TEXTURES;
 
-const HULK_FISSURE_TEX = texLoader.load('assets/vfx/hulk_fissure_crack.jpg');
-HULK_FISSURE_TEX.colorSpace = THREE.SRGBColorSpace;
+const HULK = { glow: 0xe4ff8c, hot: 0xfaffd8, dim: 0x4f8f34, rock: [0xa8a3b5, 0xc9c3d6, 0x8a8499, 0x6cb83e], dust: [0xeee9de, 0xdcd5c7] };
+const MILES = { gold: 0xffd23a, white: 0xfff6c8, red: 0xe0263f, cyan: 0x36c8ff };
+const CAP = { blue: 0x2f57b5, red: 0xd23a3a, white: 0xf4f4f6, sparks: [0xffd23a, 0xffe98a, 0xffffff] };
 
-const HULK_SHOCKWAVE_TEX = texLoader.load('assets/vfx/hulk_gamma_shockwave.jpg');
-HULK_SHOCKWAVE_TEX.colorSpace = THREE.SRGBColorSpace;
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
+const _c = new THREE.Vector3();
+const _p = new THREE.Vector3();
+const rnd = (a, b) => a + Math.random() * (b - a);
+const smooth = (t) => t * t * (3 - 2 * t);
 
-const CAP_DISC_TEX = texLoader.load('assets/vfx/cap_shield_disc.png');
-CAP_DISC_TEX.colorSpace = THREE.SRGBColorSpace;
+// ------------------------------------------------------------------ HULK: gamma ground crack
+// Seven jagged concrete slabs that tilt up around the slam point, lime gamma light in the gaps,
+// ink cracks running out beyond them. Scrolls away with the world.
+function createGammaCrack(scene) {
+  const root = new THREE.Group();
+  root.name = 'hulkCrack';
+  root.visible = false;
+  let seed = 7;
+  const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 
-const CAP_SHOCKWAVE_TEX = texLoader.load('assets/vfx/cap_vibranium_shockwave.png');
-CAP_SHOCKWAVE_TEX.colorSpace = THREE.SRGBColorSpace;
+  const glowMat = new THREE.MeshBasicMaterial({ color: HULK.glow });
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(1.0, 28).rotateX(-Math.PI / 2), glowMat);
+  glow.position.y = 0.012;
+  root.add(glow);
 
-const MILES_LIGHTNING_TEX = texLoader.load('assets/vfx/miles_venom_lightning.jpg');
-MILES_LIGHTNING_TEX.colorSpace = THREE.SRGBColorSpace;
+  const slabMat = toonMaterial(0x8e8696);
+  const inkMat = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
+  const slabs = [];
+  const N = 7, R0 = 0.24;
+  for (let i = 0; i < N; i++) {
+    const a0 = (i / N) * Math.PI * 2 + 0.11, a1 = ((i + 1) / N) * Math.PI * 2 - 0.11;
+    const mid = (a0 + a1) / 2;
+    const r1 = 0.9 + rand() * 0.25;
+    const pts = [];
+    const n = 5;
+    for (let k = 0; k <= n; k++) { // outer jagged edge
+      const a = a0 + ((a1 - a0) * k) / n;
+      const r = r1 * (k % 2 ? 0.9 + rand() * 0.06 : 1);
+      pts.push([r * Math.cos(a - mid) - R0, r * Math.sin(a - mid)]);
+    }
+    for (let k = 2; k >= 0; k--) { // inner edge
+      const a = a0 + ((a1 - a0) * k) / 2;
+      pts.push([R0 * (k === 1 ? 1.25 : 1) * Math.cos(a - mid) - R0, R0 * Math.sin(a - mid)]);
+    }
+    const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false }).rotateX(-Math.PI / 2);
+    geo.computeBoundingBox();
+    const slab = new THREE.Mesh(geo, slabMat);
+    // ink: the same slab scaled up around its own centre, back faces only
+    const ink = new THREE.Mesh(geo, inkMat);
+    const cx = (geo.boundingBox.min.x + geo.boundingBox.max.x) / 2, cz = (geo.boundingBox.min.z + geo.boundingBox.max.z) / 2;
+    ink.scale.set(1.06, 1.5, 1.08);
+    ink.position.set(cx * -0.06, -0.025, cz * -0.08);
+    slab.add(ink);
+    const pivot = new THREE.Group();
+    pivot.position.set(Math.cos(mid) * R0, 0, Math.sin(mid) * R0);
+    pivot.rotation.y = -mid;
+    const tilt = new THREE.Group();
+    pivot.add(tilt);
+    tilt.add(slab);
+    root.add(pivot);
+    slabs.push({ tilt, target: 0.35 + rand() * 0.3 });
+  }
 
-const MILES_NOVA_TEX = texLoader.load('assets/vfx/miles_venom_nova.png');
-MILES_NOVA_TEX.colorSpace = THREE.SRGBColorSpace;
-
-export const HERO_SPECIAL_TEXTURES = [
-  HULK_FISSURE_TEX,
-  HULK_SHOCKWAVE_TEX,
-  CAP_DISC_TEX,
-  CAP_SHOCKWAVE_TEX,
-  MILES_LIGHTNING_TEX,
-  MILES_NOVA_TEX,
-];
-
-// ------------------------------------------------------------------ HULK SMASH ASSETS
-function createGammaAura() {
-  const g = new THREE.Group();
-  g.name = 'hulkGammaAura';
-
-  // 1. Inner core pulsing gamma sphere
-  const sphereGeo = new THREE.SphereGeometry(1.26, 24, 16);
-  sphereGeo.translate(0, 0.85, 0);
-  const sphereMat = new THREE.MeshBasicMaterial({
-    color: 0x39ff14,
-    transparent: true,
-    opacity: 0.38,
-    blending: THREE.AdditiveBlending,
-    side: THREE.BackSide,
-    depthWrite: false,
-  });
-  const sphere = new THREE.Mesh(sphereGeo, sphereMat);
-  g.add(sphere);
-
-  // 2. Outer corona gamma sphere
-  const coronaGeo = new THREE.SphereGeometry(1.58, 20, 14);
-  coronaGeo.translate(0, 0.85, 0);
-  const coronaMat = new THREE.MeshBasicMaterial({
-    color: 0x18cc11,
-    transparent: true,
-    opacity: 0.22,
-    blending: THREE.AdditiveBlending,
-    side: THREE.BackSide,
-    depthWrite: false,
-  });
-  const corona = new THREE.Mesh(coronaGeo, coronaMat);
-  g.add(corona);
-
-  // 3. PHOTOREALISTIC HULK FISSURE CRACK DECAL (AI GENERATED TEXTURE)
-  const fissureGroup = new THREE.Group();
-  fissureGroup.position.set(0, 0.035, 0);
-  g.add(fissureGroup);
-
-  const fissurePlaneGeo = new THREE.PlaneGeometry(3.6, 3.6);
-  fissurePlaneGeo.rotateX(-Math.PI / 2);
-  const fissureMat = new THREE.MeshBasicMaterial({
-    map: HULK_FISSURE_TEX,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    opacity: 0.95,
-  });
-  const fissureDecal = new THREE.Mesh(fissurePlaneGeo, fissureMat);
-  fissureGroup.add(fissureDecal);
-
-  // Secondary pulsating ground glow disc
-  const fissureGlowGeo = new THREE.RingGeometry(0.2, 2.0, 32);
-  fissureGlowGeo.rotateX(-Math.PI / 2);
-  const fissureGlowMat = new THREE.MeshBasicMaterial({
-    color: 0x22ee11,
-    transparent: true,
-    opacity: 0.4,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const fissureGlowDisc = new THREE.Mesh(fissureGlowGeo, fissureGlowMat);
-  fissureGroup.add(fissureGlowDisc);
-
-  // 4. PHOTOREALISTIC GAMMA STOMP SHOCKWAVE (AI GENERATED TEXTURE)
-  const shockwaveGeo1 = new THREE.PlaneGeometry(3.4, 3.4);
-  shockwaveGeo1.rotateX(-Math.PI / 2);
-  shockwaveGeo1.translate(0, 0.04, 0);
-  const shockwaveMat1 = new THREE.MeshBasicMaterial({
-    map: HULK_SHOCKWAVE_TEX,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    opacity: 0.85,
-  });
-  const shockwave1 = new THREE.Mesh(shockwaveGeo1, shockwaveMat1);
-  g.add(shockwave1);
-
-  const shockwaveGeo2 = new THREE.PlaneGeometry(2.8, 2.8);
-  shockwaveGeo2.rotateX(-Math.PI / 2);
-  shockwaveGeo2.translate(0, 0.05, 0);
-  const shockwaveMat2 = new THREE.MeshBasicMaterial({
-    map: HULK_SHOCKWAVE_TEX,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    opacity: 0.7,
-  });
-  const shockwave2 = new THREE.Mesh(shockwaveGeo2, shockwaveMat2);
-  g.add(shockwave2);
-
-  // 5. Dynamic Gamma Point Light
-  const gammaLight = new THREE.PointLight(0x44ff11, 0, 14);
-  gammaLight.position.y = 0.85;
-  g.add(gammaLight);
-
-  return {
-    root: g,
-    gammaLight,
-    update(time, dt, sliding = false) {
-      const auraY = sliding ? -0.35 : 0;
-      sphere.position.y = auraY;
-      corona.position.y = auraY;
-      gammaLight.position.y = 0.85 + auraY;
-
-      // Aura breathing & pulsing
-      const pulse1 = 1 + Math.sin(time * 16) * 0.14;
-      sphere.scale.set(pulse1, pulse1 * 1.06, pulse1);
-
-      const pulse2 = 1 + Math.cos(time * 21) * 0.12;
-      corona.scale.set(pulse2, pulse2 * 1.04, pulse2);
-
-      // Fissure ground cracks pulse and jitter
-      const fScale = 1.0 + Math.sin(time * 16) * 0.08;
-      fissureDecal.scale.set(fScale, 1, fScale);
-      fissureMat.opacity = 0.82 + Math.sin(time * 24) * 0.18;
-      fissureGlowMat.opacity = 0.3 + Math.sin(time * 12) * 0.15;
-
-      // Stomp shockwave expansion
-      const t1 = (time * 3.4) % 1.0;
-      const s1 = 0.4 + t1 * 1.5;
-      shockwave1.scale.set(s1, 1, s1);
-      shockwaveMat1.opacity = 0.9 * (1.0 - t1);
-      shockwave1.rotation.y = time * 2.0;
-
-      const t2 = (time * 3.4 + 0.5) % 1.0;
-      const s2 = 0.3 + t2 * 1.4;
-      shockwave2.scale.set(s2, 1, s2);
-      shockwaveMat2.opacity = 0.75 * (1.0 - t2);
-      shockwave2.rotation.y = -time * 1.8;
-
-      // Gamma point light pulse
-      gammaLight.intensity = 4.8 + Math.sin(time * 24) * 1.8 + Math.cos(time * 42) * 0.8;
-    },
-    dispose() {
-      g.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
-        }
-      });
-    },
-  };
-}
-
-// ------------------------------------------------------------------ CAPTAIN AMERICA SHIELD ASSETS
-function createVibraniumShield() {
-  const g = new THREE.Group();
-  g.name = 'vibraniumShieldBoard';
-
-  const R = 0.40;
-  const H = 0.038;
-
-  // Group that spins under the player's boots
-  const shieldMesh = new THREE.Group();
-  g.add(shieldMesh);
-
-  // Outer bevel rim - Vibranium chrome alloy
-  const rim = new THREE.Mesh(
-    new THREE.CylinderGeometry(R, R, H, 40),
-    new THREE.MeshStandardMaterial({
-      color: 0xe8ecf2,
-      roughness: 0.22,
-      metalness: 0.92,
-    })
-  );
-  shieldMesh.add(rim);
-
-  // Ring 1 (Outer Red)
-  const red1 = new THREE.Mesh(
-    new THREE.CylinderGeometry(R * 0.94, R * 0.94, H + 0.002, 40),
-    new THREE.MeshStandardMaterial({
-      color: 0xcc1824,
-      roughness: 0.28,
-      metalness: 0.85,
-    })
-  );
-  shieldMesh.add(red1);
-
-  // Ring 2 (White/Silver)
-  const white1 = new THREE.Mesh(
-    new THREE.CylinderGeometry(R * 0.74, R * 0.74, H + 0.004, 40),
-    new THREE.MeshStandardMaterial({
-      color: 0xf2f4f8,
-      roughness: 0.25,
-      metalness: 0.88,
-    })
-  );
-  shieldMesh.add(white1);
-
-  // Ring 3 (Inner Red)
-  const red2 = new THREE.Mesh(
-    new THREE.CylinderGeometry(R * 0.54, R * 0.54, H + 0.006, 40),
-    new THREE.MeshStandardMaterial({
-      color: 0xcc1824,
-      roughness: 0.28,
-      metalness: 0.85,
-    })
-  );
-  shieldMesh.add(red2);
-
-  // Ring 4 (Centre Blue Field)
-  const blue = new THREE.Mesh(
-    new THREE.CylinderGeometry(R * 0.34, R * 0.34, H + 0.008, 40),
-    new THREE.MeshStandardMaterial({
-      color: 0x1b4da6,
-      roughness: 0.26,
-      metalness: 0.86,
-    })
-  );
-  shieldMesh.add(blue);
-
-  // Centre Silver Star (3D Extruded Star)
-  const starShape = new THREE.Shape();
-  const rStar = R * 0.30;
-  const rIn = rStar * 0.42;
+  // ink cracks out beyond the slabs, a lime core in their first half
+  const cracks = [], cores = [];
   for (let i = 0; i < 10; i++) {
-    const a = Math.PI / 2 + (i * Math.PI) / 5;
-    const rad = i % 2 ? rIn : rStar;
-    const x = Math.cos(a) * rad;
-    const y = Math.sin(a) * rad;
-    if (i === 0) starShape.moveTo(x, y);
-    else starShape.lineTo(x, y);
-  }
-  const starGeo = new THREE.ExtrudeGeometry(starShape, { depth: 0.008, bevelEnabled: false });
-  starGeo.rotateX(-Math.PI / 2);
-  starGeo.translate(0, H / 2 + 0.005, 0);
-  const starMesh = new THREE.Mesh(
-    starGeo,
-    new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.18,
-      metalness: 0.95,
-    })
-  );
-  shieldMesh.add(starMesh);
-
-  // Underside dish
-  const backDish = new THREE.Mesh(
-    new THREE.CylinderGeometry(R * 0.96, R * 0.70, 0.02, 32),
-    new THREE.MeshStandardMaterial({
-      color: 0x3a3f47,
-      roughness: 0.45,
-      metalness: 0.8,
-    })
-  );
-  backDish.position.y = -H / 2 - 0.006;
-  shieldMesh.add(backDish);
-
-  // Foot grip pads (where Cap's boots stand on the shield)
-  const padMat = new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.8 });
-  const padGeo = new THREE.BoxGeometry(0.12, 0.004, 0.22);
-  for (const sx of [-0.11, 0.11]) {
-    const pad = new THREE.Mesh(padGeo, padMat);
-    pad.position.set(sx, H / 2 + 0.004, 0);
-    shieldMesh.add(pad);
-  }
-
-  // Non-spinning FX group
-  const fxGroup = new THREE.Group();
-  g.add(fxGroup);
-
-  // Dynamic friction spark ring
-  const sparkGeo = new THREE.RingGeometry(R * 0.55, R * 1.35, 32);
-  sparkGeo.rotateX(-Math.PI / 2);
-  sparkGeo.translate(0, -H / 2 - 0.012, 0);
-  const sparkMat = new THREE.MeshBasicMaterial({
-    color: 0xffcc33,
-    transparent: true,
-    opacity: 0.8,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const sparkRing = new THREE.Mesh(sparkGeo, sparkMat);
-  fxGroup.add(sparkRing);
-
-  // Vibranium kinetic energy cushion disc (HIGH-RES PHOTOREALISTIC TEXTURE)
-  const energyGeo = new THREE.PlaneGeometry(R * 2.8, R * 2.8);
-  energyGeo.rotateX(-Math.PI / 2);
-  energyGeo.translate(0, -H / 2 - 0.008, 0);
-  const energyMat = new THREE.MeshBasicMaterial({
-    map: CAP_DISC_TEX,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const energyDisc = new THREE.Mesh(energyGeo, energyMat);
-  fxGroup.add(energyDisc);
-
-  // Aerodynamic wind wake ribbons (visible while jumping mid-air)
-  const wakeGroup = new THREE.Group();
-  const wakeMat = new THREE.MeshBasicMaterial({
-    color: 0xd0f5ff,
-    transparent: true,
-    opacity: 0.55,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const wakeGeo = new THREE.PlaneGeometry(0.12, 0.95, 1, 6);
-  wakeGeo.rotateX(Math.PI / 2);
-  wakeGeo.translate(0, 0, 0.48);
-  const wakeL = new THREE.Mesh(wakeGeo, wakeMat);
-  wakeL.position.set(-R * 0.75, 0, 0);
-  const wakeR = new THREE.Mesh(wakeGeo.clone(), wakeMat);
-  wakeR.position.set(R * 0.75, 0, 0);
-  wakeGroup.add(wakeL, wakeR);
-  wakeGroup.visible = false;
-  fxGroup.add(wakeGroup);
-
-  // Kinetic ground spark light
-  const sparkLight = new THREE.PointLight(0x33ccff, 2.5, 4.0);
-  sparkLight.position.set(0, -H / 2 - 0.06, 0);
-  fxGroup.add(sparkLight);
-
-  return {
-    root: g,
-    shieldMesh,
-    sparkRing,
-    energyDisc,
-    wakeGroup,
-    sparkLight,
-    update(time, dt, isGrounded, isSliding) {
-      // Rapid clean spinning under boots
-      shieldMesh.rotation.y += dt * 20.0;
-
-      // Counter-rotate textured vibranium cushion disc
-      energyDisc.rotation.z -= dt * 6.0;
-
-      // Counter-rotate spark ring
-      sparkRing.rotation.z -= dt * 12.0;
-
-      if (isGrounded) {
-        // Skimming over ground/roof: high-velocity friction sparks & cyan cushion disc
-        wakeGroup.visible = false;
-        const pulse = Math.sin(time * 24);
-        const flicker = 0.65 + Math.random() * 0.35;
-        sparkRing.material.opacity = isSliding ? 0.95 : flicker;
-        sparkRing.scale.set(1 + pulse * 0.08, 1 + pulse * 0.08, 1);
-        energyDisc.material.opacity = isSliding ? 0.95 : (0.75 + Math.sin(time * 16) * 0.2);
-        energyDisc.scale.set(1 + pulse * 0.06, 1 + pulse * 0.06, 1);
-        sparkLight.color.setHex(isSliding ? 0xffaa22 : 0x00f0ff);
-        sparkLight.intensity = isSliding ? 3.8 : (2.4 + Math.random() * 0.8);
-      } else {
-        // Airborne jump: wind wake ribbons stream behind the shield
-        wakeGroup.visible = true;
-        wakeL.scale.y = 1 + Math.sin(time * 18) * 0.15;
-        wakeR.scale.y = 1 + Math.cos(time * 18) * 0.15;
-        sparkRing.material.opacity = 0.15;
-        energyDisc.material.opacity = 0.9;
-        sparkLight.color.setHex(0x00f0ff);
-        sparkLight.intensity = 1.2;
+    const a = (i / 10) * Math.PI * 2 + rand() * 0.4;
+    const len = 0.9 + rand() * 1.2;
+    const pts = [];
+    let ang = a;
+    for (let k = 0; k <= 4; k++) {
+      const r = 0.85 + (len * k) / 4;
+      ang += (rand() - 0.5) * 0.35;
+      pts.push([Math.cos(ang) * r, Math.sin(ang) * r, ang]);
+    }
+    const wedge = (w0, upto) => {
+      const L = [], Rr = [];
+      for (let k = 0; k <= upto; k++) {
+        const w = w0 * (1 - k / 4.4);
+        const [x, y, an] = pts[k];
+        L.push(new THREE.Vector2(x - Math.sin(an) * w, y + Math.cos(an) * w));
+        Rr.unshift(new THREE.Vector2(x + Math.sin(an) * w, y - Math.cos(an) * w));
       }
+      return new THREE.Shape([...L, ...Rr]);
+    };
+    cracks.push(wedge(0.085, 4));
+    cores.push(wedge(0.032, 2));
+  }
+  const crackMesh = new THREE.Mesh(new THREE.ShapeGeometry(cracks).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: INK }));
+  crackMesh.position.y = 0.014;
+  const coreMesh = new THREE.Mesh(new THREE.ShapeGeometry(cores).rotateX(Math.PI / 2), glowMat);
+  coreMesh.position.y = 0.018;
+  root.add(crackMesh, coreMesh);
+  scene.add(root);
+
+  let t = -1;
+  return {
+    root,
+    trigger(x, y, z) {
+      root.position.set(x, y, z);
+      root.rotation.y = Math.random() * 6.283;
+      root.scale.setScalar(1);
+      root.visible = true;
+      t = 0;
+      this.update(0, 0);
     },
-    dispose() {
-      g.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
-        }
-      });
+    update(dt, dz) {
+      if (t < 0) return;
+      t += dt;
+      root.position.z += dz;
+      if (t > 1.3) { t = -1; root.visible = false; return; }
+      for (const s of slabs) {
+        const k = t < 0.06 ? (t / 0.06) * 1.5 : t < 0.2 ? 1.5 - ((t - 0.06) / 0.14) * 0.5 : 1;
+        s.tilt.rotation.z = s.target * k;
+        s.tilt.position.y = 0.02 * Math.min(1, t / 0.06);
+      }
+      glowMat.color.setHex(HULK.hot).lerp(_c0.setHex(HULK.glow), Math.min(1, t / 0.18));
+      if (t > 0.5) glowMat.color.lerp(_c0.setHex(HULK.dim), Math.min(1, (t - 0.5) / 0.6));
+      if (t > 1.0) { const k = (t - 1.0) / 0.3; root.position.y -= dt * 0.4; root.scale.setScalar(1 - 0.2 * k); }
     },
+    hide() { t = -1; root.visible = false; },
   };
 }
+const _c0 = new THREE.Color();
 
-// ------------------------------------------------------------------ MILES MORALES BIO-ELECTRICITY
-function createBioElectricity() {
-  const g = new THREE.Group();
-  g.name = 'milesBioElectricity';
-
-  // 1. PHOTOREALISTIC SPIDER-VERSE BIO-ELECTRIC LIGHTNING (AI GENERATED TEXTURE)
-  const lightningGroup = new THREE.Group();
-  g.add(lightningGroup);
-
-  const lightningPlanes = [];
-  const planeGeo = new THREE.PlaneGeometry(1.6, 1.6);
-  for (let i = 0; i < 4; i++) {
-    const mat = new THREE.MeshBasicMaterial({
-      map: MILES_LIGHTNING_TEX,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      opacity: 0.95,
-    });
-    const mesh = new THREE.Mesh(planeGeo, mat);
-    mesh.position.set(
-      (i % 2 === 0 ? 0.15 : -0.15),
-      0.82 + (i - 1.5) * 0.22,
-      (i < 2 ? 0.12 : -0.12)
-    );
-    lightningGroup.add(mesh);
-    lightningPlanes.push(mesh);
+// ------------------------------------------------------------------ CAP: the surf shield
+// A domed lathe with hard-banded vertex colours (red / white / red rings, blue centre), a raised
+// glossy star on an ink star, a silver lip; ink outline. Gloss + rim = the fake metal highlight.
+function createShieldBoard() {
+  const root = new THREE.Group();
+  root.name = 'vibraniumShieldBoard';
+  const spin = new THREE.Group();
+  root.add(spin);
+  const R = 0.58;
+  const h = (r) => 0.085 * (1 - (r / R) ** 2);
+  const bands = [[0, 0.2, 0x2a5bc4], [0.2, 0.31, 0xc8202f], [0.31, 0.42, 0xf4f4f6], [0.42, 0.53, 0xc8202f], [0.53, R, 0xdfe3ec]];
+  const prof = [], cols = [];
+  for (const [r0, r1, col] of bands) {
+    for (const r of [r0 + 0.0015, (r0 + r1) / 2, r1]) { prof.push(new THREE.Vector2(r, h(r))); cols.push(col); }
   }
-
-  // 2. Multi-branching high-voltage electric spark tendrils
-  const lineCount = 20;
-  const positions = new Float32Array(lineCount * 2 * 3);
-  const colors = new Float32Array(lineCount * 2 * 3);
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-  const mat = new THREE.LineBasicMaterial({
+  prof.push(new THREE.Vector2(R + 0.006, -0.02), new THREE.Vector2(R * 0.82, -0.045), new THREE.Vector2(0.001, -0.05));
+  cols.push(0xdfe3ec, 0x26324d, 0x26324d);
+  prof.reverse(); // lathe winding: bottom centre -> rim -> top centre faces outward
+  cols.reverse();
+  const segs = 48;
+  const geo = new THREE.LatheGeometry(prof, segs);
+  const colors = [];
+  const cc = new THREE.Color();
+  for (let i = 0; i <= segs; i++) for (let j = 0; j < prof.length; j++) { cc.setHex(cols[j]).convertSRGBToLinear(); colors.push(cc.r, cc.g, cc.b); }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const dome = new THREE.Mesh(geo, toonMaterial(0xffffff, {
     vertexColors: true,
-    transparent: true,
-    opacity: 0.95,
-    blending: THREE.AdditiveBlending,
-    linewidth: 2,
-  });
-  const lines = new THREE.LineSegments(geo, mat);
-  g.add(lines);
+    gloss: { color: 0xffffff, threshold: 0.93, strength: 0.85 },
+    rim: { color: 0xffffff, threshold: 0.7, strength: 0.35 },
+  }));
+  addOutline(dome, 0.022, INK);
+  spin.add(dome);
 
-  // 3. Ground bio-electric glow disc
-  const discGeo = new THREE.RingGeometry(0.1, 1.4, 24);
-  discGeo.rotateX(-Math.PI / 2);
-  const discMat = new THREE.MeshBasicMaterial({
-    color: 0xffaa00,
-    transparent: true,
-    opacity: 0.45,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const groundDisc = new THREE.Mesh(discGeo, discMat);
-  groundDisc.position.y = 0.04;
-  g.add(groundDisc);
+  const starShape = (R1, r1) => {
+    const s = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+      const a = Math.PI / 2 + (i * Math.PI) / 5;
+      const rr = i % 2 ? r1 : R1;
+      i ? s.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : s.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    return s;
+  };
+  const inkStar = new THREE.Mesh(new THREE.ShapeGeometry(starShape(0.205, 0.088)).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: INK }));
+  inkStar.position.y = h(0) + 0.002;
+  const starGeo = new THREE.ExtrudeGeometry(starShape(0.17, 0.07), { depth: 0.022, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 1 }).rotateX(-Math.PI / 2);
+  const star = new THREE.Mesh(starGeo, toonMaterial(0xf6f7fb, { gloss: { color: 0xffffff, threshold: 0.9, strength: 1 }, rim: { color: 0xffffff, threshold: 0.6, strength: 0.4 } }));
+  star.position.y = h(0) + 0.004;
+  spin.add(inkStar, star);
+  root.visible = false;
+  return { root, spin };
+}
 
-  // 4. Dynamic bio-luminescent Point Light
-  const glowLight = new THREE.PointLight(0xffaa00, 0, 10);
-  glowLight.position.y = 0.85;
-  g.add(glowLight);
-
-  const yellow = new THREE.Color(0xffea00);
-  const orange = new THREE.Color(0xff5500);
-  const white = new THREE.Color(0xffffff);
-
+// ------------------------------------------------------------------ MILES: bio-electric arcs
+// World-space ribbons (gold core over a dark ink ribbon), rebuilt "on twos" along the limbs.
+const ARCS = 6, PTS = 7;
+function createArcs(scene) {
+  const make = (color, order) => {
+    const pos = new Float32Array(ARCS * PTS * 2 * 3);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+    const idx = [];
+    for (let a = 0; a < ARCS; a++) for (let i = 0; i < PTS - 1; i++) {
+      const v = (a * PTS + i) * 2;
+      idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+    }
+    g.setIndex(idx);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, fog: false }));
+    m.frustumCulled = false;
+    m.renderOrder = order;
+    m.visible = false;
+    scene.add(m);
+    return m;
+  };
   return {
-    root: g,
-    glowLight,
-    update(time) {
-      // Spider-Verse frame-stepped lightning animation (18 FPS)
-      const frame = Math.floor(time * 18);
-      for (let i = 0; i < lightningPlanes.length; i++) {
-        const p = lightningPlanes[i];
-        const seed = frame * 11 + i * 23;
-        const visible = Math.sin(seed) > -0.35;
-        p.visible = visible;
-        if (visible) {
-          p.rotation.y = (frame * 1.57 + i * Math.PI / 2) + Math.sin(seed * 2) * 0.25;
-          p.rotation.z = Math.sin(seed * 3) * 0.35;
-          const sc = 0.85 + Math.abs(Math.sin(seed * 5)) * 0.45;
-          p.scale.set(sc, sc, sc);
-          p.material.opacity = 0.8 + Math.abs(Math.sin(seed * 7)) * 0.2;
-        }
-      }
-
-      const pos = geo.attributes.position.array;
-      const col = geo.attributes.color.array;
-
-      for (let i = 0; i < lineCount; i++) {
-        const idx = i * 6;
-        const cy = 0.15 + Math.random() * 1.35;
-        const r1 = 0.14 + Math.random() * 0.38;
-        const a1 = Math.random() * Math.PI * 2;
-        const r2 = 0.18 + Math.random() * 0.48;
-        const a2 = a1 + (Math.random() - 0.5) * 1.6;
-
-        pos[idx] = Math.cos(a1) * r1;
-        pos[idx + 1] = cy;
-        pos[idx + 2] = Math.sin(a1) * r1;
-
-        pos[idx + 3] = Math.cos(a2) * r2;
-        pos[idx + 4] = cy + (Math.random() - 0.5) * 0.3;
-        pos[idx + 5] = Math.sin(a2) * r2;
-
-        const cChoice = i % 3 === 0 ? white : (i % 2 === 0 ? yellow : orange);
-        col[idx] = cChoice.r;
-        col[idx + 1] = cChoice.g;
-        col[idx + 2] = cChoice.b;
-
-        const cChoice2 = i % 2 === 0 ? yellow : orange;
-        col[idx + 3] = cChoice2.r;
-        col[idx + 4] = cChoice2.g;
-        col[idx + 5] = cChoice2.b;
-      }
-      geo.attributes.position.needsUpdate = true;
-      geo.attributes.color.needsUpdate = true;
-
-      groundDisc.scale.setScalar(1 + Math.sin(time * 20) * 0.12);
-      discMat.opacity = 0.35 + Math.sin(time * 25) * 0.2;
-
-      glowLight.intensity = 3.8 + Math.sin(time * 32) * 1.6;
-    },
-    dispose() {
-      g.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
-        }
-      });
-    },
+    ink: make(0x2a0d12, 12),
+    core: make(MILES.gold, 13),
+    pts: new Float32Array(ARCS * PTS * 3), // relative to the player root
+    on: new Uint8Array(ARCS),
   };
 }
 
@@ -602,28 +254,26 @@ export class HeroSpecials {
     this.chaser = chaser;
 
     this.active = false;
-    this.mode = null; // 'hulk' | 'cap' | 'miles'
+    this.mode = null;
     this.timeRemaining = 0;
     this.maxTime = 0;
     this.timeAlive = 0;
     this._lastSmashTime = -Infinity;
+    this._lastImpact = -Infinity;
     this.milesBaseSpeed = null;
 
-    // Visual effect groups attached to player.root
-    this.gammaAura = createGammaAura();
-    this.gammaAura.root.visible = false;
-    player.root.add(this.gammaAura.root);
+    initVfx({ scene, cameraRig });
 
-    this.shieldBoard = createVibraniumShield();
-    this.shieldBoard.root.visible = false;
-    this.shieldBoard.root.position.set(0, -0.02, 0);
-    player.root.add(this.shieldBoard.root);
+    this.crack = createGammaCrack(scene);
+    this.shield = createShieldBoard();
+    this.shield.root.position.set(0, -0.02, 0);
+    player.root.add(this.shield.root);
+    this.arcs = createArcs(scene);
 
-    this.bioElectric = createBioElectricity();
-    this.bioElectric.root.visible = false;
-    player.root.add(this.bioElectric.root);
+    this.hulk = { phase: null, t: 0, model: null, base: 1, k: 1, kTo: 1, sq: 1, sqV: 0, sqTo: 1, rig: null, cross: 0, steam: 0 };
+    this.cap = { exit: -1, hover: 0, acc: 0, pop: 0 };
+    this.milesFx = { model: null, update: null, acc: 0, step: 0, ghostT: 0.5, ghostOn: 0, rig: null, layers: null, camo: false };
 
-    // 5 New Modular Character Skills
     this.skills = {
       kitty: createHelloKittySkill({ scene, player, obstacles, cameraRig, chaser }),
       batman: createBatmanSkill({ scene, player, obstacles, cameraRig, chaser }),
@@ -632,94 +282,16 @@ export class HeroSpecials {
       panther: createBlackPantherSkill({ scene, player, obstacles, cameraRig, chaser }),
     };
     this.startDistance = 0;
-
-    // Active 3D textured transient shockwaves & explosion FX
-    this.transientFX = [];
-
-    const prevFront = obstacles.hooks.onFrontHit;
-    obstacles.hooks.onFrontHit = (hit) => {
-      if (this.active && this.absorbHit(hit)) return true;
-      return prevFront ? prevFront(hit) : false;
-    };
-    const prevSide = obstacles.hooks.onSideHit;
-    obstacles.hooks.onSideHit = (hit) => {
-      if (this.active && this.absorbHit(hit)) return true;
-      return prevSide ? prevSide(hit) : false;
-    };
-    const prevCatch = chaser.hooks.absorbCatch;
-    chaser.hooks.absorbCatch = () => {
-      if (this.active && this.absorbHit()) return true;
-      return prevCatch ? prevCatch() : false;
-    };
   }
 
-  spawnTexturedShockwave(type, pos) {
-    if (!this.scene) return;
-    const g = new THREE.Group();
-    const groundY = (this.player && this.player.floorY != null ? this.player.floorY : 0) + 0.035;
-    g.position.set(pos.x, groundY, pos.z);
-
-    let tex = null;
-    let size = 3.6;
-    let maxScale = 2.4;
-    let dur = 0.45;
-
-    if (type === 'hulk') {
-      tex = HULK_SHOCKWAVE_TEX;
-      size = 3.8;
-      maxScale = 2.8;
-      dur = 0.48;
-    } else if (type === 'cap') {
-      tex = CAP_SHOCKWAVE_TEX;
-      size = 3.4;
-      maxScale = 2.5;
-      dur = 0.42;
-    } else if (type === 'miles') {
-      tex = MILES_NOVA_TEX;
-      size = 4.2;
-      maxScale = 3.0;
-      dur = 0.55;
+  // main.js, once the skins exist (still at load): per-skin ghost / overlay layers and rigs.
+  prepare(skins) {
+    if (skins.hulk) this.hulk.rig = rigOf(skins.hulk);
+    if (skins.miles) {
+      this.milesFx.rig = rigOf(skins.miles);
+      this.milesFx.layers = [ghostMaterial(MILES.red, 0.62, 0.22), ghostMaterial(MILES.cyan, 0.62, 0.22)].map((m) => ghostLayer(skins.miles, m));
     }
-
-    if (!tex) return;
-
-    const planeGeo = new THREE.PlaneGeometry(size, size);
-    planeGeo.rotateX(-Math.PI / 2);
-    const planeMat = new THREE.MeshBasicMaterial({
-      map: tex,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      opacity: 0.95,
-    });
-    const planeMesh = new THREE.Mesh(planeGeo, planeMat);
-    g.add(planeMesh);
-
-    const billGeo = new THREE.PlaneGeometry(size * 0.85, size * 0.85);
-    const billMat = new THREE.MeshBasicMaterial({
-      map: tex,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      opacity: 0.9,
-    });
-    const billMesh = new THREE.Mesh(billGeo, billMat);
-    billMesh.position.y = 0.75;
-    g.add(billMesh);
-
-    this.scene.add(g);
-    this.transientFX.push({
-      root: g,
-      planeMat,
-      billMat,
-      planeGeo,
-      billGeo,
-      age: 0,
-      duration: dur,
-      maxScale,
-    });
+    if (skins.panther && this.skills.panther.prepare) this.skills.panther.prepare(skins.panther);
   }
 
   isHero(skin) {
@@ -727,462 +299,582 @@ export class HeroSpecials {
   }
 
   getHeroConfig(skin) {
-    if (skin === 'hulk') {
-      return { name: 'hulk', duration: 6.0, label: 'HULK SMASH', icon: '👊', className: 'hulk' };
-    }
-    if (skin === 'cap') {
-      return { name: 'cap', duration: 8.0, label: 'SHIELD SURF', icon: '🛡️', className: 'cap' };
-    }
-    if (skin === 'miles') {
-      return { name: 'miles', duration: 7.0, label: 'VENOM BLAST', icon: '⚡', className: 'miles' };
-    }
-    if (skin === 'kitty') {
-      return { name: 'kitty', duration: 8.0, label: 'UÇAN KALP', icon: '💖', className: 'kitty' };
-    }
-    if (skin === 'batman') {
-      return { name: 'batman', distance: 800, duration: 25.0, label: 'GECE PELERİNİ', icon: '🦇', className: 'batman', isDistance: true };
-    }
-    if (skin === 'raimi') {
-      return { name: 'raimi', duration: 3.0, label: 'MANCINIK AĞ', icon: '🕸️', className: 'raimi', maxCharges: 2 };
-    }
-    if (skin === 'ironman') {
-      return { name: 'ironman', duration: 2.2, label: 'UNIBEAM', icon: '💥', className: 'ironman' };
-    }
-    if (skin === 'panther') {
-      return { name: 'panther', duration: 5.5, label: 'VİBRANYUM ŞOK', icon: '🟣', className: 'panther' };
-    }
+    if (skin === 'hulk') return { name: 'hulk', duration: 6.0, label: 'HULK SMASH', icon: '👊', className: 'hulk' };
+    if (skin === 'cap') return { name: 'cap', duration: 8.0, label: 'SHIELD SURF', icon: '🛡️', className: 'cap' };
+    if (skin === 'miles') return { name: 'miles', duration: 7.0, label: 'VENOM BLAST', icon: '⚡', className: 'miles' };
+    if (skin === 'kitty') return { name: 'kitty', duration: 8.0, label: 'UÇAN KALP', icon: '💖', className: 'kitty' };
+    if (skin === 'batman') return { name: 'batman', distance: 800, duration: 25.0, label: 'GECE PELERİNİ', icon: '🦇', className: 'batman', isDistance: true };
+    if (skin === 'raimi') return { name: 'raimi', duration: 3.0, label: 'MANCINIK AĞ', icon: '🕸️', className: 'raimi', maxCharges: 2 };
+    if (skin === 'ironman') return { name: 'ironman', duration: 2.2, label: 'UNIBEAM', icon: '💥', className: 'ironman' };
+    if (skin === 'panther') return { name: 'panther', duration: 5.5, label: 'VİBRANYUM ŞOK', icon: '🟣', className: 'panther' };
     return null;
   }
 
-  _hideArmShield() {
+  _armShield(visible) {
     const s = this.player.root.getObjectByName('capArmShield');
-    if (s) s.visible = false;
+    if (s) s.visible = visible;
   }
 
-  _restoreArmShield() {
-    const s = this.player.root.getObjectByName('capArmShield');
-    if (s) s.visible = true;
+  _chest(out) {
+    return out.set(this.player.x, this.player.y + 0.9, 0);
+  }
+
+  _impact(opts, minGap = 0.45) {
+    const now = performance.now() / 1000;
+    if (now - this._lastImpact < minGap) return;
+    this._lastImpact = now;
+    impactFrame({ at: this._chest(_p), ...opts });
+  }
+
+  _start(skin, dur) {
+    this.active = true;
+    this.mode = skin;
+    this.timeRemaining = dur;
+    this.maxTime = dur;
+    this.timeAlive = 0;
   }
 
   activate(skin, overrideDuration) {
     const cfg = this.getHeroConfig(skin);
     if (!cfg) return false;
     if (this.active || game.halted || (this.player && this.player.controlsLocked)) return false;
-
     const dur = (overrideDuration && overrideDuration > 0) ? overrideDuration : cfg.duration;
+    const p = this.player;
 
-    // 1. HULK SMASH
     if (skin === 'hulk') {
-      this.active = true;
-      this.mode = skin;
-      this.timeRemaining = dur;
-      this.maxTime = dur;
-      this.timeAlive = 0;
+      this._start(skin, dur);
       this._lastSmashTime = -Infinity;
-      this.gammaAura.root.visible = true;
-      if (this.gammaAura.gammaLight) this.gammaAura.gammaLight.intensity = 4.8;
-      this.player.clearOverride();
+      p.clearOverride();
       this.obstacles.grace(0.3);
       if (this.chaser && this.chaser.isNear) this.chaser._dropBack();
-      if (this.cameraRig) this.cameraRig.shake(0.35, 0.45);
+      const H = this.hulk;
+      if (H.model && H.model !== p.model) this._hulkRestore(); // a previous settle still running
+      H.model = p.model;
+      H.base = H.model.root.scale.y;
+      H.kTo = 1.12;
+      H.cross = 0;
+      if (p.grounded) { H.phase = 'crouch'; H.t = 0; H.sqTo = 0.78; }
+      else { H.phase = 'air'; H.t = 0; p.vy = -CONFIG.fastDropSpeed; H.sqTo = 1.16; } // ground pound
+      this.cameraRig.shake(0.08, 0.3);
       emit('hulkRoar');
-      emit('hulkSmash', { position: new THREE.Vector3(this.player.x, 1.0, 0) });
       emit('specialOn', { mode: this.mode, duration: this.maxTime });
       return true;
     }
 
-    // 2. CAPTAIN AMERICA SHIELD SURF
     if (skin === 'cap') {
-      this.active = true;
-      this.mode = skin;
-      this.timeRemaining = dur;
-      this.maxTime = dur;
-      this.timeAlive = 0;
-      this.shieldBoard.root.visible = true;
-      this._hideArmShield();
-      if (this.player.grounded) {
-        this.player.floorY += 0.32;
-        this.player.y = this.player.floorY;
+      this._start(skin, dur);
+      this.cap.exit = -1;
+      this.cap.pop = 0;
+      this.shield.root.visible = true;
+      this.shield.root.position.set(0, -0.02, 0);
+      this._armShield(false);
+      if (p.grounded) {
+        p.floorY += 0.32;
+        p.y = p.floorY;
       }
-      if (this.cameraRig) this.cameraRig.shake(0.12, 0.22);
+      this._chest(_p);
+      sparkBurst({ x: p.x, y: p.floorY, z: 0.1 }, { n: 14, speed: 6, up: 0.2, colors: CAP.sparks, scroll: false });
+      puffBurst({ x: p.x, y: p.floorY - 0.25, z: 0.1 }, { n: 6, ring: true, radius: 0.5, speed: 2.6, size: 0.5, rise: 0.4, colors: HULK.dust, scroll: false });
+      kick(0.25);
+      this.cameraRig.shake(0.08, 0.2);
       emit('capShieldSurf');
       emit('specialOn', { mode: this.mode, duration: this.maxTime });
       return true;
     }
 
-    // 3. MILES MORALES VENOM BIO-ELECTRICITY
     if (skin === 'miles') {
-      this.active = true;
-      this.mode = skin;
-      this.timeRemaining = dur;
-      this.maxTime = dur;
-      this.timeAlive = 0;
-      this.bioElectric.root.visible = true;
+      this._start(skin, dur);
       this.milesBaseSpeed = game.state.speed;
       game.speedOverride = Math.min(CONFIG.topSpeed + 10, this.milesBaseSpeed + 10);
-      if (this.cameraRig) this.cameraRig.shake(0.15, 0.28);
+      this._milesOn();
+      this._chest(_p);
+      hitStop(0.06);
+      this._impact({ bg: 0xffe066, dot: 0xf2a516, line: MILES.red }, 0);
+      burst('halftone', _a.set(p.x, p.y + 0.95, -0.4), { color: MILES.gold, size: 1.2, grow: 3.6, life: 0.4, follow: p.root });
+      sticker('bzzt', _a.set(p.x + (p.x > 0.5 ? -1.2 : 1.2), p.y + 2.3, -1.2), { follow: p.root, life: 0.85 });
+      sparkBurst(_p, { n: 18, speed: 7, colors: [MILES.gold, MILES.white, MILES.red], scroll: false });
+      kick(0.4);
+      this.cameraRig.shake(0.12, 0.25);
       emit('milesVenomBlast');
       emit('specialOn', { mode: this.mode, duration: this.maxTime });
       return true;
     }
 
-    // 4. HELLO KITTY: UÇAN KALP
     if (skin === 'kitty') {
-      const ok = this.skills.kitty.activate(dur);
-      if (!ok) return false;
-      this.active = true;
-      this.mode = skin;
-      this.timeRemaining = dur;
-      this.maxTime = dur;
-      this.timeAlive = 0;
+      if (!this.skills.kitty.activate(dur)) return false;
+      this._start(skin, dur);
       return true;
     }
 
-    // 5. BATMAN: GECE PELERİNİ (800 METRE)
     if (skin === 'batman') {
-      const startDist = (game.state && typeof game.state.distance === 'number')
-        ? game.state.distance
-        : (game.world?.distance || 0);
+      const startDist = (game.state && typeof game.state.distance === 'number') ? game.state.distance : (game.world?.distance || 0);
       this.startDistance = startDist;
-      const ok = this.skills.batman.activate(startDist);
-      if (!ok) return false;
-      this.active = true;
-      this.mode = skin;
-      this.timeRemaining = 800;
-      this.maxTime = 800;
-      this.timeAlive = 0;
+      if (!this.skills.batman.activate(startDist)) return false;
+      this._start(skin, 800);
       return true;
     }
 
-    // 6. SPIDER-MAN 2002 (RAIMI): MANCINIK AĞ
     if (skin === 'raimi') {
-      if (this.skills.raimi) {
-        this.skills.raimi.charges = game.state.webCharges;
-      }
-      const ok = this.skills.raimi.activate();
-      if (!ok) return false;
-      this.active = true;
-      this.mode = skin;
-      this.timeRemaining = dur;
-      this.maxTime = dur;
-      this.timeAlive = 0;
+      this.skills.raimi.charges = game.state.webCharges;
+      if (!this.skills.raimi.activate()) return false;
+      this._start(skin, dur);
       emit('specialOn', { mode: 'raimi', duration: this.maxTime });
       return true;
     }
 
-    // 7. IRON MAN: UNIBEAM
     if (skin === 'ironman') {
-      if (this.skills.ironman) {
-        this.skills.ironman.charges = 1;
-      }
-      const ok = this.skills.ironman.activate();
-      if (!ok) return false;
-      this.active = true;
-      this.mode = skin;
-      this.timeRemaining = dur;
-      this.maxTime = dur;
-      this.timeAlive = 0;
+      this.skills.ironman.charges = 1;
+      if (!this.skills.ironman.activate()) return false;
+      this._start(skin, dur);
       emit('specialOn', { mode: 'ironman', duration: this.maxTime });
       return true;
     }
 
-    // 8. BLACK PANTHER: VİBRANYUM ŞOK
     if (skin === 'panther') {
-      const ok = this.skills.panther.activate();
-      if (!ok) return false;
-      this.active = true;
-      this.mode = skin;
-      this.timeRemaining = dur;
-      this.maxTime = dur;
-      this.timeAlive = 0;
+      if (!this.skills.panther.activate()) return false;
+      this._start(skin, dur);
       return true;
     }
-
     return false;
   }
 
   beforePlayer(dt) {
-    if (this.skills?.kitty && (this.skills.kitty.active || this.skills.kitty.currentFlyOffset > 0)) {
-      this.skills.kitty.beforePlayer(dt);
-    }
-    if (this.skills?.batman && (this.skills.batman.active || this.skills.batman.currentFlyOffset > 0)) {
-      this.skills.batman.beforePlayer(dt);
-    }
-
+    if (this.skills.kitty && (this.skills.kitty.active || this.skills.kitty.currentFlyOffset > 0)) this.skills.kitty.beforePlayer(dt);
+    if (this.skills.batman && (this.skills.batman.active || this.skills.batman.currentFlyOffset > 0)) this.skills.batman.beforePlayer(dt);
     if (!this.active || game.halted) return;
 
     if (this.mode === 'cap') {
-      // Hover height: 0.32m when running/jumping, 0.22m when sliding to clear high barriers
+      // 0.32 m hover running / jumping, 0.22 m sliding (clears the high barriers)
       const hover = (this.player.sliding && this.player.grounded) ? 0.22 : 0.32;
+      this.cap.hover = hover;
       this.player.floorY += hover;
-      if (this.player.grounded) {
-        this.player.y = this.player.floorY;
-      }
-    } else if (this.mode === 'raimi' && this.skills?.raimi) {
+      if (this.player.grounded) this.player.y = this.player.floorY;
+    } else if (this.mode === 'raimi') {
       this.skills.raimi.beforePlayer(dt);
+    } else if (this.mode === 'hulk' && this.hulk.phase === 'crouch') {
+      this.hulk.t += dt;
+      if (this.hulk.t >= 0.11) { // release: hop, then slam on landing
+        this.player.jump(0.9);
+        this.player.setOverride('run', 1); // a power leap, not the spider flip
+        this.hulk.phase = 'air';
+        this.hulk.sqTo = 1.16;
+        this.hulk.sqV += 6;
+      }
     }
   }
 
   update(dt) {
-    // 1. AAA VFX Core Updates
-    updateShatterDebris(dt, game.state?.speed || 0);
-    updateFlashLights(dt);
+    updateVfx(dt);
     updateCameraFov(dt);
+    const running = game.state.mode === 'running' && !game.halted;
+    this.crack.update(dt, running ? game.state.speed * dt : 0);
+    this._hulkScale(dt);
+    this._capShield(dt);
 
-    // 2. Update transient 3D impact shockwaves & explosion FX (Hulk, Cap, Miles)
-    if (this.transientFX && this.transientFX.length > 0) {
-      for (let i = this.transientFX.length - 1; i >= 0; i--) {
-        const fx = this.transientFX[i];
-        fx.age += dt;
-        if (game.state?.mode === 'running' && !game.halted) {
-          fx.root.position.z += (game.state?.speed || 15) * dt;
-        }
-        const k = fx.age / fx.duration;
-        if (k >= 1.0) {
-          if (this.scene) this.scene.remove(fx.root);
-          fx.planeGeo.dispose();
-          fx.billGeo.dispose();
-          fx.planeMat.dispose();
-          fx.billMat.dispose();
-          this.transientFX.splice(i, 1);
-        } else {
-          const s = 0.3 + (fx.maxScale - 0.3) * Math.sin(k * Math.PI * 0.5);
-          fx.root.scale.set(s, s, s);
-          const alpha = Math.max(0, 1.0 - k);
-          fx.planeMat.opacity = 0.95 * alpha;
-          fx.billMat.opacity = 0.9 * alpha;
-        }
-      }
-    }
-
-    // 3. Update modular sub-skills
-    if (this.skills?.kitty) this.skills.kitty.update(dt);
-    if (this.skills?.batman) this.skills.batman.update(dt);
-    if (this.skills?.raimi) this.skills.raimi.update(this.timeAlive, dt);
-    if (this.skills?.ironman) this.skills.ironman.update(this.timeAlive, dt);
-    if (this.skills?.panther) this.skills.panther.update(this.timeAlive, dt);
+    if (this.skills.kitty) this.skills.kitty.update(dt);
+    if (this.skills.batman) this.skills.batman.update(dt);
+    if (this.skills.raimi) this.skills.raimi.update(this.timeAlive, dt);
+    if (this.skills.ironman) this.skills.ironman.update(this.timeAlive, dt);
+    if (this.skills.panther) this.skills.panther.update(this.timeAlive, dt);
 
     if (!this.active || game.halted) return;
-
     this.timeAlive += dt;
 
-    // 4. Batman Distance Control: mesafe >= 800 ise deactivate(true)
     if (this.mode === 'batman') {
-      const curDist = (game.state && typeof game.state.distance === 'number')
-        ? game.state.distance
-        : (game.world?.distance || 0);
+      const curDist = (game.state && typeof game.state.distance === 'number') ? game.state.distance : (game.world?.distance || 0);
       const traveled = Math.max(0, curDist - this.startDistance);
       this.timeRemaining = Math.max(0, 800 - traveled);
-      if (traveled >= 800 || !this.skills.batman.active) {
-        this.deactivate(true);
-        return;
-      }
+      if (traveled >= 800 || !this.skills.batman.active) this.deactivate(true);
       return;
     }
-
-    // 5. Modular skill deactivation sync
     if (this.mode === 'kitty') {
       this.timeRemaining = this.skills.kitty.timeRemaining;
-      if (!this.skills.kitty.active || this.timeRemaining <= 0) {
-        this.deactivate(true);
-        return;
-      }
+      if (!this.skills.kitty.active || this.timeRemaining <= 0) this.deactivate(true);
       return;
     }
-
     if (this.mode === 'raimi') {
-      if (!this.skills.raimi.active) {
-        this.deactivate(false);
-        return;
-      }
+      if (!this.skills.raimi.active) this.deactivate(false);
+      return;
+    }
+    if (this.mode === 'ironman' || this.mode === 'panther') {
+      const s = this.skills[this.mode];
+      this.timeRemaining = s.timeRemaining;
+      if (!s.active || this.timeRemaining <= 0) this.deactivate(true);
       return;
     }
 
-    if (this.mode === 'ironman') {
-      this.timeRemaining = this.skills.ironman.timeRemaining;
-      if (!this.skills.ironman.active || this.timeRemaining <= 0) {
-        this.deactivate(true);
-        return;
-      }
-      return;
-    }
-
-    if (this.mode === 'panther') {
-      this.timeRemaining = this.skills.panther.timeRemaining;
-      if (!this.skills.panther.active || this.timeRemaining <= 0) {
-        this.deactivate(true);
-        return;
-      }
-      return;
-    }
-
-    // 6. Hulk, Cap, Miles duration countdown
+    // Hulk, Cap, Miles: duration countdown
     this.timeRemaining = Math.max(0, this.timeRemaining - dt);
     if (this.timeRemaining <= 0) {
       this.deactivate(true);
       return;
     }
-
-    // 1. HULK SMASH: obliterate obstacles in front and sides!
-    if (this.mode === 'hulk') {
-      this.gammaAura.update(this.timeAlive, dt, this.player.sliding);
-
-      // Immune to stumble during Hulk Smash
-      if (this.player.overrideState === 'stumble' || this.player.override === 'stumble') {
-        this.player.clearOverride();
-      }
-
-      const p = this.player;
-      const smashReach = 5.2;
-      const list = this.obstacles.active;
-      let smashed = false;
-      let lastSmashedPos = null;
-
-      for (let i = list.length - 1; i >= 0; i--) {
-        const o = list[i];
-        const dx = Math.abs(o.x - p.x);
-        if (dx <= 2.2) {
-          if (o.z >= -smashReach && (o.z - o.length) <= 2.2) {
-            this.obstacles.remove(o);
-            smashed = true;
-            lastSmashedPos = new THREE.Vector3(o.x, 1.0, Math.max(o.z, -3.5));
-          }
-        }
-      }
-
-      if (smashed) {
-        const now = performance.now();
-        if (now - this._lastSmashTime > 120) {
-          this._lastSmashTime = now;
-          const pos = lastSmashedPos || new THREE.Vector3(p.x, 1.0, -1.0);
-          this.spawnTexturedShockwave('hulk', pos);
-          emit('hulkSmash', { position: pos });
-          emit('crash', { position: pos });
-          if (this.cameraRig) this.cameraRig.shake(0.35, 0.35);
-        }
-        this.obstacles.grace(0.25);
-      }
-    }
-    // 2. CAPTAIN AMERICA: Shield Surfing
-    else if (this.mode === 'cap') {
-      this.shieldBoard.update(
-        this.timeAlive,
-        dt,
-        this.player.grounded,
-        this.player.sliding
-      );
-    }
-    // 3. MILES MORALES: Venom Bio-Electricity
+    if (this.mode === 'hulk') this._hulkUpdate(dt);
+    else if (this.mode === 'cap') this._capRails(dt);
     else if (this.mode === 'miles') {
-      this.bioElectric.update(this.timeAlive);
-      if (this.milesBaseSpeed != null) {
-        game.speedOverride = Math.min(CONFIG.topSpeed + 10, this.milesBaseSpeed + 10);
-      }
+      if (this.milesBaseSpeed != null) game.speedOverride = Math.min(CONFIG.topSpeed + 10, this.milesBaseSpeed + 10);
+      this._milesUpdate(dt);
     }
   }
 
+  // ---------------------------------------------------------------- HULK
+  _hulkSlam() {
+    const p = this.player;
+    const H = this.hulk;
+    H.phase = 'run';
+    if (p.override === 'run') p.clearOverride();
+    H.sq = 0.7; H.sqV = 0; H.sqTo = 1;
+    const fy = p.floorY;
+    this.crack.trigger(p.x, fy, 0);
+    groundRing({ x: p.x, y: fy, z: 0 }, { r0: 0.4, r1: 4.2, width: 0.55, life: 0.42, color: HULK.glow, edge: 0xffffff });
+    chunkBurst({ x: p.x, y: fy + 0.15, z: 0 }, { n: 14, force: 8, size: 0.24, colors: HULK.rock, floor: fy });
+    puffBurst({ x: p.x, y: fy + 0.1, z: 0 }, { n: 10, ring: true, radius: 0.9, speed: 4.2, size: 0.75, rise: 0.8, colors: HULK.dust, life: 0.6 });
+    sticker('smash', _a.set(p.x + (p.x > 0.5 ? -1.3 : 1.3), fy + 2.4, -1.4), { life: 0.9, width: 0.4 });
+    hitStop(0.075);
+    this._impact({ bg: 0xfdf6d3, dot: 0xd8f08a, line: 0x24502c }, 0);
+    kick(0.55);
+    this.cameraRig.shake(0.28, 0.4);
+    sfx('hulkSmash', { position: _chest(p) });
+    // everything right in front is flattened by the slam too
+    this._hulkReach(5.2);
+  }
+
+  _hulkReach(reach) {
+    const p = this.player;
+    const list = this.obstacles.active;
+    let hitPos = null;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const o = list[i];
+      if (Math.abs(o.x - p.x) <= 2.2 && o.z >= -reach && (o.z - o.length) <= 2.2) {
+        this.obstacles.remove(o);
+        hitPos = _b.set(o.x, 1.0, Math.max(o.z, -3.5));
+      }
+    }
+    if (hitPos) this._hulkSmashFx(hitPos);
+    return !!hitPos;
+  }
+
+  _hulkSmashFx(pos) {
+    this.obstacles.grace(0.25);
+    const now = performance.now();
+    if (now - this._lastSmashTime <= 120) return;
+    this._lastSmashTime = now;
+    chunkBurst(pos, { n: 12, force: 9, size: 0.28, colors: [0xc9c3d6, 0xa8a3b5, 0xe0262c, 0xffd23a] });
+    puffBurst(pos, { n: 4, size: 0.8, speed: 2.5, colors: HULK.dust });
+    sparkBurst(pos, { n: 8, speed: 7, colors: [HULK.glow, 0xffffff] });
+    const keys = ['smash', 'krak', 'bam'];
+    sticker(keys[(Math.random() * 3) | 0], _a.set(pos.x + (pos.x > this.player.x ? 0.6 : -0.6), pos.y + 1.6, pos.z), { width: 0.3, life: 0.6 });
+    hitStop(0.05);
+    this._impact({ bg: 0xfdf6d3, dot: 0xd8f08a, line: 0x24502c }, 0.6);
+    kick(0.35);
+    this.cameraRig.shake(0.22, 0.3);
+    sfx('hulkSmash', { position: pos.clone() });
+  }
+
+  _hulkUpdate(dt) {
+    const p = this.player;
+    const H = this.hulk;
+    if (p.override === 'stumble') p.clearOverride(); // immune to stumbles
+    if (H.phase === 'air') {
+      H.sqTo = p.vy > 0 ? 1.16 : 1.08;
+      if (p.grounded) this._hulkSlam();
+      return; // smashing waits for the slam
+    }
+    if (H.phase === 'crouch') return;
+    this._hulkReach(5.2);
+
+    // footfalls: the legs cross under the body -> a heavy step
+    const rig = H.rig;
+    if (rig && p.model === H.model && p.grounded && !p.sliding) {
+      const c = Math.sign(rig.hipL.rotation.x - rig.hipR.rotation.x);
+      if (c && H.cross && c !== H.cross) {
+        this.cameraRig.shake(0.045, 0.1);
+        H.sqV -= 2.2;
+        const side = c > 0 ? 1 : -1;
+        puffBurst({ x: p.x + side * 0.22, y: p.floorY + 0.05, z: 0.15 }, { n: 2, size: 0.32, speed: 1.4, rise: 0.4, life: 0.35, colors: HULK.dust, vz: 2 });
+      }
+      if (c) H.cross = c;
+    }
+    // gamma steam off the shoulders, small and behind the head
+    H.steam -= dt;
+    if (H.steam <= 0) {
+      H.steam = 0.16;
+      const s = Math.random() < 0.5 ? -1 : 1;
+      puffBurst({ x: p.x + s * 0.32, y: p.y + 1.15, z: 0.12 }, { n: 1, size: 0.18, speed: 0.4, rise: 1.6, life: 0.45, colors: [0xbfe89a, 0xd8f5b8], drag: 2, scroll: false });
+    }
+  }
+
+  // root scale (bigger Hulk) + squash & stretch spring; settles back after the skill
+  _hulkScale(dt) {
+    const H = this.hulk;
+    if (!H.model) return;
+    if (H.phase === 'crouch') H.sqTo = 0.78;
+    H.k += (H.kTo - H.k) * Math.min(1, dt * 8);
+    H.sqV += ((H.sqTo - H.sq) * 340 - H.sqV * 16) * dt;
+    H.sq += H.sqV * dt;
+    const sy = Math.max(0.55, H.sq), sxz = 1 / Math.sqrt(sy);
+    H.model.root.scale.set(H.base * H.k * sxz, H.base * H.k * sy, H.base * H.k * sxz);
+    if (!this.active || this.mode !== 'hulk') {
+      if (Math.abs(H.k - 1) < 0.004 && Math.abs(H.sq - 1) < 0.004 && Math.abs(H.sqV) < 0.05) this._hulkRestore();
+    }
+  }
+
+  _hulkRestore() {
+    const H = this.hulk;
+    if (H.model) H.model.root.scale.setScalar(H.base);
+    H.model = null;
+    H.phase = null;
+    H.k = H.kTo = 1;
+    H.sq = H.sqTo = 1;
+    H.sqV = 0;
+  }
+
+  // ---------------------------------------------------------------- CAP
+  _capRails(dt) {
+    const p = this.player;
+    if (!p.grounded) return;
+    const ground = p.floorY - this.cap.hover;
+    this.cap.acc += dt * (p.sliding ? 120 : 80);
+    while (this.cap.acc >= 1) {
+      this.cap.acc -= 1;
+      const s = Math.random() < 0.5 ? -1 : 1;
+      const hex = CAP.sparks[(Math.random() * 3) | 0];
+      spark(p.x + s * rnd(0.3, 0.5), ground + 0.03, rnd(0.25, 0.5), s * rnd(0.6, 2.8), rnd(0.8, 2.8), rnd(4, 9), rnd(0.12, 0.24), rnd(0.06, 0.1), hex, false);
+    }
+  }
+
+  _capShield(dt) {
+    const S = this.shield, C = this.cap, p = this.player;
+    if (!S.root.visible) return;
+    if (C.exit >= 0) { // flips up onto his back, shrinking, then the back shield takes over
+      C.exit += dt;
+      const t = Math.min(1, C.exit / 0.38);
+      const e = smooth(t);
+      S.root.position.set(0, -0.02 + (1.0 - -0.02) * e + Math.sin(t * Math.PI) * 0.6, 0.22 * e);
+      S.root.rotation.set(-t * Math.PI * 3, 0, 0);
+      S.root.scale.setScalar(1 - 0.55 * e);
+      if (t >= 1) {
+        S.root.visible = false;
+        S.root.rotation.set(0, 0, 0);
+        S.root.scale.setScalar(1);
+        S.root.position.set(0, -0.02, 0);
+        C.exit = -1;
+        if (!(this.active && this.mode === 'cap')) this._armShield(true);
+        sparkBurst(_a.set(p.x, p.y + 1.0, 0.25), { n: 6, speed: 3, colors: [0xffffff, CAP.sparks[0]], scroll: false });
+      }
+      return;
+    }
+    C.pop += dt;
+    const k = C.pop < 0.08 ? 0.4 + (C.pop / 0.08) * 0.8 : C.pop < 0.2 ? 1.2 - ((C.pop - 0.08) / 0.12) * 0.2 : 1;
+    S.root.scale.setScalar(k);
+    S.spin.rotation.y += dt * 7;
+    S.root.rotation.x = THREE.MathUtils.clamp(-p.vy * 0.012, -0.18, 0.18) + (C.pop < 0.18 ? (1 - C.pop / 0.18) * Math.PI * 2 : 0);
+  }
+
+  _capExit() {
+    this.cap.exit = 0;
+    this.shield.root.rotation.set(0, 0, 0);
+  }
+
+  // ---------------------------------------------------------------- MILES
+  _milesOn() {
+    const M = this.milesFx;
+    const model = this.player.model;
+    M.model = model;
+    M.update = model.update;
+    M.acc = 0;
+    M.step = 0;
+    M.ghostT = 0.35;
+    M.ghostOn = 0;
+    M.camo = false;
+    const orig = M.update;
+    model.update = (dt, speed) => { // "on twos": the pose advances in 12 fps steps
+      M.acc += dt;
+      if (M.acc < 1 / 12) return;
+      const n = Math.ceil(M.acc / CONFIG.dtCap);
+      for (let i = 0; i < n; i++) orig(M.acc / n, speed);
+      M.acc = 0;
+      M.step++;
+    };
+    this.arcs.ink.visible = this.arcs.core.visible = true;
+    this._milesArcs(true);
+  }
+
+  _milesOff() {
+    const M = this.milesFx;
+    if (M.model && M.update) M.model.update = M.update;
+    M.model = null;
+    M.update = null;
+    this.arcs.ink.visible = this.arcs.core.visible = false;
+    this._milesCamo(false);
+    if (M.layers) for (const l of M.layers) l.setVisible(false);
+  }
+
+  _milesCamo(on) {
+    const M = this.milesFx;
+    if (!M.layers || M.camo === on) return;
+    M.camo = on;
+    for (const o of M.layers[0].originals) o.visible = !on;
+  }
+
+  // new arc paths along shoulder -> elbow -> hand and hip -> knee -> foot (+ two hand sparks)
+  _milesArcs(regen) {
+    const M = this.milesFx, A = this.arcs, p = this.player;
+    const rig = M.rig;
+    if (!rig || p.model !== M.model) { A.ink.visible = A.core.visible = false; return; }
+    const root = p.root.position;
+    if (regen) {
+      const chains = [
+        [rig.shoulderR, rig.elbowR, rig.hand], [rig.shoulderL, rig.elbowL, null],
+        [rig.hipR, rig.kneeR, null], [rig.hipL, rig.kneeL, null],
+      ];
+      for (let a = 0; a < ARCS; a++) {
+        A.on[a] = Math.random() < (a < 4 ? 0.72 : 0.5) ? 1 : 0;
+        if (!A.on[a]) continue;
+        if (a < 4) {
+          const [j0, j1, j2] = chains[a];
+          j0.getWorldPosition(_a);
+          j1.getWorldPosition(_b);
+          if (j2) j2.getWorldPosition(_c);
+          else _c.copy(_b).sub(_a).multiplyScalar(0.95).add(_b); // forearm / shin end
+        } else { // a short spark jumping off a hand
+          (a === 4 ? rig.hand : rig.elbowL).getWorldPosition(_a);
+          _b.set(_a.x + rnd(-0.25, 0.25), _a.y + rnd(-0.1, 0.25), _a.z + rnd(-0.1, 0.2));
+          _c.set(_b.x + rnd(-0.25, 0.25), _b.y + rnd(-0.15, 0.2), _b.z);
+        }
+        for (let i = 0; i < PTS; i++) {
+          const t = i / (PTS - 1);
+          const u = t * 2;
+          if (u <= 1) _p.lerpVectors(_a, _b, u); else _p.lerpVectors(_b, _c, u - 1);
+          const j = i === 0 || i === PTS - 1 ? 0.02 : 0.11;
+          const k = (a * PTS + i) * 3;
+          A.pts[k] = _p.x - root.x + rnd(-j, j);
+          A.pts[k + 1] = _p.y - root.y + rnd(-j, j);
+          A.pts[k + 2] = _p.z - root.z + rnd(-j * 0.5, j * 0.5);
+        }
+      }
+    }
+    const cam = this.cameraRig.camera.position;
+    const ip = A.ink.geometry.attributes.position, cp = A.core.geometry.attributes.position;
+    for (let a = 0; a < ARCS; a++) {
+      for (let i = 0; i < PTS; i++) {
+        const k = (a * PTS + i) * 3;
+        const v = (a * PTS + i) * 2;
+        if (!A.on[a]) { ip.setXYZ(v, 0, -50, 0); ip.setXYZ(v + 1, 0, -50, 0); cp.setXYZ(v, 0, -50, 0); cp.setXYZ(v + 1, 0, -50, 0); continue; }
+        _p.set(A.pts[k] + root.x, A.pts[k + 1] + root.y, A.pts[k + 2] + root.z);
+        const i0 = Math.max(0, i - 1) * 3 + a * PTS * 3, i1 = Math.min(PTS - 1, i + 1) * 3 + a * PTS * 3;
+        _a.set(A.pts[i1] - A.pts[i0], A.pts[i1 + 1] - A.pts[i0 + 1], A.pts[i1 + 2] - A.pts[i0 + 2]); // tangent
+        _b.subVectors(cam, _p).normalize();                                                        // to camera
+        _c.crossVectors(_a, _b).normalize();
+        _p.addScaledVector(_b, 0.14);
+        const taper = 1 - Math.abs(i / (PTS - 1) - 0.5);
+        const wi = 0.055 * taper + 0.014, wc = 0.026 * taper + 0.006;
+        ip.setXYZ(v, _p.x + _c.x * wi, _p.y + _c.y * wi, _p.z + _c.z * wi);
+        ip.setXYZ(v + 1, _p.x - _c.x * wi, _p.y - _c.y * wi, _p.z - _c.z * wi);
+        _p.addScaledVector(_b, 0.01);
+        cp.setXYZ(v, _p.x + _c.x * wc, _p.y + _c.y * wc, _p.z + _c.z * wc);
+        cp.setXYZ(v + 1, _p.x - _c.x * wc, _p.y - _c.y * wc, _p.z - _c.z * wc);
+      }
+    }
+    ip.needsUpdate = cp.needsUpdate = true;
+  }
+
+  _milesUpdate(dt) {
+    const M = this.milesFx, p = this.player;
+    const step = M.step;
+    const regen = step !== M.lastStep;
+    M.lastStep = step;
+    this._milesArcs(regen);
+    if (regen && Math.random() < 0.3) {
+      M.rig?.hand.getWorldPosition(_a);
+      sparkBurst(_a, { n: 2, speed: 3, colors: [MILES.gold, MILES.white], life: 0.18, width: 0.04, scroll: false });
+    }
+    if (!M.layers) return;
+    const [red, cyan] = M.layers;
+    const camo = this.timeRemaining < 0.5;
+    if (regen) {
+      // chromatic glitch: now and then for 2 steps, red / cyan copies jump out to the sides
+      M.ghostT -= 1 / 12;
+      if (M.ghostOn > 0) M.ghostOn--;
+      else if (M.ghostT <= 0) { M.ghostOn = 2; M.ghostT = rnd(0.3, 0.6); }
+      if (camo) this._milesCamo(step % 3 !== 0); // camouflage flicker: mostly see-through
+      const show = M.ghostOn > 0 || M.camo;
+      red.setVisible(show);
+      cyan.setVisible(show);
+      if (show) {
+        const d = M.camo ? 0.03 : rnd(0.07, 0.12);
+        const r = red.meshes[0]?.material.uniforms, c = cyan.meshes[0]?.material.uniforms;
+        if (r && c) {
+          r.uOffset.value.set(-d, rnd(-0.03, 0.03), 0);
+          c.uOffset.value.set(d, rnd(-0.03, 0.03), 0);
+          r.uAlpha.value = c.uAlpha.value = M.camo ? 0.38 : 0.62;
+          r.uPush.value = c.uPush.value = M.camo ? 0 : 0.22;
+        }
+      }
+    }
+    if (red.on) { red.sync(); cyan.sync(); }
+  }
+
+  // ---------------------------------------------------------------- hits
   absorbHit(hit) {
     if (!this.active) return false;
+    const p = this.player;
 
-    // 1. HULK SMASH
     if (this.mode === 'hulk') {
-      if (hit?.obstacle) {
-        this.obstacles.remove(hit.obstacle);
-      }
+      if (hit?.obstacle) this.obstacles.remove(hit.obstacle);
       const list = this.obstacles.active;
       for (let i = list.length - 1; i >= 0; i--) {
         const o = list[i];
-        if (Math.abs(o.x - this.player.x) <= 2.2 && o.z >= -8.0 && (o.z - o.length) <= 3.0) {
-          this.obstacles.remove(o);
-        }
+        if (Math.abs(o.x - p.x) <= 2.2 && o.z >= -8.0 && (o.z - o.length) <= 3.0) this.obstacles.remove(o);
       }
       this.obstacles.grace(0.35);
-
-      const now = performance.now();
-      if (now - this._lastSmashTime > 120) {
-        this._lastSmashTime = now;
-        const hitPos = (hit && hit.position) ? hit.position : new THREE.Vector3(this.player.x, 1.0, 0);
-        this.spawnTexturedShockwave('hulk', hitPos);
-        emit('hulkSmash', { position: hitPos.clone() });
-        emit('crash', { position: hitPos.clone() });
-        if (this.cameraRig) this.cameraRig.shake(0.35, 0.35);
-      }
+      this._hulkSmashFx(hit?.position ? _b.copy(hit.position) : _b.set(p.x, 1.0, -0.5));
       return true;
     }
 
-    // 2. CAPTAIN AMERICA
-    if (this.mode === 'cap') {
+    if (this.mode === 'cap' || this.mode === 'miles') {
+      const mode = this.mode;
       this.deactivate(false);
-      if (hit?.obstacle) {
-        this.obstacles.remove(hit.obstacle);
-      }
+      if (hit?.obstacle) this.obstacles.remove(hit.obstacle);
       const list = this.obstacles.active;
       for (let i = list.length - 1; i >= 0; i--) {
         const o = list[i];
-        if (Math.abs(o.x - this.player.x) <= 1.8 && o.z > -7.0 && (o.z - o.length) < 2.0) {
-          this.obstacles.remove(o);
-        }
+        if (Math.abs(o.x - p.x) <= 1.8 && o.z > -7.0 && (o.z - o.length) < 2.0) this.obstacles.remove(o);
       }
-      const hitPos = (hit && hit.position) ? hit.position : new THREE.Vector3(this.player.x, 1.0, 0);
-      this.spawnTexturedShockwave('cap', hitPos);
-      emit('capShieldGong', { position: hitPos.clone() });
-      emit('crash', { position: hitPos.clone() });
-      if (this.cameraRig) this.cameraRig.shake(0.3, 0.35);
+      const at = hit?.position ? _b.copy(hit.position) : _b.set(p.x, 1.0, -0.6);
+      at.z = Math.min(at.z, -0.4);
+      hitStop(0.08);
+      kick(0.45);
+      this.cameraRig.shake(0.26, 0.35);
+      if (mode === 'cap') {
+        burst('star', _a.copy(at).setY(at.y + 0.2), { size: 0.6, grow: 3, life: 0.35, spin: 3 });
+        groundRing({ x: p.x, y: p.floorY, z: 0 }, { r0: 0.5, r1: 3.2, width: 0.28, life: 0.32, color: 0x8fb0ff, edge: 0xffffff });
+        sparkBurst(at, { n: 24, speed: 9, colors: CAP.sparks, up: 0.2 });
+        chunkBurst(at, { n: 8, force: 7, size: 0.22, colors: [0xc9c3d6, 0xe0262c, 0xffd23a] });
+        sticker('gong', _a.set(p.x + (p.x > 0.5 ? -1.2 : 1.2), p.y + 2.3, -1.4), { life: 0.85 });
+        this._impact({ bg: 0xfff3e0, dot: 0xf6c6c0, line: CAP.blue }, 0);
+        sfx('capShieldGong', { position: at.clone() });
+      } else {
+        burst('halftone', _a.copy(at), { color: MILES.gold, size: 1, grow: 3.4, life: 0.35 });
+        sparkBurst(at, { n: 26, speed: 10, colors: [MILES.gold, MILES.white, MILES.red] });
+        chunkBurst(at, { n: 8, force: 8, size: 0.22, colors: [0x2a0d12, MILES.red, MILES.gold] });
+        sticker('zzap', _a.set(p.x + (p.x > 0.5 ? -1.2 : 1.2), p.y + 2.3, -1.4), { life: 0.85 });
+        this._impact({ bg: 0xffe066, dot: 0xf2a516, line: MILES.red }, 0);
+        sfx('venomBlastNova', { position: at.clone() });
+      }
       this.obstacles.grace(1.5);
       return true;
     }
 
-    // 3. MILES MORALES
-    if (this.mode === 'miles') {
-      this.deactivate(false);
-      if (hit?.obstacle) {
-        this.obstacles.remove(hit.obstacle);
-      }
-      const list = this.obstacles.active;
-      for (let i = list.length - 1; i >= 0; i--) {
-        const o = list[i];
-        if (Math.abs(o.x - this.player.x) <= 1.8 && o.z > -7.0 && (o.z - o.length) < 2.0) {
-          this.obstacles.remove(o);
-        }
-      }
-      const hitPos = (hit && hit.position) ? hit.position : new THREE.Vector3(this.player.x, 1.0, 0);
-      this.spawnTexturedShockwave('miles', hitPos);
-      emit('venomBlastNova', { position: hitPos.clone() });
-      emit('crash', { position: hitPos.clone() });
-      if (this.cameraRig) this.cameraRig.shake(0.32, 0.35);
-      this.obstacles.grace(1.5);
-      return true;
-    }
-
-    // 4. HELLO KITTY
-    if (this.mode === 'kitty' && this.skills?.kitty) {
-      return this.skills.kitty.absorbHit(hit);
-    }
-
-    // 5. BATMAN
-    if (this.mode === 'batman' && this.skills?.batman) {
+    if (this.mode === 'kitty' && this.skills.kitty) return this.skills.kitty.absorbHit(hit);
+    if (this.mode === 'batman' && this.skills.batman) {
       const res = this.skills.batman.absorbHit(hit);
-      if (!this.skills.batman.active) {
-        this.deactivate(false);
-      }
+      if (!this.skills.batman.active) this.deactivate(false);
       return res;
     }
-
-    // 6. SPIDER-MAN 2002 (RAIMI)
-    if (this.mode === 'raimi' && this.skills?.raimi) {
-      return this.skills.raimi.absorbHit(hit);
-    }
-
-    // 7. IRON MAN
-    if (this.mode === 'ironman' && this.skills?.ironman) {
-      return this.skills.ironman.absorbHit(hit);
-    }
-
-    // 8. BLACK PANTHER
-    if (this.mode === 'panther' && this.skills?.panther) {
-      return this.skills.panther.absorbHit(hit);
-    }
-
+    if (this.mode === 'raimi' && this.skills.raimi) return this.skills.raimi.absorbHit(hit);
+    if (this.mode === 'ironman' && this.skills.ironman) return this.skills.ironman.absorbHit(hit);
+    if (this.mode === 'panther' && this.skills.panther) return this.skills.panther.absorbHit(hit);
     return false;
   }
 
@@ -1191,68 +883,48 @@ export class HeroSpecials {
     this.active = false;
     this.timeRemaining = 0;
 
-    // Deactivate modular sub-skills
-    if (mode === 'kitty' && this.skills?.kitty?.active) this.skills.kitty.deactivate(expired);
-    if (mode === 'batman' && this.skills?.batman?.active) this.skills.batman.deactivate(expired);
-    if (mode === 'raimi' && this.skills?.raimi?.active) this.skills.raimi.deactivate();
-    if (mode === 'ironman' && this.skills?.ironman?.active) this.skills.ironman.deactivate(expired);
-    if (mode === 'panther' && this.skills?.panther?.active) this.skills.panther.deactivate();
+    if (mode === 'kitty' && this.skills.kitty?.active) this.skills.kitty.deactivate(expired);
+    if (mode === 'batman' && this.skills.batman?.active) this.skills.batman.deactivate(expired);
+    if (mode === 'raimi' && this.skills.raimi?.active) this.skills.raimi.deactivate();
+    if (mode === 'ironman' && this.skills.ironman?.active) this.skills.ironman.deactivate(expired);
+    if (mode === 'panther' && this.skills.panther?.active) this.skills.panther.deactivate();
 
-    // Reset visual effects
-    if (this.gammaAura) {
-      this.gammaAura.root.visible = false;
-      if (this.gammaAura.gammaLight) this.gammaAura.gammaLight.intensity = 0;
+    if (mode === 'hulk') {
+      this.hulk.kTo = 1;
+      this.hulk.sqTo = 1;
+      this.hulk.sqV -= 4; // a last vinyl wobble while he shrinks back
+      this.hulk.phase = null;
+      if (expired) this.obstacles.grace(0.5);
     }
-
-    if (this.shieldBoard) {
-      this.shieldBoard.root.visible = false;
-      if (this.shieldBoard.sparkLight) this.shieldBoard.sparkLight.intensity = 0;
-    }
-
     if (mode === 'cap') {
-      this._restoreArmShield();
+      this._capExit();
       if (this.player.grounded) {
         this.player.floorY = Math.max(0, this.player.floorY - 0.32);
         this.player.y = this.player.floorY;
       }
     }
-
-    if (this.bioElectric) {
-      this.bioElectric.root.visible = false;
-      if (this.bioElectric.glowLight) this.bioElectric.glowLight.intensity = 0;
-    }
-
+    if (mode === 'miles') this._milesOff();
     if (mode === 'miles' || mode === 'raimi' || this.milesBaseSpeed != null) {
       game.speedOverride = null;
       this.milesBaseSpeed = null;
     }
-
-    if (mode === 'hulk' && expired) {
-      // Safety grace on expiry
-      this.obstacles.grace(0.5);
-    }
-
     this.mode = null;
     emit('specialOff');
   }
 
   reset() {
     if (this.active) this.deactivate(false);
-    if (this.skills) {
-      for (const s of Object.values(this.skills)) {
-        if (s && typeof s.reset === 'function') s.reset();
-      }
-    }
-    if (this.transientFX && this.transientFX.length > 0) {
-      for (const fx of this.transientFX) {
-        if (this.scene) this.scene.remove(fx.root);
-        if (fx.planeGeo) fx.planeGeo.dispose();
-        if (fx.billGeo) fx.billGeo.dispose();
-        if (fx.planeMat) fx.planeMat.dispose();
-        if (fx.billMat) fx.billMat.dispose();
-      }
-      this.transientFX = [];
-    }
+    for (const s of Object.values(this.skills)) if (s && typeof s.reset === 'function') s.reset();
+    resetVfx();
+    this.crack.hide();
+    this._hulkRestore();
+    this._milesOff();
+    this.cap.exit = -1;
+    this.shield.root.visible = false;
+    this.shield.root.rotation.set(0, 0, 0);
+    this.shield.root.scale.setScalar(1);
+    this.shield.root.position.set(0, -0.02, 0);
+    this._armShield(true);
     this.timeRemaining = 0;
     this.timeAlive = 0;
     this.mode = null;
@@ -1262,19 +934,10 @@ export class HeroSpecials {
 
   dispose() {
     this.reset();
-    if (this.skills) {
-      for (const s of Object.values(this.skills)) {
-        if (s && typeof s.dispose === 'function') s.dispose();
-      }
-    }
-    if (this.gammaAura?.dispose) this.gammaAura.dispose();
-    if (this.shieldBoard?.dispose) this.shieldBoard.dispose();
-    if (this.bioElectric?.dispose) this.bioElectric.dispose();
-    HULK_FISSURE_TEX.dispose();
-    HULK_SHOCKWAVE_TEX.dispose();
-    CAP_DISC_TEX.dispose();
-    CAP_SHOCKWAVE_TEX.dispose();
-    MILES_LIGHTNING_TEX.dispose();
-    MILES_NOVA_TEX.dispose();
+    for (const s of Object.values(this.skills)) if (s && typeof s.dispose === 'function') s.dispose();
   }
+}
+
+function _chest(p) {
+  return new THREE.Vector3(p.x, p.y + 0.9, 0);
 }
