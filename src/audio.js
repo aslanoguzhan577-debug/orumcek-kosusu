@@ -433,6 +433,44 @@ const SOUNDS = {
     tone({ type: 'sine', f: 1568, dur: 0.2, vol: 0.06, at: 0.1 });
     noise({ dur: 0.15, vol: 0.08, attack: 0.05, filter: 'bandpass', f1: 600, f2: 3000, q: 1 });
   },
+  hulkRoar() {
+    growl({ f: 64, to: 32, dur: 1.8, vol: 0.65, lp: 400, rate: 16, attack: 0.1 });
+    tone({ type: 'sawtooth', f: 90, to: 35, dur: 1.5, vol: 0.45, filter: 'lowpass', f1: 600, f2: 120 });
+    noise({ dur: 1.4, vol: 0.35, attack: 0.15, filter: 'lowpass', f1: 800, f2: 150 });
+  },
+  hulkSmash() {
+    tone({ type: 'sine', f: 120, to: 24, dur: 0.65, vol: 0.7, attack: 0.002 });
+    noise({ dur: 0.6, vol: 0.65, attack: 0.002, filter: 'lowpass', f1: 4200, f2: 120 });
+    tone({ type: 'sawtooth', f: 180, to: 38, dur: 0.45, vol: 0.35, filter: 'lowpass', f1: 1200, f2: 100 });
+  },
+  capShieldSurf() {
+    tone({ type: 'sine', f: 440, to: 660, dur: 0.4, vol: 0.15, attack: 0.05 });
+    noise({ dur: 0.5, vol: 0.22, attack: 0.05, filter: 'bandpass', f1: 1800, f2: 3200, q: 2.5 });
+  },
+  capShieldGong() {
+    [440, 880, 1320, 1760, 2200].forEach((f, i) => {
+      tone({
+        type: i % 2 ? 'triangle' : 'sine',
+        f, to: f * 0.98,
+        dur: 1.8 - i * 0.25,
+        vol: 0.35 / (i + 1),
+        attack: 0.002,
+      });
+    });
+    noise({ dur: 0.4, vol: 0.3, attack: 0.002, filter: 'bandpass', f1: 2800, f2: 800, q: 4 });
+  },
+  milesVenomBlast() {
+    tone({ type: 'sawtooth', f: 120, to: 950, dur: 0.45, vol: 0.28, filter: 'bandpass', f1: 800, f2: 4500, q: 3 });
+    noise({ dur: 0.5, vol: 0.35, attack: 0.02, filter: 'highpass', f1: 2500, f2: 7000 });
+    for (let i = 0; i < 5; i++) {
+      tone({ type: 'square', f: 800 + Math.random() * 1200, dur: 0.04, vol: 0.15, at: i * 0.04 });
+    }
+  },
+  venomBlastNova() {
+    tone({ type: 'sawtooth', f: 600, to: 40, dur: 0.7, vol: 0.5, filter: 'lowpass', f1: 5000, f2: 150 });
+    noise({ dur: 0.8, vol: 0.7, attack: 0.002, filter: 'bandpass', f1: 3000, f2: 200, q: 2 });
+    tone({ type: 'sine', f: 140, to: 28, dur: 0.7, vol: 0.65, attack: 0.002 });
+  },
   // ----- intro clip -----
   i_swing() {
     noise({ dur: 0.55, vol: 0.22, attack: 0.18, filter: 'bandpass', f1: 450, f2: 1900, q: 1.6 });
@@ -468,7 +506,7 @@ const SOUNDS = {
 };
 
 // ayni sesin cok sik tekrarini engelle (saniye)
-const MIN_GAP = { senseDodge: 0.08, i_swing: 0.25, lane: 0.06, land: 0.08, slide: 0.15, stumble: 0.15, venomNear: 1.5, coin: 0.025, crash: 0.1, web: 0.1 };
+const MIN_GAP = { senseDodge: 0.08, i_swing: 0.25, lane: 0.06, land: 0.08, slide: 0.15, stumble: 0.15, venomNear: 1.5, coin: 0.025, crash: 0.1, web: 0.1, hulkSmash: 0.12, hulkRoar: 1.0, capShieldSurf: 0.5, capShieldGong: 0.5, milesVenomBlast: 0.5, venomBlastNova: 0.5 };
 
 function play(name, detail) {
   if (muted || paused || !ctx || ctx.state === 'closed') return;

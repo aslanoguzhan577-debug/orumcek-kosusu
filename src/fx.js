@@ -255,6 +255,9 @@ const WORDS = {
   nano:  { t: 'NANO!',  burst: '#ffd23a', fill: '#1a3cb0' },
   hop:   { t: 'HOP!',   burst: null,      fill: '#ffe14a', stroke: '#e0262c' },
   his:   { t: 'HİS!',   burst: '#ffe14a', fill: '#d0192b' },
+  smash: { t: 'SMASH!', burst: '#39ff14', fill: '#0a3d00' },
+  venom: { t: 'VENOM BLAST!', burst: '#ffcc00', fill: '#ff3300' },
+  gong:  { t: 'GONG!',  burst: '#38d5ff', fill: '#0e3a9c' },
 };
 const FONT = "'Bangers', Impact, 'Arial Black', sans-serif";
 
@@ -484,6 +487,9 @@ export function initFx(game) {
     white: 'radial-gradient(circle, rgba(255,255,255,.9), rgba(255,255,255,.55))',
     red: 'radial-gradient(circle, rgba(255,60,60,.7), rgba(120,0,10,.7))',
     sense: 'radial-gradient(circle at 50% 55%, rgba(255,225,60,0) 36%, rgba(255,225,50,.6) 72%, rgba(255,200,0,.9))',
+    green: 'radial-gradient(circle at 50% 55%, rgba(60,255,40,.9), rgba(20,180,10,.7) 40%, rgba(5,60,5,.8))',
+    cyan: 'radial-gradient(circle at 50% 55%, rgba(180,250,255,.9), rgba(0,210,255,.7) 40%, rgba(10,50,140,.8))',
+    electric: 'radial-gradient(circle at 50% 55%, rgba(255,255,220,.95), rgba(255,200,20,.85) 35%, rgba(255,80,0,.75))',
   };
   function flash(kind, alpha, ms) {
     const f = dom.flash;
@@ -831,6 +837,37 @@ export function initFx(game) {
     showText('parca', num(ax, pl.x), num(ay, 1.2) + 1.8, Math.max(az, -9), 0.5, 1.0, true);
     shake(0.3, 0.5);
     flash('gold', 0.5, 380);
+  });
+
+  // ----- Hero Specials (Hulk Smash, Cap Shield Surf, Miles Venom Blast) -----
+  on('hulkSmash', (d) => {
+    const p = posOf(d, 1.0);
+    flash('green', 0.45, 260);
+    sparkBurst(glow, p.x, p.y, p.z, 16, [0x39ff14, 0x66ff22, 0xffffff], 8, 0.6, 0.5);
+    puffBurst(p.x, p.y, p.z, 10, 0x6b6670, 4.5, 2.5, 0.7, 1.6, 0.7);
+    debris(p.x, p.y, p.z, 14, 0);
+    const w = ['smash', 'gum', 'bam'][(Math.random() * 3) | 0];
+    showText(w, p.x, p.y + 1.8, p.z, 0.45, 0.85, true);
+    shake(0.35, 0.45);
+  });
+
+  on('capShieldGong', (d) => {
+    const p = posOf(d, 1.0);
+    flash('cyan', 0.5, 300);
+    glow.spawn(p.x, p.y, p.z, 0, 0, 0, 0.35, 0.6, 4.5, SHAPE.ring, 0x00f0ff, 0.95, 0, 0, true);
+    glow.spawn(p.x, p.y, p.z, 0, 0, 0, 0.25, 0.4, 3.2, SHAPE.ring, 0xffffff, 0.85, 0, 0, true, 0.05);
+    sparkBurst(glow, p.x, p.y, p.z, 14, [0x00f0ff, 0xffffff, 0x3388ff], 7, 0.5, 0.5);
+    showText('gong', p.x, p.y + 1.6, p.z, 0.4, 0.85, true);
+    shake(0.3, 0.35);
+  });
+
+  on('venomBlastNova', (d) => {
+    const p = posOf(d, 1.0);
+    flash('electric', 0.65, 350);
+    glow.spawn(p.x, p.y, p.z, 0, 0, 0, 0.35, 0.8, 5.0, SHAPE.ring, 0xffea00, 0.95, 0, 0, true);
+    sparkBurst(glow, p.x, p.y, p.z, 22, [0xffea00, 0xff7700, 0xffffff], 10, 0.8, 0.6);
+    showText('venom', p.x, p.y + 1.8, p.z, 0.5, 0.9, true);
+    shake(0.32, 0.35);
   });
 
   // ----- spider-sense: yellow zigzag squiggles around the head (same look as the HUD logo) -----

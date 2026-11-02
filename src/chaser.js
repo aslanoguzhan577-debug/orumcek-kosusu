@@ -54,7 +54,7 @@ export class Chaser {
     this.height = CONFIG.playerHeight * C.heightFactor;
     this.setModel(model);
 
-    obstacles.hooks.onSideHit = () => this.onStumble();
+    obstacles.hooks.onSideStumble = () => this.onStumble();
     obstacles.hooks.onCrash = () => this.catchPlayer();
     events.addEventListener('start', () => this._startIntro());
 

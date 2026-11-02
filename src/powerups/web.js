@@ -1,18 +1,16 @@
-// powerups/web.js — G9: web cartridges and the web zip.
+// powerups/web.js — G9: Web Cartridge and Hero Specials (Hulk, Cap, Miles)
 //
-// Cartridge: placed by a pattern-generator extra on free stretches of the route lane, now
-// and then (rarer while full). Collecting fills game.state.webCharges to CONFIG.web.maxCharges.
+// 1. Classic Spider-Man & other suits:
+//    - Web zip: player.hooks.onAirUp (airborne up). Max 3 charges.
+//    - Web cartridge pickup on the track refills charges to 3.
 //
-// Web zip: player.hooks.onAirUp (2nd "up" while airborne). Needs: not sliding, a charge,
-// not already zipping, run not halted. Costs 1 charge, emits web {from, to}, shows the
-// 'web' model state and a web line from the raised hand to an anchor high on a building
-// (always out of frame), and steers the flight every frame (beforePlayer):
-//   - a train / wagon roof arriving in the player's lane within roofLookTime: rise so the
-//     feet clear the roof just as its front arrives (apex at arrival; oncoming trains use
-//     their real closing speed), then land on it with the normal roof landing;
-//   - otherwise: a high hang (hangHeight) and a floaty fall, landing wherever the floor is.
-// Lane changes stay allowed; the plan follows the lane the player is in / moving to.
-// "Down" during a zip is a normal fast drop and ends the steering.
+// 2. Hulk, Captain America, Miles Morales:
+//    - Character Special Skills REPLACE the web shot!
+//    - Max charges = 1 (cannot stack; once used, player can collect another).
+//    - Activated via airborne up, HUD special button tap/click, or action keys (Q, E, F).
+//    - Hulk Smash: 6.0s (smashes obstacles, gamma aura, ground fissures).
+//    - Captain America Shield Surf: 8.0s (0.32m hover, must jump hurdles/trains, sparks).
+//    - Miles Morales Venom Blast: 7.0s (+10 m/s boost, bio-electricity, nova explosion).
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
@@ -20,6 +18,7 @@ import { emit } from '../events.js';
 import { game } from '../game.js';
 import { laneX } from '../world.js';
 import { createWebPickup } from '../pickup-art.js';
+import { HeroSpecials } from './hero-specials.js';
 
 const W = CONFIG.web;
 const _from = new THREE.Vector3();
@@ -28,16 +27,17 @@ const _dir = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 
 export class WebPowerup {
-  constructor({ scene, player, obstacles, cameraRig }) {
+  constructor({ scene, player, obstacles, cameraRig, chaser }) {
     this.player = player;
     this.obstacles = obstacles;
     this.cameraRig = cameraRig;
+    this.heroSpecials = new HeroSpecials({ scene, player, obstacles, cameraRig, chaser });
     this.zip = null;          // { time, dropped } while zipping
     this.anchor = new THREE.Vector3();
     this._lastPickupD = -Infinity;
     this._lastShotT = -Infinity; // game.state.time of the last web shot
 
-    // --- cartridge pickups ---
+    // --- cartridge / hero special pickups ---
     obstacles.registerPickup('web', {
       create: () => {
         const item = createWebPickup();
@@ -45,13 +45,32 @@ export class WebPowerup {
         return item;
       },
       onCollect: () => {
-        game.state.webCharges = W.maxCharges;
+        const max = this.getMaxCharges();
+        if (game.state.webCharges < max) {
+          game.state.webCharges = max;
+        }
+        if ((game.skin === 'raimi' || game.state?.skin === 'raimi') && this.heroSpecials?.skills?.raimi) {
+          this.heroSpecials.skills.raimi.charges = game.state.webCharges;
+        }
       },
     });
     obstacles.generator.addExtra((ctx) => this._placeCartridge(ctx));
 
-    // --- web shot ---
-    player.hooks.onAirUp = () => this.tryShoot();
+    // --- activation triggers ---
+    // Airborne up triggers special skill or web zip
+    player.hooks.onAirUp = () => this.tryActivate();
+
+    // Action keys: Q, E, F
+    window.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      if (e.code === 'KeyQ' || e.code === 'KeyE' || e.code === 'KeyF') {
+        const tag = e.target && e.target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        if (game.state && game.state.mode === 'running') {
+          this.tryActivate();
+        }
+      }
+    });
 
     // --- web line: white core + dark rim, a unit cylinder stretched hand -> anchor ---
     const geo = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true).translate(0, 0.5, 0);
@@ -71,13 +90,58 @@ export class WebPowerup {
     this.reset();
   }
 
+  getMaxCharges() {
+    const skin = game.skin || game.state?.skin || 'spider';
+    if (skin === 'raimi') return 2;
+    if (this.heroSpecials.isHero(skin)) return 1;
+    return W.maxCharges;
+  }
+
   reset() {
+    if (this.heroSpecials) this.heroSpecials.reset();
     this._endZip();
     this._lastShotT = -Infinity;
   }
 
   get zipping() {
     return this.zip !== null;
+  }
+
+  // Unified activation method called by HUD button, action keys (Q/E/F), double tap, or airborne swipe
+  tryActivate() {
+    const skin = game.skin || game.state?.skin || 'spider';
+    if (this.heroSpecials.isHero(skin)) {
+      if (this.heroSpecials.active) return false;
+      if (game.state.webCharges <= 0) return false;
+      if (game.halted || this.player.controlsLocked) return false;
+
+      let bonusDur = 0;
+      try {
+        const saved = JSON.parse(localStorage.getItem('orumcek_kosusu_save'));
+        const lv = Number(saved?.upgrades?.heroSpecial);
+        if (Number.isFinite(lv) && lv > 0) bonusDur = lv * 0.5;
+      } catch (e) {}
+      const cfg = this.heroSpecials.getHeroConfig(skin);
+      const dur = cfg ? (cfg.duration + bonusDur) : undefined;
+
+      if (skin === 'raimi') {
+        if (this.heroSpecials.skills?.raimi) {
+          this.heroSpecials.skills.raimi.charges = game.state.webCharges;
+        }
+        const ok = this.heroSpecials.activate(skin, dur);
+        if (ok && this.heroSpecials.skills?.raimi) {
+          game.state.webCharges = this.heroSpecials.skills.raimi.charges;
+        }
+        return ok;
+      }
+
+      game.state.webCharges--;
+      return this.heroSpecials.activate(skin, dur);
+    }
+    if (this.player.grounded && game.state.webCharges > 0 && !game.halted && !this.player.controlsLocked) {
+      this.player.jump();
+    }
+    return this.tryShoot();
   }
 
   // Pattern extra: one roll per block always (keeps the shared track identical for
@@ -89,7 +153,8 @@ export class WebPowerup {
     const [d0, d1] = ctx.routeFree;
     const d = (d0 + d1) / 2;
     if (d1 - d0 < 4 || ctx.A - this._lastPickupD < W.pickupMinGap || !ctx.farFromPickup(d)) return;
-    const full = game.state.webCharges >= W.maxCharges;
+    const max = this.getMaxCharges();
+    const full = game.state.webCharges >= max;
     if (roll >= (full ? W.pickupChanceFull : W.pickupChance)) return;
     ctx.push({ type: 'pickup', kind: 'web', lane: ctx.route, d, y: W.pickupY });
     this._lastPickupD = ctx.A;
@@ -168,6 +233,9 @@ export class WebPowerup {
 
   // Steer the flight (runs after obstacles moved, before the player moves).
   beforePlayer(dt) {
+    if (this.heroSpecials) {
+      this.heroSpecials.beforePlayer(dt);
+    }
     const z = this.zip;
     if (!z) return;
     const p = this.player;
@@ -218,6 +286,9 @@ export class WebPowerup {
   }
 
   update(dt) {
+    if (this.heroSpecials) {
+      this.heroSpecials.update(dt);
+    }
     const z = this.zip;
     if (!z) return;
     if (game.halted || this.player.grounded) {

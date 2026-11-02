@@ -14,6 +14,8 @@ import { WebPowerup } from './powerups/web.js';
 import { IronSpiderPowerup } from './powerups/ironspider.js';
 import { SensePowerup } from './powerups/sense.js';
 import { MagnetPowerup } from './powerups/magnet.js';
+import { RepulsorBoost } from './powerups/repulsor.js';
+import { HERO_SPECIAL_TEXTURES } from './powerups/hero-specials.js';
 import { Intro } from './intro.js';
 import { createInput } from './input.js';
 import { CameraRig } from './camera.js';
@@ -78,18 +80,47 @@ game.obstacles = obstacles;
 const chaser = new Chaser(scene, player, obstacles, createVenom());
 game.addSystem(chaser);
 game.chaser = chaser;
-const web = new WebPowerup({ scene, player, obstacles, cameraRig });
+const web = new WebPowerup({ scene, player, obstacles, cameraRig, chaser });
 game.addSystem(web);
 game.web = web;
+game.heroSpecials = web.heroSpecials;
 // Iron Spider model: built once here, toggled by the power-up.
 const iron = new IronSpiderPowerup({ player, obstacles, chaser, ironModel: createIronSpider() });
 game.addSystem(iron);
 game.iron = iron;
+
+// Hero Specials & Iron Spider unified collision/action hooks
+obstacles.hooks.onFrontHit = (hit) => {
+  if (web.heroSpecials && web.heroSpecials.active) {
+    return web.heroSpecials.absorbHit(hit);
+  }
+  return iron._absorb(hit);
+};
+obstacles.hooks.onSideHit = (hit) => {
+  if (web.heroSpecials && web.heroSpecials.active) {
+    return web.heroSpecials.absorbHit(hit);
+  }
+  return false;
+};
+chaser.hooks.absorbCatch = () => {
+  if (web.heroSpecials && web.heroSpecials.active) {
+    return web.heroSpecials.absorbHit();
+  }
+  return iron._absorb();
+};
+player.hooks.onDoubleAction = () => {
+  const isHero = web.heroSpecials.isHero(game.skin);
+  if (isHero && game.state.webCharges >= 1 && !web.heroSpecials.active) {
+    return web.tryActivate();
+  }
+  return iron.activate();
+};
 // Menu skin choice: the suit power-up swaps back to whichever skin is chosen.
 game.skins = skins;
 game.skin = skin;
 game.setSkin = (name) => {
   if (!skins[name]) return;
+  if (web.heroSpecials && web.heroSpecials.active) web.heroSpecials.deactivate(false);
   game.skin = name;
   iron.normalModel = skins[name];
   if (!iron.active) player.useModel(skins[name]);
@@ -100,6 +131,9 @@ game.sense = sense;
 const magnet = new MagnetPowerup({ player, obstacles }); // coin magnet
 game.addSystem(magnet);
 game.magnet = magnet;
+const repulsor = new RepulsorBoost({ player, scene }); // Iron Man fly boost
+game.addSystem(repulsor);
+game.repulsor = repulsor;
 // x-ray silhouette over both suits (the Iron Spider model is a child of player.root by now)
 const xray = createXray(player.root);
 game.xray = xray;
@@ -151,9 +185,13 @@ renderer.setAnimationLoop((now) => {
   xray.enabled = !game.state.intro && !game.halted && cameraRig.shotBlend < 0.05;
 
   // Blob shadow stays on the floor and shrinks / fades while in the air.
-  const height = Math.max(0, player.y - player.floorY); // (z: the intro clip moves the root)
+  const capHover = (web.heroSpecials && web.heroSpecials.active && web.heroSpecials.mode === 'cap') ? 0.32 : 0;
+  const kittyHover = web.heroSpecials?.skills?.kitty?.currentFlyOffset || 0;
+  const batmanHover = web.heroSpecials?.skills?.batman?.currentFlyOffset || 0;
+  const baseFloor = Math.max(0, player.floorY - capHover - kittyHover - batmanHover);
+  const height = Math.max(0, player.y - baseFloor); // (z: the intro clip moves the root)
   const s = THREE.MathUtils.clamp(1 - height / 4, 0.45, 1);
-  shadow.position.set(player.x, player.floorY + 0.08, player.root.position.z);
+  shadow.position.set(player.x, baseFloor + 0.08, player.root.position.z);
   shadow.scale.set(s, s, 1);
   shadow.material.opacity = s;
 
@@ -161,4 +199,4 @@ renderer.setAnimationLoop((now) => {
 });
 
 // Start-up warm-up (behind the loading screen): shaders, textures, pooled objects.
-warmUp(game, [...fx.textures, ...Object.values(skins).flatMap((m) => m.textures || [])]);
+warmUp(game, [...fx.textures, ...HERO_SPECIAL_TEXTURES, ...Object.values(skins).flatMap((m) => m.textures || [])]);

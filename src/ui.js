@@ -16,6 +16,11 @@ import { game } from './game.js';
 import { events } from './events.js';
 import { setMuted, isMuted } from './audio.js';
 import { drawPowerIcon } from './pickup-art.js';
+import { HEART_SVG_ICON } from './powerups/skillHelloKitty.js';
+import { BAT_SVG_ICON } from './powerups/skillBatman.js';
+import { SLINGSHOT_SVG_ICON } from './powerups/skillSpiderman2002.js';
+import { UNIBEAM_SVG_ICON } from './powerups/skillIronMan.js';
+import { VIBRANIUM_SVG_ICON } from './powerups/skillBlackPanther.js';
 
 const KEY_NAME = 'spidey.name';
 const KEY_SKIN = 'spidey.skin';
@@ -45,15 +50,22 @@ const $ = (id) => document.getElementById(id);
 const el = {
   hud: $('hud'),
   score: $('h-score'), coins: $('h-coins'), pause: $('h-pause'),
-  web: $('h-web'), iron: $('h-iron'), ironN: $('h-iron-n'), ironHint: $('h-iron-hint'),
+  web: $('h-web'),
+  webLbl: $('h-web-lbl') || ($('h-web') ? $('h-web').querySelector('.lbl') : null),
+  webSlots: $('h-web-slots') || ($('h-web') ? $('h-web').querySelector('.slots') : null),
+  webHint: $('h-web-hint') || ($('h-web') ? $('h-web').querySelector('.key-hint') : null),
+  iron: $('h-iron'), ironN: $('h-iron-n'), ironHint: $('h-iron-hint'),
   ironBar: $('h-ironbar'), ironFill: $('h-ironfill'),
-  menu: $('scr-menu'), market: $('scr-market'), mkCoins: $('mk-coins'), mkList: $('mk-list'), skin: $('scr-skin'), skinBtn: $('b-skin'), skinOk: $('b-skin-close'), mkBtn: $('b-market'), mkClose: $('b-market-close'), help: $('scr-help'), pauseScr: $('scr-pause'), over: $('scr-over'),
+  ironLbl: $('h-ironbar-lbl') || ($('h-ironbar') ? $('h-ironbar').querySelector('.lbl') : null),
+  ironIco: $('h-iron') ? $('h-iron').querySelector('.iron-ico') : null,
+  menu: $('scr-menu'), market: $('scr-market'), mkCoins: $('mk-coins'), mkList: $('mk-list'), skin: $('scr-skin'), skinBtn: $('b-skin'), skinOk: $('b-skin-close'), mkBtn: $('b-market'), mkClose: $('b-market-close'), help: $('scr-help'), pauseScr: $('scr-pause'), over: $('scr-over'), overMarket: $('b-over-market'),
   nameBox: $('m-namebox'), name: $('m-name'), best: $('m-best'), bestName: $('m-bestname'),
   play: $('b-play'), helpBtn: $('b-help'), helpOk: $('b-help-ok'),
   resume: $('b-resume'), restart: $('b-restart'), pauseMenu: $('b-pause-menu'),
   again: $('b-again'), share: $('b-share'), overMenu: $('b-over-menu'),
   oScore: $('o-score'), oCoins: $('o-coins'), oDist: $('o-dist'), oBest: $('o-best'),
   oRecord: $('o-record'), oList: $('o-list'),
+  repulsor: $('h-repulsor'), repulsorTimer: $('h-repulsor-timer'),
 };
 if (!el.hud || !el.menu) {
   console.warn('[ui] #ui markup missing from index.html');
@@ -81,7 +93,7 @@ const timers = ['sense', 'magnet'].map((kind) => {
   if (cv) drawPowerIcon(cv, kind);
   return { box: box || document.createElement('div'), fill: (box && box.querySelector('.fill')) || document.createElement('div'), max: 1, prev: 0, show: null, q: -1, low: null };
 });
-const cache = { score: -1, coins: -1, web: -1, ironN: -1, ironShow: null, ironBar: null, barScale: -1, low: null, hint: null };
+const cache = { score: -1, coins: -1, web: -1, ironN: -1, ironShow: null, ironBar: null, barScale: -1, low: null, hint: null, repulsorShow: null, repulsorText: '', heroSkin: null };
 
 game.tapToStart = false;
 
@@ -131,8 +143,10 @@ function paintSkin() {
 
 // ---------- market (src/shop.js is loaded lazily so a missing file cannot break the game) ----------
 let shop = null;
+let marketReturn = 'menu';
 async function openMarket() {
   try { shop = shop || await import('./shop.js'); } catch (e) { console.warn('[ui] shop.js yok', e); return; }
+  marketReturn = forced || (game.state.mode === 'over' ? 'over' : (game.state.mode === 'paused' ? 'pause' : 'menu'));
   forced = 'market';
   paintMarket();
 }
@@ -141,6 +155,103 @@ function paintMarket() {
   const wallet = shop.getPlayerData().totalCoins;
   el.mkCoins.textContent = fmt(wallet);
   el.mkList.textContent = '';
+
+  // 1. KULLANIM HAKLARI (ŞARJLAR & ÇEKİRDEKLER)
+  const secConsumable = document.createElement('div');
+  secConsumable.className = 'mk-section-title';
+  secConsumable.textContent = '⚡ KULLANIM HAKLARI & ÇEKİRDEKLER';
+  el.mkList.appendChild(secConsumable);
+
+  // A) Iron Spider Kullanım Hakkı Satın Alma (+1 Çekirdek)
+  {
+    const item = shop.CONSUMABLE_ITEMS.ironCore;
+    const count = shop.getIronCoreCount();
+    const max = item.maxCount || 5;
+    const isFull = count >= max;
+    const cost = item.cost;
+
+    const row = document.createElement('div');
+    row.className = 'mk-item consumable iron-spider';
+    const cv = document.createElement('canvas'); cv.width = cv.height = 96;
+    drawPowerIcon(cv, 'ironSpider');
+
+    const info = document.createElement('div'); info.className = 'mk-info';
+    const nm = document.createElement('b'); nm.textContent = item.name;
+    const du = document.createElement('small');
+    du.innerHTML = `Mevcut: <strong style="color:var(--yellow);">${count} / ${max}</strong> · ${item.desc}`;
+    info.append(nm, du);
+
+    const buy = document.createElement('button');
+    buy.type = 'button';
+    buy.className = 'btn small mk-buy' + (isFull ? '' : ' gold');
+    if (isFull) {
+      buy.textContent = 'MAKS';
+      buy.disabled = true;
+    } else {
+      buy.disabled = wallet < cost;
+      buy.append(document.createTextNode(fmt(cost) + ' '), Object.assign(document.createElement('i'), { className: 'coin-ico' }));
+      buy.addEventListener('click', () => {
+        if (shop.buyIronCore()) {
+          paintMarket();
+          if (game.state.mode === 'running') updateHud();
+        }
+      });
+    }
+    row.append(cv, info, buy);
+    el.mkList.appendChild(row);
+  }
+
+  // B) Kahraman Şarjı / Ağ Satın Alma (+1 Şarj)
+  {
+    const item = shop.CONSUMABLE_ITEMS.heroCharge;
+    const skin = game.skin || 'spider';
+    const HERO_SKINS = ['hulk', 'cap', 'miles', 'kitty', 'batman', 'raimi', 'ironman', 'panther'];
+    const isHero = HERO_SKINS.includes(skin);
+    const max = skin === 'raimi' ? 2 : (isHero ? 1 : 3);
+    const cur = (game.state.mode === 'running')
+      ? (game.state.webCharges || 0)
+      : (shop.getPlayerData().bankedHeroCharge || 0);
+    const isFull = cur >= max;
+    const cost = item.cost;
+
+    const row = document.createElement('div');
+    row.className = 'mk-item consumable hero-special';
+    const cv = document.createElement('canvas'); cv.width = cv.height = 96;
+    drawPowerIcon(cv, isHero ? 'heroSpecial' : 'web');
+
+    const info = document.createElement('div'); info.className = 'mk-info';
+    const nm = document.createElement('b');
+    nm.textContent = isHero ? `${skin.toUpperCase()} ŞARJI` : 'AĞ ŞARJI';
+    const du = document.createElement('small');
+    du.innerHTML = `Mevcut: <strong style="color:var(--cyan);">${cur} / ${max}</strong> · ${item.desc}`;
+    info.append(nm, du);
+
+    const buy = document.createElement('button');
+    buy.type = 'button';
+    buy.className = 'btn small mk-buy';
+    if (isFull) {
+      buy.textContent = 'MAKS';
+      buy.disabled = true;
+    } else {
+      buy.disabled = wallet < cost;
+      buy.append(document.createTextNode(fmt(cost) + ' '), Object.assign(document.createElement('i'), { className: 'coin-ico' }));
+      buy.addEventListener('click', () => {
+        if (shop.buyHeroCharge()) {
+          paintMarket();
+          if (game.state.mode === 'running') updateHud();
+        }
+      });
+    }
+    row.append(cv, info, buy);
+    el.mkList.appendChild(row);
+  }
+
+  // 2. SÜRE YÜKSELTMELERİ (DURATION UPGRADES)
+  const secUpgrades = document.createElement('div');
+  secUpgrades.className = 'mk-section-title';
+  secUpgrades.textContent = '🛠️ SÜRE YÜKSELTMELERİ';
+  el.mkList.appendChild(secUpgrades);
+
   for (const key of Object.keys(shop.SKILL_UPGRADE_CONFIG)) {
     const c = shop.SKILL_UPGRADE_CONFIG[key];
     const lvl = shop.getPlayerData().upgrades[key] | 0;
@@ -149,7 +260,7 @@ function paintMarket() {
     const cur = shop.getEffectiveSkillDuration(key);
     const row = document.createElement('div'); row.className = 'mk-item';
     const cv = document.createElement('canvas'); cv.width = cv.height = 96;
-    drawPowerIcon(cv, key === 'magnet' ? 'magnet' : 'sense');
+    drawPowerIcon(cv, key);
     const info = document.createElement('div'); info.className = 'mk-info';
     const nm = document.createElement('b'); nm.textContent = `${c.name} · Sv. ${lvl}`;
     const du = document.createElement('small');
@@ -248,7 +359,8 @@ for (const b of document.querySelectorAll('[data-skin]')) {
     paintSkin();
   });
 }
-onButton(el.mkClose, () => { forced = 'menu'; });
+onButton(el.mkClose, () => { forced = marketReturn || 'menu'; });
+if (el.overMarket) onButton(el.overMarket, openMarket);
 onButton(el.pause, () => game.pause());
 onButton(el.resume, () => game.resume());
 onButton(el.restart, () => { forced = null; game.restart(); });
@@ -259,10 +371,40 @@ onButton(el.share, () => shareScore());
 for (const b of muteButtons) onButton(b, () => { setMuted(!isMuted()); paintMute(); });
 paintMute();
 
+// ---------- repulsor boost & hero special skill buttons ----------
+function triggerHeroSpecial() {
+  if (game.state.mode !== 'running' || game.halted) return;
+  if (game.web && typeof game.web.tryActivate === 'function') {
+    game.web.tryActivate();
+  }
+}
+
+onButton(el.web, () => {
+  triggerHeroSpecial();
+});
+
+onButton(el.repulsor, () => {
+  if (game.repulsor && game.repulsor.available) game.repulsor.activate();
+});
+onButton(el.iron, () => {
+  if (game.iron && game.state.mode === 'running') game.iron.activate();
+});
+
+const HERO_SPECIAL_KEYS = new Set(['KeyE', 'KeyQ', 'KeyF']);
+window.addEventListener('keydown', (e) => {
+  if (HERO_SPECIAL_KEYS.has(e.code)) {
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (game.state && game.state.mode === 'running') {
+      e.preventDefault();
+      triggerHeroSpecial();
+    }
+  }
+});
 // ---------- keyboard ----------
 // Runs before input.js (capture). Outside a run, game keys must not leak into the game
 // (e.g. P / Esc would resume a game that is hidden behind the menu overlay).
-const GAME_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyA', 'KeyD', 'KeyW', 'KeyS', 'Space', 'Enter', 'KeyP', 'Escape']);
+const GAME_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyA', 'KeyD', 'KeyW', 'KeyS', 'Space', 'Enter', 'KeyP', 'Escape', 'KeyQ', 'KeyE', 'KeyF']);
 window.addEventListener('keydown', (e) => {
   if (!GAME_KEYS.has(e.code)) return;
   const tag = e.target && e.target.tagName;
@@ -416,34 +558,159 @@ function updateHud() {
   if (st.score !== cache.score) { cache.score = st.score; el.score.textContent = fmt(st.score); }
   if (st.coins !== cache.coins) { cache.coins = st.coins; el.coins.textContent = fmt(st.coins); }
 
-  if (st.webCharges !== cache.web) {
-    cache.web = st.webCharges;
-    for (let i = 0; i < slots.length; i++) slots[i].classList.toggle('on', i < st.webCharges);
+  const skin = game.skin || 'spider';
+  const HERO_SKINS = ['hulk', 'cap', 'miles', 'kitty', 'batman', 'raimi', 'ironman', 'panther'];
+  const isHero = HERO_SKINS.includes(skin);
+
+  // Karakter skin değiştiğinde Hero Skill göstergesini güncelle (1 slot veya 3 slot)
+  if (skin !== cache.heroSkin) {
+    cache.heroSkin = skin;
+    cache.web = -1; // slotların durumunu güncellemeye zorla
+
+    if (el.web) {
+      el.web.classList.remove(...HERO_SKINS);
+      if (isHero) el.web.classList.add(skin);
+    }
+
+    if (el.webLbl) {
+      if (skin === 'hulk') el.webLbl.textContent = 'HULK SMASH';
+      else if (skin === 'cap') el.webLbl.textContent = 'SHIELD SURF';
+      else if (skin === 'miles') el.webLbl.textContent = 'VENOM BLAST';
+      else if (skin === 'kitty') el.webLbl.textContent = 'UÇAN KALP';
+      else if (skin === 'batman') el.webLbl.textContent = 'GECE PELERİNİ';
+      else if (skin === 'raimi') el.webLbl.textContent = 'MANCINIK AĞ';
+      else if (skin === 'ironman') el.webLbl.textContent = 'UNIBEAM';
+      else if (skin === 'panther') el.webLbl.textContent = 'VİBRANYUM ŞOK';
+      else el.webLbl.textContent = 'AĞ';
+    }
+
+    if (el.webHint) {
+      el.webHint.textContent = coarse ? 'DOKUN' : 'E';
+    }
+
+    if (el.webSlots) {
+      if (skin === 'hulk') {
+        el.webSlots.innerHTML = '<i class="slot"><span class="hero-ico">👊</span></i>';
+      } else if (skin === 'cap') {
+        el.webSlots.innerHTML = '<i class="slot"><span class="hero-ico">🛡️</span></i>';
+      } else if (skin === 'miles') {
+        el.webSlots.innerHTML = '<i class="slot"><span class="hero-ico">⚡</span></i>';
+      } else if (skin === 'kitty') {
+        el.webSlots.innerHTML = `<i class="slot"><span class="hero-ico">${HEART_SVG_ICON}</span></i>`;
+      } else if (skin === 'batman') {
+        el.webSlots.innerHTML = `<i class="slot"><span class="hero-ico">${BAT_SVG_ICON}</span></i>`;
+      } else if (skin === 'raimi') {
+        el.webSlots.innerHTML = `<i class="slot"><span class="hero-ico">${SLINGSHOT_SVG_ICON}</span></i>` +
+                               `<i class="slot"><span class="hero-ico">${SLINGSHOT_SVG_ICON}</span></i>`;
+      } else if (skin === 'ironman') {
+        el.webSlots.innerHTML = `<i class="slot"><span class="hero-ico">${UNIBEAM_SVG_ICON}</span></i>`;
+      } else if (skin === 'panther') {
+        el.webSlots.innerHTML = `<i class="slot"><span class="hero-ico">${VIBRANIUM_SVG_ICON}</span></i>`;
+      } else {
+        el.webSlots.innerHTML = '<i class="slot"><svg><use href="#i-web"/></svg></i>' +
+                               '<i class="slot"><svg><use href="#i-web"/></svg></i>' +
+                               '<i class="slot"><svg><use href="#i-web"/></svg></i>';
+      }
+    }
   }
 
-  const n = st.ironCount | 0;
-  const t = st.ironTime || 0;
-  const active = t > 0;
-  if (active && prevIronTime <= 0) ironMax = t; // value when it switched on = 100 %
-  if (t > ironMax) ironMax = t;
-  prevIronTime = t;
+  // Hero Skill şarj slotlarını güncelle
+  if (st.webCharges !== cache.web) {
+    cache.web = st.webCharges;
+    const currentSlots = el.webSlots ? Array.from(el.webSlots.querySelectorAll('.slot')) : [];
+    if (skin === 'raimi') {
+      if (currentSlots[0]) currentSlots[0].classList.toggle('on', st.webCharges >= 1);
+      if (currentSlots[1]) currentSlots[1].classList.toggle('on', st.webCharges >= 2);
+    } else if (isHero) {
+      if (currentSlots[0]) currentSlots[0].classList.toggle('on', st.webCharges >= 1);
+    } else {
+      for (let i = 0; i < currentSlots.length; i++) {
+        currentSlots[i].classList.toggle('on', i < st.webCharges);
+      }
+    }
+  }
 
-  const show = n > 0 || active;
-  if (show !== cache.ironShow) { cache.ironShow = show; el.iron.hidden = !show; }
+  // Iron Spider rozeti (h-iron): TÜM karakterler için Iron Spider çekirdek sayısını gösterir
+  const n = st.ironCount | 0;
+  const ironActive = Boolean(st.ironTime > 0);
+  const showIron = n > 0 || ironActive;
+  if (showIron !== cache.ironShow) { cache.ironShow = showIron; el.iron.hidden = !showIron; }
   if (n !== cache.ironN) { cache.ironN = n; el.ironN.textContent = String(n); }
-  const hintOn = n > 0 && !active;
+  const hintOn = n > 0 && !ironActive;
   if (hintOn !== cache.hint) { cache.hint = hintOn; el.ironHint.hidden = !hintOn; }
-  if (active !== cache.ironBar) { cache.ironBar = active; el.ironBar.hidden = !active; }
-  if (active) {
-    const k = Math.min(1, Math.max(0, t / ironMax));
-    const q = Math.round(k * 200) / 200;
-    if (q !== cache.barScale) { cache.barScale = q; el.ironFill.style.transform = `scaleX(${q})`; }
-    const low = k < 0.2;
-    if (low !== cache.low) { cache.low = low; el.ironBar.classList.toggle('low', low); }
+
+  // Süre çubuğu (Hero Special yeteneği veya Iron Spider için)
+  const heroSpecActive = Boolean(game.web?.heroSpecials?.active || game.heroSpecials?.active);
+  const ironSuitActive = Boolean(st.ironTime > 0);
+
+  if (heroSpecActive) {
+    const hs = game.web?.heroSpecials || game.heroSpecials;
+    const mode = hs.mode || skin;
+    const cfg = hs.getHeroConfig(mode);
+    if (el.ironLbl) el.ironLbl.textContent = cfg ? cfg.label : 'ÖZEL YETENEK';
+    if (el.ironBar) {
+      el.ironBar.hidden = false;
+      el.ironBar.classList.remove(...HERO_SKINS);
+      el.ironBar.classList.add(mode);
+      let k = 0;
+      if (mode === 'batman') {
+        const curDist = (typeof st.distance === 'number') ? st.distance : (hs.startDistance || 0);
+        const startDist = hs.startDistance || 0;
+        k = Math.min(1, Math.max(0, (800 - (curDist - startDist)) / 800));
+      } else {
+        k = Math.min(1, Math.max(0, hs.timeRemaining / (hs.maxTime || 1)));
+      }
+      const q = Math.round(k * 200) / 200;
+      if (q !== cache.barScale) { cache.barScale = q; el.ironFill.style.transform = `scaleX(${q})`; }
+      const low = k < 0.2;
+      if (low !== cache.low) { cache.low = low; el.ironBar.classList.toggle('low', low); }
+    }
+  } else if (ironSuitActive) {
+    const t = st.ironTime || 0;
+    if (t > 0 && prevIronTime <= 0) ironMax = t;
+    if (t > ironMax) ironMax = t;
+    prevIronTime = t;
+
+    if (el.ironLbl) el.ironLbl.textContent = 'IRON SPIDER';
+    if (el.ironBar) {
+      el.ironBar.hidden = false;
+      el.ironBar.classList.remove(...HERO_SKINS);
+      const k = Math.min(1, Math.max(0, t / (ironMax || 1)));
+      const q = Math.round(k * 200) / 200;
+      if (q !== cache.barScale) { cache.barScale = q; el.ironFill.style.transform = `scaleX(${q})`; }
+      const low = k < 0.2;
+      if (low !== cache.low) { cache.low = low; el.ironBar.classList.toggle('low', low); }
+    }
+  } else {
+    prevIronTime = 0;
+    if (el.ironBar) {
+      el.ironBar.hidden = true;
+      el.ironBar.classList.remove(...HERO_SKINS);
+    }
   }
 
   updateTimer(timers[0], st.senseTime || 0);
   updateTimer(timers[1], st.magnetTime || 0);
+
+  // Repulsor boost button (Iron Man fly skill)
+  if (el.repulsor && game.repulsor) {
+    const rep = game.repulsor;
+    const wl = rep.windowLeft;
+    const shouldShow = !st.intro && st.mode === 'running' && wl > 0 && !rep.active && !rep.used;
+    if (shouldShow !== cache.repulsorShow) {
+      cache.repulsorShow = shouldShow;
+      el.repulsor.hidden = !shouldShow;
+    }
+    if (shouldShow) {
+      const txt = Math.ceil(wl) + 's';
+      if (txt !== cache.repulsorText) {
+        cache.repulsorText = txt;
+        el.repulsorTimer.textContent = ' ' + txt;
+      }
+      // Blink when < 3s left
+      el.repulsor.classList.toggle('low', wl < 3);
+    }
+  }
 }
 
 // ---------- frame loop ----------

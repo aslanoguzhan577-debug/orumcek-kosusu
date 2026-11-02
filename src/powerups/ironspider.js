@@ -36,7 +36,8 @@ const _grab = new THREE.Vector3();
 
 function loadCount() {
   try {
-    const n = parseInt(localStorage.getItem(I.storageKey), 10);
+    const raw = localStorage.getItem(I.storageKey) || localStorage.getItem('orumcek_kosusu_iron_count');
+    const n = parseInt(raw, 10);
     return Number.isFinite(n) ? Math.min(I.maxCount, Math.max(0, n)) : 0;
   } catch (e) {
     return 0;
@@ -46,6 +47,7 @@ function loadCount() {
 function saveCount(n) {
   try {
     localStorage.setItem(I.storageKey, String(n));
+    localStorage.setItem('orumcek_kosusu_iron_count', String(n));
   } catch (e) { /* private mode etc. */ }
 }
 
@@ -82,10 +84,11 @@ export class IronSpiderPowerup {
     chaser.hooks.absorbCatch = () => this._absorb();
   }
 
-  // Run start / menu: drop the suit, no refund.
+  // Run start / menu: drop the suit, reload persistent cores.
   reset() {
     if (this.active) this._suitOff(false);
     game.state.ironTime = 0;
+    game.state.ironCount = loadCount();
   }
 
   // Pattern extra: one roll per block always (the shared track stays identical), then a
@@ -110,7 +113,13 @@ export class IronSpiderPowerup {
     st.ironCount--;
     saveCount(st.ironCount);
     this.active = true;
-    st.ironTime = I.duration;
+    let dur = I.duration;
+    try {
+      const saved = JSON.parse(localStorage.getItem('orumcek_kosusu_save'));
+      const lv = Number(saved?.upgrades?.ironSpider);
+      if (Number.isFinite(lv) && lv > 0) dur += lv * 0.5;
+    } catch (e) {}
+    st.ironTime = dur;
     this.player.useModel(this.ironModel);
     emit('ironOn');
     return true;

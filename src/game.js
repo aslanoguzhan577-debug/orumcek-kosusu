@@ -39,6 +39,7 @@ export const game = {
   // distance stop; the player and systems' update(dt) still run so the catch can play.
   // Systems that move or collide check game.halted.
   halted: false,
+  speedOverride: null,
 
   // Placeholder control: while true, a tap / any key starts the run from the menu,
   // a tap resumes from pause and restarts after game over.
@@ -154,9 +155,13 @@ export const game = {
 
     if (running && !this.halted) {
       state.time += dt;
-      const accel = state.speed < CONFIG.cruiseSpeed ? CONFIG.acceleration
-        : state.speed < CONFIG.maxSpeed ? CONFIG.acceleration2 : CONFIG.acceleration3;
-      state.speed = Math.min(CONFIG.topSpeed, state.speed + accel * dt);
+      if (this.speedOverride != null) {
+        state.speed = this.speedOverride;
+      } else {
+        const accel = state.speed < CONFIG.cruiseSpeed ? CONFIG.acceleration
+          : state.speed < CONFIG.maxSpeed ? CONFIG.acceleration2 : CONFIG.acceleration3;
+        state.speed = Math.min(CONFIG.topSpeed, state.speed + accel * dt);
+      }
       state.distance += state.speed * dt;
       this.world.update(dt, state.speed);
       for (const s of this.systems) if (s.beforePlayer) s.beforePlayer(dt);
@@ -178,6 +183,7 @@ export const game = {
     state.speed = CONFIG.startSpeed;
     state.webCharges = 0;
     this.halted = false;
+    this.speedOverride = null;
     state.ironTime = 0;
     // state.ironCount is persistent inventory (G10 loads/saves it) — left alone.
     this.world.reset();

@@ -128,7 +128,8 @@ export class Obstacles {
 
     this.hooks = {
       onFrontHit: () => false,
-      onSideHit: () => {},
+      onSideHit: () => false,
+      onSideStumble: () => {},
       onCrash: () => {
         this.player.setOverride('caught', Infinity);
         this.player.controlsLocked = true;
@@ -414,12 +415,14 @@ export class Obstacles {
     const p = this.player;
     const hit = { kind, obstacle: o, position: this._hitPos.set(p.x, p.y + 0.8, -CONFIG.playerDepth / 2) };
     if (kind === 'side') {
+      if (this.hooks.onSideHit && this.hooks.onSideHit(hit)) return; // absorbed (G10 Hulk Smash)
       if (this._sideHitTimer > 0) return;
       this._sideHitTimer = O.sideHitCooldown;
       p.bounceBack();
       p.setOverride('stumble', O.stumbleTime);
       emit('stumble', { position: hit.position.clone() });
-      this.hooks.onSideHit(hit);
+      if (this.hooks.onSideStumble) this.hooks.onSideStumble(hit);
+      else if (this.hooks.onSideHit) this.hooks.onSideHit(hit);
       return;
     }
     if (this.hooks.onFrontHit(hit)) return; // absorbed (G10)

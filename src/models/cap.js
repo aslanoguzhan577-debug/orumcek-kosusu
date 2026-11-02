@@ -98,6 +98,7 @@ const CAP_LOOK = {
 function addShield(parts) {
   const R = 0.15;
   const g = new THREE.Group();
+  g.name = 'capArmShield';
   g.position.set(-0.085, -0.06, 0);
   const layer = (geo, color, x, line) => {
     geo.rotateZ(Math.PI / 2); // axis along X

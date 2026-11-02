@@ -308,6 +308,140 @@
   box-shadow: 3px 3px 0 var(--ink);
   padding: 4px 8px;
   transform: rotate(-1deg);
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition: transform .12s, box-shadow .12s;
+}
+#ui .web-gauge:active {
+  transform: scale(0.94) rotate(-1deg);
+}
+#ui .web-gauge.ready {
+  animation: ui-gauge-pulse 1.4s ease-in-out infinite;
+}
+#ui .web-gauge.active {
+  animation: ui-gauge-active .6s ease-in-out infinite alternate;
+}
+@keyframes ui-gauge-pulse {
+  0%, 100% { transform: rotate(-1deg) scale(1); }
+  50% { transform: rotate(-1deg) scale(1.05); }
+}
+@keyframes ui-gauge-active {
+  0% { transform: rotate(-1deg) scale(1.02); filter: brightness(1.2); }
+  100% { transform: rotate(-1deg) scale(1.08); filter: brightness(1.4); }
+}
+
+#ui .web-gauge.hulk {
+  background: linear-gradient(180deg, #1b4712, #0a2104);
+  border-color: #55ee11;
+  box-shadow: 0 0 10px rgba(85, 238, 17, .55), 3px 3px 0 var(--ink);
+}
+#ui .web-gauge.hulk .lbl { color: #88ff33; font-weight: 800; text-shadow: 0 0 6px rgba(100, 255, 30, .8); }
+#ui .web-gauge.hulk .slot { border-color: #44aa11; background: #0e2905; }
+#ui .web-gauge.hulk .slot.on {
+  background: #39ff14;
+  border-color: #ffffff;
+  color: #0d2605;
+  box-shadow: 0 0 14px rgba(57, 255, 20, .95);
+}
+
+#ui .web-gauge.cap {
+  background: linear-gradient(180deg, #15346b, #091738);
+  border-color: #00d9ff;
+  box-shadow: 0 0 10px rgba(0, 217, 255, .55), 3px 3px 0 var(--ink);
+}
+#ui .web-gauge.cap .lbl { color: #80dfff; font-weight: 800; text-shadow: 0 0 6px rgba(0, 217, 255, .8); }
+#ui .web-gauge.cap .slot { border-color: #1a4f94; background: #0c1c42; }
+#ui .web-gauge.cap .slot.on {
+  background: #ffffff;
+  border-color: #cc1824;
+  color: #1b4da6;
+  box-shadow: 0 0 14px rgba(0, 217, 255, .95);
+}
+
+#ui .web-gauge.miles {
+  background: linear-gradient(180deg, #422600, #1a0f00);
+  border-color: #ffaa00;
+  box-shadow: 0 0 10px rgba(255, 170, 0, .55), 3px 3px 0 var(--ink);
+}
+#ui .web-gauge.miles .lbl { color: #ffcc00; font-weight: 800; text-shadow: 0 0 6px rgba(255, 180, 0, .8); }
+#ui .web-gauge.miles .slot { border-color: #8f5500; background: #261500; }
+#ui .web-gauge.miles .slot.on {
+  background: #ffea00;
+  border-color: #ffffff;
+  color: #ff3300;
+  box-shadow: 0 0 14px rgba(255, 234, 0, .95);
+}
+
+#ui .web-gauge.kitty {
+  background: linear-gradient(180deg, #5c1432, #240713);
+  border-color: #ff66b2;
+  box-shadow: 0 0 10px rgba(255, 102, 178, .55), 3px 3px 0 var(--ink);
+}
+#ui .web-gauge.kitty .lbl { color: #ff94c2; font-weight: 800; text-shadow: 0 0 6px rgba(255, 20, 147, .8); }
+#ui .web-gauge.kitty .slot { border-color: #c7005a; background: #330017; }
+#ui .web-gauge.kitty .slot.on {
+  background: #ff66b2;
+  border-color: #ffffff;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(255, 20, 147, .95);
+}
+
+#ui .web-gauge.batman {
+  background: linear-gradient(180deg, #23232b, #0d0d12);
+  border-color: #ffe600;
+  box-shadow: 0 0 10px rgba(255, 230, 0, .55), 3px 3px 0 var(--ink);
+}
+#ui .web-gauge.batman .lbl { color: #ffe600; font-weight: 800; text-shadow: 0 0 6px rgba(255, 230, 0, .8); }
+#ui .web-gauge.batman .slot { border-color: #555566; background: #121218; }
+#ui .web-gauge.batman .slot.on {
+  background: #ffe600;
+  border-color: #ffffff;
+  color: #121218;
+  box-shadow: 0 0 14px rgba(255, 230, 0, .95);
+}
+
+#ui .web-gauge.raimi {
+  background: linear-gradient(180deg, #4a1014, #1a0608);
+  border-color: #ee2222;
+  box-shadow: 0 0 10px rgba(238, 34, 34, .55), 3px 3px 0 var(--ink);
+}
+#ui .web-gauge.raimi .lbl { color: #ff6666; font-weight: 800; text-shadow: 0 0 6px rgba(238, 34, 34, .8); }
+#ui .web-gauge.raimi .slot { border-color: #881111; background: #260507; }
+#ui .web-gauge.raimi .slot.on {
+  background: #ffffff;
+  border-color: #ee2222;
+  color: #ee2222;
+  box-shadow: 0 0 14px rgba(238, 34, 34, .95);
+}
+
+#ui .web-gauge.ironman {
+  background: linear-gradient(180deg, #103444, #061822);
+  border-color: #00e5ff;
+  box-shadow: 0 0 10px rgba(0, 229, 255, .55), 3px 3px 0 var(--ink);
+}
+#ui .web-gauge.ironman .lbl { color: #00e5ff; font-weight: 800; text-shadow: 0 0 6px rgba(0, 229, 255, .8); }
+#ui .web-gauge.ironman .slot { border-color: #007799; background: #08222e; }
+#ui .web-gauge.ironman .slot.on {
+  background: #00e5ff;
+  border-color: #ffffff;
+  color: #061822;
+  box-shadow: 0 0 14px rgba(0, 229, 255, .95);
+}
+
+#ui .web-gauge.panther {
+  background: linear-gradient(180deg, #2d0e4a, #130422);
+  border-color: #c77dff;
+  box-shadow: 0 0 10px rgba(199, 125, 255, .55), 3px 3px 0 var(--ink);
+}
+#ui .web-gauge.panther .lbl { color: #c77dff; font-weight: 800; text-shadow: 0 0 6px rgba(199, 125, 255, .8); }
+#ui .web-gauge.panther .slot { border-color: #5a189a; background: #1c0630; }
+#ui .web-gauge.panther .slot.on {
+  background: #c77dff;
+  border-color: #ffffff;
+  color: #240046;
+  box-shadow: 0 0 14px rgba(199, 125, 255, .95);
 }
 #ui .web-gauge .lbl { color: #fff; margin-right: 2px; }
 #ui .slot {
@@ -323,6 +457,12 @@
 #ui .slot.on { background: #fff; border-color: #fff; color: var(--blue); transform: scale(1.08); box-shadow: 0 0 8px rgba(255, 255, 255, .8); }
 
 #ui .iron-badge {
+  appearance: none;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
   display: flex; align-items: center; gap: 6px;
   background: linear-gradient(180deg, #ffe27a, #ffb800);
   border: 3px solid var(--ink);
@@ -330,6 +470,28 @@
   box-shadow: 3px 3px 0 var(--ink);
   padding: 2px 10px 2px 6px;
   transform: rotate(1.5deg);
+  transition: transform .08s, box-shadow .08s;
+}
+#ui .iron-badge:active {
+  transform: translateY(2px) rotate(1.5deg);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+#ui .web-gauge .key-hint {
+  font-family: var(--font-b);
+  font-size: 11px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.2;
+}
+#ui .slot .hero-ico { font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+#ui .slot .hero-ico svg { width: 18px; height: 18px; display: block; }
+#ui .mk-item.consumable {
+  background: rgba(255, 215, 0, 0.08);
+  border-left: 4px solid var(--gold);
 }
 #ui .iron-ico { width: 28px; height: 28px; color: var(--red-d); display: flex; }
 #ui .iron-ico svg { width: 100%; height: 100%; }
@@ -356,6 +518,32 @@
   will-change: transform;
 }
 #ui .ironbar.low .fill { animation: ui-blink .45s infinite; }
+
+/* Hero Ultimate Skill HUD bars */
+#ui .ironbar.hulk .fill { background: linear-gradient(180deg, #a3f75e, #5dbb1e 55%, #1d6e07); }
+#ui .ironbar.cap .fill { background: linear-gradient(180deg, #ffffff, #2556b4 55%, #c4202d); }
+#ui .ironbar.miles .fill { background: linear-gradient(180deg, #fff77a, #ffaa00 55%, #ff2200); }
+#ui .ironbar.kitty .fill { background: linear-gradient(180deg, #ffb6c1, #ff66b2 55%, #ff1493); }
+#ui .ironbar.batman .fill { background: linear-gradient(180deg, #ffe600, #4a4a5a 55%, #1a1a24); }
+#ui .ironbar.raimi .fill { background: linear-gradient(180deg, #ffffff, #ee2222 55%, #880000); }
+#ui .ironbar.ironman .fill { background: linear-gradient(180deg, #00e5ff, #ffcc00 55%, #e63946); }
+#ui .ironbar.panther .fill { background: linear-gradient(180deg, #c77dff, #7b2cbf 55%, #240046); }
+
+#ui .iron-badge.hulk { background: linear-gradient(180deg, #c7ffa1, #7ec93a); color: #0d2605; }
+#ui .iron-badge.cap { background: linear-gradient(180deg, #e3eeff, #4582f4); color: #0a1b42; }
+#ui .iron-badge.miles { background: linear-gradient(180deg, #fff77a, #ff9900); color: #3b1d00; }
+#ui .iron-badge.kitty { background: linear-gradient(180deg, #ffb6c1, #ff66b2); color: #400018; }
+#ui .iron-badge.batman { background: linear-gradient(180deg, #ffe600, #333340); color: #ffe600; }
+#ui .iron-badge.raimi { background: linear-gradient(180deg, #ffffff, #ee2222); color: #330000; }
+#ui .iron-badge.ironman { background: linear-gradient(180deg, #00e5ff, #f2b705); color: #061822; }
+#ui .iron-badge.panther { background: linear-gradient(180deg, #c77dff, #7b2cbf); color: #1a0033; }
+
+/* Hero Skill action button styles */
+.hero-btn.kitty { border-color: #ff66b2; background: #330017; color: #ff66b2; }
+.hero-btn.batman { border-color: #ffe600; background: #121218; color: #ffe600; }
+.hero-btn.raimi { border-color: #ee2222; background: #260507; color: #ee2222; }
+.hero-btn.ironman { border-color: #00e5ff; background: #08222e; color: #00e5ff; }
+.hero-btn.panther { border-color: #c77dff; background: #1c0630; color: #c77dff; }
 
 /* Örümcek hissi / Mıknatıs: icon + shrinking bar, blinks in the last 20 % */
 #ui .hud-timers { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
@@ -496,13 +684,42 @@
 #ui .wallet { display: flex; align-items: center; gap: 8px; background: #fff; border: 3px solid var(--ink); border-radius: 12px; box-shadow: 3px 3px 0 var(--ink); padding: 6px 14px; transform: rotate(-1deg); }
 #ui .wallet b { font-family: var(--font-h); font-weight: 400; font-size: 32px; letter-spacing: .05em; line-height: 1; }
 #ui .wallet span { font-weight: 800; font-size: 14px; color: #4a4f66; }
-#ui .mk-list { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+#ui .mk-list { display: flex; flex-direction: column; gap: 10px; width: 100%; max-height: 56vh; overflow-y: auto; padding: 4px; }
+#ui .mk-section-title {
+  font-family: var(--font-h);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: #fff;
+  text-shadow: 2px 2px 0 var(--ink);
+  background: var(--blue);
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  box-shadow: 2px 2px 0 var(--ink);
+  padding: 4px 10px;
+  margin: 6px 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 #ui .mk-item { display: flex; align-items: center; gap: 10px; background: #fff; border: 3px solid var(--ink); border-radius: 14px; box-shadow: 3px 3px 0 var(--ink); padding: 8px 10px; }
+#ui .mk-item.consumable { background: #fff; border-left: 6px solid var(--yellow); }
+#ui .mk-item.consumable.iron-spider {
+  background: linear-gradient(135deg, #fff 0%, #fffbf0 100%);
+  border-left: 6px solid #ff9900;
+  box-shadow: 0 0 10px rgba(255, 153, 0, 0.25), 3px 3px 0 var(--ink);
+}
+#ui .mk-item.consumable.hero-special {
+  background: linear-gradient(135deg, #fff 0%, #f0f7ff 100%);
+  border-left: 6px solid #0088ff;
+  box-shadow: 0 0 10px rgba(0, 136, 255, 0.25), 3px 3px 0 var(--ink);
+}
 #ui .mk-item canvas { width: 48px; height: 48px; flex: none; }
 #ui .mk-info { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.1; }
 #ui .mk-info b { font-family: var(--font-h); font-weight: 400; font-size: 22px; letter-spacing: .05em; color: var(--blue); }
 #ui .mk-info small { font-size: 13px; font-weight: 800; color: #4a4f66; }
 #ui .mk-buy { flex: none; min-width: 88px; min-height: 52px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: var(--yellow); color: var(--ink); text-shadow: none; transform: none; }
+#ui .mk-buy.gold { background: linear-gradient(180deg, #ffeb60, #f5a623); font-weight: 900; }
 #ui .mk-buy .coin-ico { width: 22px; height: 22px; }
 #ui .mk-buy:disabled { opacity: .45; cursor: default; box-shadow: 0 3px 0 var(--ink); }
 
@@ -530,3 +747,76 @@
 #ui .skin-ico.batman { background: #1c1c24; }
 #ui .skin-ico.cap { background: #1d4ed8; }
 #ui .skin-ico.hulk { background: #3f8f2f; }
+
+
+/* ---------- Repulsor Boost (Iron Man fly skill button, bottom-left) ---------- */
+#ui .repulsor-btn {
+  position: absolute;
+  left: max(14px, env(safe-area-inset-left));
+  bottom: max(22px, calc(env(safe-area-inset-bottom) + 14px));
+  z-index: 10;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 16px 5px 6px;
+  border: 4px solid var(--ink);
+  border-radius: 24px;
+  box-shadow: 0 5px 0 var(--ink), 0 0 20px rgba(255,180,40,.5);
+  background: linear-gradient(180deg, #ffe27a 0%, #ffb800 50%, #e0262c 100%);
+  color: var(--ink);
+  font-family: var(--font-h);
+  font-size: 22px;
+  letter-spacing: .06em;
+  line-height: 1;
+  pointer-events: auto;
+  cursor: pointer;
+  transform: rotate(-2deg);
+  transition: transform .08s, box-shadow .08s, opacity .25s;
+  animation: repulsor-pulse 1.4s ease-in-out infinite;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+#ui .repulsor-btn:active {
+  transform: translateY(4px) rotate(-2deg);
+  box-shadow: 0 1px 0 var(--ink), 0 0 10px rgba(255,180,40,.3);
+}
+#ui .repulsor-btn .repulsor-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: #0d0d14;
+  box-shadow: 0 0 8px rgba(200, 250, 255, .8);
+  object-fit: cover;
+  object-position: center;
+  flex: none;
+  display: block;
+}
+#ui .repulsor-btn .repulsor-txt {
+  display: inline-block;
+  line-height: 1;
+}
+#ui .repulsor-btn .repulsor-timer {
+  font-size: 16px;
+  font-family: var(--font-b);
+  font-weight: 800;
+  opacity: .75;
+}
+#ui .repulsor-btn.low {
+  animation: repulsor-blink .4s infinite;
+}
+@keyframes repulsor-pulse {
+  0%, 100% { box-shadow: 0 5px 0 var(--ink), 0 0 14px rgba(255,180,40,.4); }
+  50% { box-shadow: 0 5px 0 var(--ink), 0 0 28px rgba(255,210,58,.7); }
+}
+@keyframes repulsor-blink {
+  50% { opacity: .4; }
+}
+@media (max-height: 560px) {
+  #ui .repulsor-btn { font-size: 18px; padding: 4px 12px 4px 5px; }
+  #ui .repulsor-btn .repulsor-img { width: 36px; height: 36px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #ui .repulsor-btn { animation: none; }
+}

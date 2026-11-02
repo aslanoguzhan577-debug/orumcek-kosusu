@@ -108,6 +108,7 @@ export class Player {
       case 'up': this._up(); break;
       case 'down': this._down(); break;
       case 'double': this.hooks.onDoubleAction(this); break;
+      case 'special': if (game.web) game.web.tryActivate(); break;
       default: break; // 'tap' does nothing while running
     }
   }

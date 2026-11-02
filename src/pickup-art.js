@@ -376,13 +376,118 @@ function drawMagnet2D(g, S) {
 }
 
 // HUD icon: draws into an existing canvas (any square size)
+function drawIronSpider2D(g, S) {
+  const c = S / 2;
+  const r = S * 0.44;
+  g.fillStyle = '#111111';
+  g.beginPath(); g.arc(c, c, r + S * 0.03, 0, Math.PI * 2); g.fill();
+  const grad = g.createRadialGradient(c - r * 0.3, c - r * 0.3, r * 0.1, c, c, r);
+  grad.addColorStop(0, '#e0262c');
+  grad.addColorStop(0.7, '#8a1014');
+  grad.addColorStop(1, '#3b0608');
+  g.fillStyle = grad;
+  g.beginPath(); g.arc(c, c, r, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#f6b73c';
+  g.lineWidth = S * 0.045;
+  g.beginPath(); g.arc(c, c, r * 0.84, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = '#111111';
+  g.lineWidth = S * 0.015;
+  g.stroke();
+  const ss = S * 0.65;
+  g.save();
+  g.translate(c - ss / 2, c - ss / 2);
+  drawSpider(g, ss, '#ffdc40');
+  g.restore();
+}
+
+function drawHeroSpecial2D(g, S) {
+  const c = S / 2;
+  const r = S * 0.44;
+  const pts = 10;
+  g.fillStyle = '#111111';
+  g.beginPath();
+  for (let i = 0; i < pts * 2; i++) {
+    const a = (i * Math.PI) / pts - Math.PI / 2;
+    const rad = (i % 2 === 0 ? r + S * 0.04 : r * 0.72);
+    const x = c + Math.cos(a) * rad;
+    const y = c + Math.sin(a) * rad;
+    if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  }
+  g.closePath();
+  g.fill();
+
+  const burstGrad = g.createRadialGradient(c, c, r * 0.1, c, c, r);
+  burstGrad.addColorStop(0, '#fff455');
+  burstGrad.addColorStop(0.5, '#ffaa00');
+  burstGrad.addColorStop(1, '#dc2626');
+  g.fillStyle = burstGrad;
+  g.beginPath();
+  for (let i = 0; i < pts * 2; i++) {
+    const a = (i * Math.PI) / pts - Math.PI / 2;
+    const rad = (i % 2 === 0 ? r : r * 0.75);
+    const x = c + Math.cos(a) * rad;
+    const y = c + Math.sin(a) * rad;
+    if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  }
+  g.closePath();
+  g.fill();
+
+  const bolt = () => {
+    g.beginPath();
+    g.moveTo(c + S * 0.04, c - S * 0.30);
+    g.lineTo(c - S * 0.16, c - S * 0.02);
+    g.lineTo(c - S * 0.01, c - S * 0.02);
+    g.lineTo(c - S * 0.10, c + S * 0.30);
+    g.lineTo(c + S * 0.18, c + S * 0.02);
+    g.lineTo(c + S * 0.03, c + S * 0.02);
+    g.closePath();
+  };
+  g.strokeStyle = '#111111';
+  g.lineWidth = S * 0.065;
+  g.lineJoin = 'miter';
+  bolt();
+  g.stroke();
+  g.fillStyle = '#ffffff';
+  g.fill();
+}
+
+function drawWebIcon2D(g, S) {
+  const c = S / 2;
+  const r = S * 0.44;
+  g.fillStyle = '#111111';
+  g.beginPath();
+  g.arc(c, c, r + S * 0.03, 0, Math.PI * 2);
+  g.fill();
+
+  const grad = g.createRadialGradient(c - r * 0.3, c - r * 0.3, r * 0.1, c, c, r);
+  grad.addColorStop(0, '#2b7fff');
+  grad.addColorStop(0.7, '#1442bb');
+  grad.addColorStop(1, '#081c59');
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(c, c, r, 0, Math.PI * 2);
+  g.fill();
+
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = S * 0.02;
+  g.stroke();
+
+  drawWeb(g, S * 0.85);
+}
+
 export function drawPowerIcon(canvas, kind) {
   const g = canvas.getContext('2d');
   const S = canvas.width;
   g.clearRect(0, 0, S, S);
-  if (kind === 'sense') {
+  if (kind === 'sense' || kind === 'spiderSense') {
     drawSenseBolts(g, S, S >= 160);
     drawSenseHead2D(g, S);
+  } else if (kind === 'ironSpider' || kind === 'iron' || kind === 'ironCore') {
+    drawIronSpider2D(g, S);
+  } else if (kind === 'heroSpecial' || kind === 'heroCharge') {
+    drawHeroSpecial2D(g, S);
+  } else if (kind === 'web') {
+    drawWebIcon2D(g, S);
   } else {
     drawMagnet2D(g, S);
   }

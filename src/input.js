@@ -24,6 +24,7 @@ const KEYMAP = {
   Space: 'double',
   Enter: 'tap',
   KeyP: 'pause', Escape: 'pause',
+  KeyQ: 'special', KeyE: 'special', KeyF: 'special',
 };
 
 function isTypingTarget(el) {
