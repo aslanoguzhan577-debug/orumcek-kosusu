@@ -468,10 +468,13 @@ function infoFor(geo, H) {
   };
 }
 
-function limbMat(paint, geo, w, h, matOpts, yShift = 0) {
+// glow (optional): paints an emissive map the same way (Iron Man repulsors / boot jets)
+function limbMat(paint, geo, w, h, matOpts, yShift = 0, glow = null) {
   const info = infoFor(geo, h);
-  const map = canvasTexture(w, h, (g, W, H) => paint(g, W, H, { ...info, yToPx: (y) => info.yToPx(y - yShift) }));
-  return toonMaterial(0xffffff, { map, ...SATIN, ...matOpts });
+  const draw = (fn) => canvasTexture(w, h, (g, W, H) => fn(g, W, H, { ...info, yToPx: (y) => info.yToPx(y - yShift) }));
+  const map = draw(paint);
+  const lit = glow ? { emissive: 0xffffff, emissiveMap: draw(glow) } : {};
+  return toonMaterial(0xffffff, { map, ...lit, ...SATIN, ...matOpts });
 }
 
 // rounded-cube blob (fist, boot), its UVs squeezed into a strip of the limb texture
@@ -508,6 +511,7 @@ function bakeHead(headGeo, look, lensScale = 1) {
   const d = new THREE.Vector3(), p = new THREE.Vector3();
   const grid = sphereGrid(headGeo);
   const tmp = [0, 0, 0];
+  const headP = look.headPaint && look.headPaint.length > 3;
   return bakeTextures(1024, 512, ([col, glow], u, v) => {
     col[0] = base[0]; col[1] = base[1]; col[2] = base[2];
     sphereDir(u, v, d);
@@ -515,6 +519,9 @@ function bakeHead(headGeo, look, lensScale = 1) {
       const a = headWeb(d, web) * (web.opacity ?? 1);
       if (a > 0) for (let i = 0; i < 3; i++) col[i] += (line[i] - col[i]) * a;
     }
+    // optional per-skin painting by direction / surface point (hoods, helmets, hair...);
+    // the surface point is only looked up for a headPaint(col, glow, d, p) that takes it
+    if (look.headPaint) look.headPaint(col, glow, d, headP && grid.at(u, v, p));
     if (d.z < -0.05) {
       grid.at(u, v, p);
       tmp[0] = 0; tmp[1] = 0; tmp[2] = 0;
@@ -522,7 +529,7 @@ function bakeHead(headGeo, look, lensScale = 1) {
       if (a > 0) {
         for (let i = 0; i < 3; i++) col[i] = col[i] * (1 - a) + tmp[i];
         const lum = (tmp[0] + tmp[1] + tmp[2]) / (3 * a);
-        if (lum > 120) for (let i = 0; i < 3; i++) glow[i] = tmp[i];
+        if (lum > (look.glowLum ?? 120)) for (let i = 0; i < 3; i++) glow[i] = tmp[i];
       }
     }
   }, 2);
@@ -532,13 +539,18 @@ function bakeTorso(torsoGeo, look) {
   const k = 900;
   const front = flatPicture(-0.27, 0.27, -0.12, 0.5, k, 'front', (g, toPx) => look.torsoFront(g, toPx, k));
   const back = flatPicture(-0.27, 0.27, -0.12, 0.5, k, 'back', (g, toPx) => look.torsoBack(g, toPx, k));
+  // optional glow pictures (look.torsoGlow(g, toPx, k, front)): second texture = emissive map
+  const tg = look.torsoGlow;
+  const glowF = tg && flatPicture(-0.27, 0.27, -0.12, 0.5, k, 'front', (g, toPx) => tg(g, toPx, k, true));
+  const glowB = tg && flatPicture(-0.27, 0.27, -0.12, 0.5, k, 'back', (g, toPx) => tg(g, toPx, k, false));
   const base = rgb(look.torsoBase);
   const grid = latheGrid(torsoGeo), p = new THREE.Vector3();
-  return bakeTextures(512, 256, ([col], u, v) => {
+  return bakeTextures(512, 256, ([col, glow], u, v) => {
     col[0] = base[0]; col[1] = base[1]; col[2] = base[2];
     grid.at(u, v, p);
     (p.z < 0 ? front : back).over(p.x, p.y, col);
-  })[0];
+    if (tg) (p.z < 0 ? glowF : glowB).over(p.x, p.y, glow);
+  }, tg ? 2 : 1);
 }
 
 // look: paint functions + material options (see SPIDER_LOOK).
@@ -572,7 +584,9 @@ export function createSpiderCharacter(look, extras = {}) {
   smoothNormals(boxify(torsoGeo, 3.2));
   // All textures are baked here at build time (main.js builds the models behind the loading
   // screen): nothing may be baked later, in the middle of play.
-  const torsoMat = toonMaterial(0xffffff, { map: bakeTorso(torsoGeo, look), ...SATIN, ...mo.torso });
+  const torsoMaps = bakeTorso(torsoGeo, look);
+  const torsoGlow = torsoMaps[1] ? { emissive: 0xffffff, emissiveMap: torsoMaps[1] } : {};
+  const torsoMat = toonMaterial(0xffffff, { map: torsoMaps[0], ...torsoGlow, ...SATIN, ...mo.torso });
   const torso = mesh(torsoGeo, torsoMat);
   spine.add(torso);
 
@@ -616,7 +630,7 @@ export function createSpiderCharacter(look, extras = {}) {
   fist.translate(0, -D.fistY, -0.006);
   const foreGeo = mergeGeos([foreLathe, fist]);
   const upperMat = limbMat(look.arm, upperGeo, 256, 256, mo.arm);
-  const foreMat = limbMat(look.fore, foreLathe, 256, 256, mo.arm);
+  const foreMat = limbMat(look.fore, foreLathe, 256, 256, mo.arm, 0, look.foreGlow);
   const upperGeoL = mirrorX(upperGeo);
   const foreGeoL = mirrorX(foreGeo);
   function arm(side) {
@@ -653,7 +667,7 @@ export function createSpiderCharacter(look, extras = {}) {
   boot.translate(0, -kneeY + 0.06, -0.045);
   const shinGeo = mergeGeos([shinLathe, boot]);
   const thighMat = limbMat(look.thigh, thighGeo, 128, 128, mo.thigh);
-  const shinMat = limbMat(look.shin, shinLathe, 256, 256, mo.shin);
+  const shinMat = limbMat(look.shin, shinLathe, 256, 256, mo.shin, 0, look.shinGlow);
   const thighGeoL = mirrorX(thighGeo);
   const shinGeoL = mirrorX(shinGeo);
 

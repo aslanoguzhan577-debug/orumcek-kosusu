@@ -60,7 +60,7 @@
   <div class="message" id="message" hidden></div>
 
   <script type="module">
-    // viewer.html — preview one model at a time: viewer.html?model=placeholder|spiderman|ironspider|venom
+    // viewer.html — preview one model at a time: viewer.html?model=<key> (see MODELS)
     // Same toon lighting as the game (src/lights.js). Checks the model interface
     // { root, setState(name), update(dt) } and shows its height against CONFIG.playerHeight.
     import * as THREE from 'three';
@@ -78,6 +78,16 @@
       spiderman:     { label: 'Spider-Man',  file: 'src/models/spiderman.js',  fn: 'createSpiderman',  states: PLAYER_STATES },
       ironspider:    { label: 'Iron Spider', file: 'src/models/ironspider.js', fn: 'createIronSpider', states: PLAYER_STATES },
       venom:         { label: 'Venom',       file: 'src/models/venom.js',      fn: 'createVenom',      states: VENOM_STATES },
+      kitty:         { label: 'Hello Kitty',  file: 'src/models/hellokitty.js', fn: 'createHelloKitty', states: PLAYER_STATES },
+      gwen:          { label: 'Spider-Gwen',  file: 'src/models/gwen.js',    fn: 'createGwen',       states: PLAYER_STATES },
+      miles:         { label: 'Miles',        file: 'src/models/miles.js',   fn: 'createMiles',      states: PLAYER_STATES },
+      raimi:         { label: 'Spider-Man 2002', file: 'src/models/raimi.js', fn: 'createRaimi',     states: PLAYER_STATES },
+      mcu:           { label: 'Spider-Man MCU', file: 'src/models/mcu.js',   fn: 'createMcuSpidey',  states: PLAYER_STATES },
+      ironman:       { label: 'Iron Man',     file: 'src/models/ironman.js', fn: 'createIronMan',    states: PLAYER_STATES },
+      panther:       { label: 'Black Panther', file: 'src/models/panther.js', fn: 'createPanther',   states: PLAYER_STATES },
+      batman:        { label: 'Batman',       file: 'src/models/batman.js',  fn: 'createBatman',     states: PLAYER_STATES },
+      cap:           { label: 'Captain America', file: 'src/models/cap.js',  fn: 'createCap',        states: PLAYER_STATES },
+      hulk:          { label: 'Hulk',         file: 'src/models/hulk.js',    fn: 'createHulk',       states: PLAYER_STATES },
     };
 
     const params = new URLSearchParams(location.search);
@@ -241,6 +251,45 @@
         showMessage(`Model oluşturulurken hata oluştu:<br><code>${String(err.message || err)}</code>`);
       }
     }
+
+    // debug handle for stepped frame captures from the console
+    // capture(keys, { views, w, h }) -> canvas: every model in a row, every view in a column
+    // (stops this page's loop; reload the page afterwards)
+    async function capture(keys, { w = 300, h = 420, views } = {}) {
+      views = views || [['front', [0, 1.0, -3.6], 'idle'], ['q34', [2.5, 1.1, -2.6], 'idle'], ['back', [0, 1.2, 3.6], 'idle'], ['run', [1.1, 2.0, 3.6], 'run']];
+      renderer.setAnimationLoop(null);
+      for (const o of scene.children) if (!o.isLight) o.visible = false;
+      const out = document.createElement('canvas');
+      out.width = w * views.length; out.height = h * keys.length;
+      const g = out.getContext('2d');
+      renderer.setPixelRatio(1);
+      renderer.setSize(w, h, false);
+      const cam = new THREE.PerspectiveCamera(32, w / h, 0.05, 100);
+      const info = {};
+      for (const [row, key] of keys.entries()) {
+        const d = MODELS[key];
+        const t0 = performance.now();
+        const m = (await import('./' + d.file))[d.fn]();
+        info[key] = { buildMs: Math.round(performance.now() - t0) };
+        scene.add(m.root);
+        for (const [col, [name, pos, st]] of views.entries()) {
+          m.setState(st);
+          for (let i = 0; i < 47; i++) m.update(1 / 60, 11);
+          cam.position.set(...pos);
+          cam.lookAt(0, st === 'run' ? 0.7 : 0.8, 0);
+          renderer.info.autoReset = false;
+          renderer.info.reset();
+          renderer.render(scene, cam);
+          renderer.info.autoReset = true;
+          if (col === 0) info[key].calls = renderer.info.render.calls;
+          g.drawImage(renderer.domElement, col * w, row * h);
+        }
+        scene.remove(m.root);
+        g.fillStyle = '#000'; g.font = 'bold 15px sans-serif'; g.fillText(key + '  dc ' + info[key].calls, 6, row * h + 18);
+      }
+      return { canvas: out, info };
+    }
+    window.__viewer = { THREE, renderer, scene, camera, controls, capture, get model() { return model; } };
 
     // ---------- loop ----------
     function resize() {

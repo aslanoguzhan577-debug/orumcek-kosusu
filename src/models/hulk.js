@@ -1,107 +1,110 @@
 // hulk.js — the Hulk as a Funko Pop vinyl figure on the shared Spider-Man body
-// (createSpiderCharacter), same height / hitbox: green skin, messy dark green-black hair, small
-// black eyes under an angry brow, a white-toothed grimace, bulky torso / arms / legs (the torso
-// mesh and limb groups are scaled wider, not taller) and torn purple shorts.
+// (createSpiderCharacter), same height and hitbox. Green skin with soft darker muscle shading,
+// shaggy black hair covering the top and back of the head (painted + sculpted tufts merged into
+// the head), a heavy angry brow, small fierce eyes and a gritted-teeth snarl. Hulk bulk: wide
+// torso with trapezius humps (merged into the torso), thick arms and legs, broad shoulders,
+// torn purple shorts, bare green feet.
 //   createHulk() -> { root, setState, update, setSpeed, hand }
 
 import * as THREE from 'three';
-import { toonMaterial, addOutline, mergeGeos, smoothNormals } from './toon.js';
-import { createSpiderCharacter, SPIDER_DIM, SATIN, OUTLINE_COLOR } from './spiderman.js';
+import { createSpiderCharacter, SATIN, TORSO } from './spiderman.js';
+import { attach, poly, ellipse, line, fill, ball, xf } from './heroKit.js';
 
-const GREEN = '#6cb83e';
-const GREEN_DK = '#3f8226';
-const HAIR = '#1c2a17';
+const GREEN = '#69b13d';
+const GREEN_DK = '#3f7f25';
+const GREEN_SH = 'rgba(40, 92, 22, 0.55)';
+const HAIR = '#1b2418';
 const PURPLE = '#6d3fa3';
-const PURPLE_DK = '#4a2a75';
+const PURPLE_DK = '#47286f';
 const INK = '#14110f';
-const D = SPIDER_DIM;
-
-function poly(g, P, pts, fill) {
-  g.beginPath();
-  pts.forEach(([x, y], i) => { const p = P(x, y); if (i) g.lineTo(p[0], p[1]); else g.moveTo(p[0], p[1]); });
-  g.closePath();
-  g.fillStyle = fill;
-  g.fill();
-}
+const T = TORSO;
+const smooth = THREE.MathUtils.smoothstep;
 
 // ragged hem: zigzag from x0 to x1 around y
 const zig = (x0, x1, y, n, amp) => Array.from({ length: n + 1 }, (_, i) => [x0 + ((x1 - x0) * i) / n, y + (i % 2 ? -amp : amp)]);
 
-function muscles(g, P, front) {
-  g.strokeStyle = GREEN_DK;
-  g.lineWidth = 5;
-  g.lineCap = 'round';
-  const line = (pts) => { g.beginPath(); pts.forEach(([x, y], i) => { const p = P(x, y); i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); }); g.stroke(); };
-  if (front) {
-    line([[0, 0.4], [0, 0.12]]);                                  // sternum / abs line
-    for (const s of [-1, 1]) {
-      line([[s * 0.01, 0.31], [s * 0.1, 0.285], [s * 0.19, 0.31]]); // pec underside
-      for (const y of [0.22, 0.17]) line([[s * 0.01, y], [s * 0.1, y - 0.005]]);
-    }
-  } else {
-    line([[0, 0.45], [0, 0.1]]);
-    for (const s of [-1, 1]) { line([[s * 0.02, 0.38], [s * 0.12, 0.3], [s * 0.2, 0.34]]); line([[s * 0.02, 0.25], [s * 0.14, 0.18]]); }
-  }
-  // torn purple shorts at the waist
-  poly(g, P, [[-0.3, 0.07], ...zig(-0.3, 0.3, 0.07, 10, 0.012), [0.3, -0.2], [-0.3, -0.2]], PURPLE);
-  poly(g, P, [[-0.3, 0.07], [0.3, 0.07], [0.3, 0.045], [-0.3, 0.045]], PURPLE_DK);
+// soft muscle shadow: stacked translucent strokes (a canvas blur filter costs ~100 ms per skin)
+function shade(g, P, pts, w) {
+  g.save();
+  g.globalAlpha = 0.4;
+  for (const f of [1.7, 1.2, 0.75]) line(g, P, pts, GREEN_SH, w * f);
+  g.restore();
 }
 
+function muscles(g, P, k, front) {
+  if (front) {
+    for (const s of [-1, 1]) {
+      shade(g, P, [[s * 0.015, 0.3], [s * 0.1, 0.27], [s * 0.2, 0.31]], 0.022 * k);  // under the pecs
+      shade(g, P, [[s * 0.2, 0.42], [s * 0.21, 0.32]], 0.018 * k);                   // pec / shoulder
+      for (const y of [0.225, 0.17]) shade(g, P, [[s * 0.012, y], [s * 0.085, y - 0.004]], 0.014 * k);
+      shade(g, P, [[s * 0.13, 0.24], [s * 0.115, 0.12]], 0.016 * k);                 // obliques
+    }
+    shade(g, P, [[0, 0.42], [0, 0.12]], 0.014 * k);
+  } else {
+    shade(g, P, [[0, 0.46], [0, 0.11]], 0.016 * k);
+    for (const s of [-1, 1]) {
+      shade(g, P, [[s * 0.03, 0.4], [s * 0.13, 0.3], [s * 0.22, 0.34]], 0.022 * k); // shoulder blades
+      shade(g, P, [[s * 0.03, 0.24], [s * 0.16, 0.17]], 0.018 * k);                 // lats
+    }
+  }
+  // torn purple shorts
+  poly(g, P, [[-0.34, 0.075], ...zig(-0.34, 0.34, 0.075, 12, 0.01), [0.34, -0.2], [-0.34, -0.2]], PURPLE);
+  poly(g, P, [[-0.34, 0.08], [0.34, 0.08], [0.34, 0.052], [-0.34, 0.052]], PURPLE_DK);
+}
+
+const HAIR_RGB = [0x1b, 0x24, 0x18];
 const HULK_LOOK = {
   head: { color: GREEN },
+  // shaggy hair over the top and the back of the head, ragged edge over the neck / ears
+  headPaint(col, glow, d) {
+    const ang = Math.atan2(d.x, d.z);
+    const edge = -0.42 + 0.07 * Math.sin(ang * 11) + 0.04 * Math.sin(ang * 23 + 1) + 0.5 * smooth(-d.z, 0.0, 0.5);
+    const a = smooth(d.y, edge - 0.015, edge + 0.015);
+    if (a > 0) for (let i = 0; i < 3; i++) col[i] += (HAIR_RGB[i] - col[i]) * a;
+  },
   face(g, E) {
     g.lineCap = 'round';
     g.lineJoin = 'round';
-    // ragged hairline across the forehead
-    poly(g, E, [[-1, 1.1], [-1, 0.55], ...zig(-1, 1, 0.6, 12, 0.12), [1, 0.55], [1, 1.1]], HAIR);
-    // heavy angry brow: thick dark-green bars sloping down to the nose
-    g.strokeStyle = GREEN_DK;
-    g.lineWidth = 34;
+    // hair fringe over the forehead
+    poly(g, E, [[-1.1, 1.2], [-1.1, 0.5], ...zig(-1.0, 1.0, 0.6, 14, 0.1), [1.1, 0.5], [1.1, 1.2]], HAIR);
+    // heavy brow ridge: two thick dark-green wedges sloping down to the nose
+    for (const s of [-1, 1]) poly(g, (x, y) => E(x * s, y), [[0.08, 0.14], [0.74, 0.4], [0.76, 0.28], [0.1, 0.04]], GREEN_DK);
+    // small fierce eyes
     for (const s of [-1, 1]) {
-      const a = E(s * 0.78, 0.4), b = E(s * 0.1, 0.18);
-      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+      poly(g, (x, y) => E(x * s, y), [[0.18, 0.02], [0.56, 0.12], [0.54, -0.04], [0.24, -0.08]], '#ffffff');
+      ellipse(g, E, s * 0.38, 0.01, 0.065, 0.065, INK);
     }
-    // small black eyes under the brow
-    for (const s of [-1, 1]) {
-      const c = E(s * 0.4, 0.04), r = E(0.08, 0)[0] - E(0, 0)[0];
-      g.beginPath(); g.ellipse(c[0], c[1], Math.abs(r), Math.abs(r) * 0.8, 0, 0, Math.PI * 2);
-      g.fillStyle = INK; g.fill();
-    }
-    // nostrils
-    for (const s of [-1, 1]) {
-      const c = E(s * 0.1, -0.22);
-      g.beginPath(); g.arc(c[0], c[1], 7, 0, Math.PI * 2); g.fillStyle = GREEN_DK; g.fill();
-    }
-    // grimace: wide dark mouth, a row of white teeth top and bottom
-    const m = [[-0.55, -0.5], [0.55, -0.5], [0.5, -0.78], [-0.5, -0.78]];
-    poly(g, E, m, INK);
-    poly(g, E, [[-0.5, -0.52], [0.5, -0.52], [0.5, -0.6], [-0.5, -0.6]], '#fbfbf5');
-    poly(g, E, [[-0.46, -0.7], [0.46, -0.7], [0.46, -0.76], [-0.46, -0.76]], '#fbfbf5');
-    g.strokeStyle = INK;
-    g.lineWidth = 3;
+    // nose
+    for (const s of [-1, 1]) ellipse(g, E, s * 0.09, -0.24, 0.035, 0.025, GREEN_DK);
+    line(g, E, [[-0.13, -0.17], [0, -0.13], [0.13, -0.17]], GREEN_DK, 8);
+    // snarl: dark mouth with gritted upper and lower teeth
+    poly(g, E, [[-0.52, -0.42], [0.52, -0.42], [0.46, -0.78], [-0.46, -0.78]], '#3a0d0d', INK, 10);
+    poly(g, E, [[-0.48, -0.45], [0.48, -0.45], [0.47, -0.56], [-0.47, -0.56]], '#fbfbf2');
+    poly(g, E, [[-0.44, -0.66], [0.44, -0.66], [0.43, -0.75], [-0.43, -0.75]], '#fbfbf2');
     for (let i = -4; i <= 4; i++) {
-      const a = E(i * 0.11, -0.52), b = E(i * 0.11, -0.6), c = E(i * 0.11, -0.7), d = E(i * 0.11, -0.76);
-      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.moveTo(c[0], c[1]); g.lineTo(d[0], d[1]); g.stroke();
+      line(g, E, [[i * 0.105, -0.45], [i * 0.105, -0.56]], '#8b8a7a', 4, 'butt');
+      line(g, E, [[i * 0.1, -0.66], [i * 0.1, -0.75]], '#8b8a7a', 4, 'butt');
     }
-    // sunken cheek / jaw shading
-    g.strokeStyle = GREEN_DK;
-    g.lineWidth = 8;
-    for (const s of [-1, 1]) {
-      const a = E(s * 0.62, -0.3), b = E(s * 0.7, -0.62);
-      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
-    }
+    // cheek / jaw creases
+    for (const s of [-1, 1]) line(g, (x, y) => E(x * s, y), [[0.58, -0.22], [0.64, -0.5], [0.58, -0.8]], GREEN_DK, 9);
   },
   lensGlow: 0x000000,
   torsoBase: GREEN,
-  torsoFront(g, P) { muscles(g, P, true); },
-  torsoBack(g, P) { muscles(g, P, false); },
-  arm(g, W, H) { g.fillStyle = GREEN; g.fillRect(0, 0, W, H); },
-  fore(g, W, H) { g.fillStyle = GREEN; g.fillRect(0, 0, W, H); },
+  torsoFront(g, P, k) { muscles(g, P, k, true); },
+  torsoBack(g, P, k) { muscles(g, P, k, false); },
+  arm(g, W, H, info) {
+    fill(g, W, H, GREEN);
+    g.save();
+    g.globalAlpha = 0.5;
+    fill(g, W, H, GREEN_SH, info.yToPx(-0.095), info.yToPx(-0.125)); // bicep shadow
+    fill(g, W, H, GREEN_SH, info.yToPx(-0.1), info.yToPx(-0.12));
+    g.restore();
+  },
+  fore(g, W, H) { fill(g, W, H, GREEN); },
   thigh(g, W, H, info) {
-    g.fillStyle = GREEN;
-    g.fillRect(0, 0, W, H);
-    // shorts leg: purple down to a torn hem
-    const y = info.yToPx(-0.1), n = 8;
+    fill(g, W, H, GREEN);
+    // shorts leg, torn hem
+    const y = info.yToPx(-0.1), n = 10;
     g.beginPath();
     g.moveTo(0, 0);
     for (let i = 0; i <= n; i++) g.lineTo((W * i) / n, y + (i % 2 ? -1 : 1) * 0.02 * info.ky);
@@ -110,33 +113,30 @@ const HULK_LOOK = {
     g.fillStyle = PURPLE;
     g.fill();
   },
-  shin(g, W, H) { g.fillStyle = GREEN; g.fillRect(0, 0, W, H); },
-  matOpts: {},
+  shin(g, W, H) { fill(g, W, H, GREEN); },
+  matOpts: { head: { ...SATIN } },
   lazy: true,
 };
 
-// messy hair: a flat cap over the top / back of the head plus leaning spikes
 function addExtras(parts) {
-  bodyParts = parts;
-  const hairMat = toonMaterial(0x1c2a17, SATIN);
-  const top = D.headUp * 2;
-  const geos = [];
-  const cap = new THREE.SphereGeometry(1, 20, 12);
-  cap.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(0, top - 0.13, 0.07), new THREE.Quaternion(), new THREE.Vector3(0.4, 0.17, 0.31)));
-  geos.push(cap);
-  const spikes = [[-0.28, -0.1, -0.5, 0.3], [-0.14, -0.16, -0.2, 0.36], [0.02, -0.14, 0.05, 0.32], [0.17, -0.15, 0.25, 0.37], [0.29, -0.06, 0.55, 0.28],
-    [-0.2, 0.1, -0.3, 0.3], [0.05, 0.14, 0.1, 0.34], [0.25, 0.12, 0.4, 0.3], [0, 0.26, 0, 0.3]];
-  for (const [x, z, tilt, h] of spikes) {
-    const c = new THREE.ConeGeometry(0.075, h * 0.4, 8, 1);
-    c.translate(0, h * 0.2, 0);
-    c.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, top - 0.09, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(z < 0 ? -0.35 : 0.3, 0, -tilt)), new THREE.Vector3(1, 1, 1)));
-    geos.push(c);
+  // hair: shaggy flattened clumps swept back over the top (the back of the head is painted)
+  const tufts = [];
+  const clumps = [ // x, y, z, lean back (rad), lean out (rad), size
+    [-0.27, 0.31, -0.2, 0.9, -0.5, 1], [-0.09, 0.34, -0.22, 0.95, -0.15, 1.1], [0.09, 0.34, -0.22, 0.95, 0.15, 1.1], [0.27, 0.31, -0.2, 0.9, 0.5, 1],
+    [-0.2, 0.35, 0.02, 1.25, -0.35, 1.15], [0.0, 0.36, 0.04, 1.3, 0, 1.2], [0.2, 0.35, 0.02, 1.25, 0.35, 1.15],
+    [-0.28, 0.3, 0.2, 1.55, -0.55, 0.9], [0.0, 0.33, 0.22, 1.6, 0, 1], [0.28, 0.3, 0.2, 1.55, 0.55, 0.9],
+  ];
+  for (const [x, y, z, back, out, k] of clumps) {
+    const c = new THREE.ConeGeometry(0.1 * k, 0.17 * k, 9, 2);
+    c.translate(0, 0.06 * k, 0);
+    xf(c, [x, y, z], [back, 0, -out], [1, 1, 0.45]);
+    tufts.push({ geo: c, color: HAIR });
   }
-  const hair = mergeGeos(geos);
-  smoothNormals(hair);
-  const m = new THREE.Mesh(hair, hairMat);
-  addOutline(m, 0.014, OUTLINE_COLOR);
-  parts.head.add(m);
+  attach(parts.headMesh, tufts);
+
+  // trapezius humps between the neck and the shoulders
+  const traps = [-1, 1].map((s) => ({ geo: xf(ball(16, 10), [s * 0.12, 0.38, 0.03], [0, 0, s * 0.5], [0.13, 0.08, 0.12]), color: GREEN }));
+  attach(parts.torso, traps, 'top');
 
   // bulk: wider torso, thicker arms and legs (not taller: total height stays the same)
   parts.torso.scale.set(1.3, 1, 1.18);
@@ -144,12 +144,11 @@ function addExtras(parts) {
   for (const l of [parts.legL.hip, parts.legR.hip]) l.scale.set(1.2, 1, 1.2);
 }
 
-let bodyParts;
-
 export function createHulk() {
+  let P;
   const m = createSpiderCharacter(HULK_LOOK, {
-    build: addExtras,
-    apply() { bodyParts.shoulderR.position.x += 0.05; bodyParts.shoulderL.position.x -= 0.05; }, // wider shoulders
+    build: (parts) => { P = parts; addExtras(parts); },
+    apply() { P.shoulderR.position.x += 0.05; P.shoulderL.position.x -= 0.05; }, // wider shoulders
   });
   m.root.name = 'hulk';
   return { root: m.root, setState: m.setState, update: m.update, setSpeed: m.setSpeed, hand: m.parts.handR };
