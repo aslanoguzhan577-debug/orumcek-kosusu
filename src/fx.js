@@ -1107,6 +1107,72 @@ export function initFx(game) {
     shake(0.05, 0.14);
   });
 
+  // ----- Ağ Salınışı: beyaz ağ izleri, binalara giden ağ çizgisi, THWIP! sticker'ı -----
+  // Süre game.state.swingTime'tan okunur (bayrak yok): sistem onu her karede zaten güncelliyor.
+  const SG = CONFIG.swing;
+  let swingTrailAcc = 0, swingSparkAcc = 0, lastThwipMs = -1e9;
+  const handPos = (side) => {
+    const off = CONFIG.web.handOffset;        // the same point web.js starts its line from
+    const pl = player();
+    return { x: pl.x + side * off[0], y: pl.y + off[1], z: off[2] };
+  };
+  // a taut web shooting out of the hand: short white streaks a few metres along the hand -> anchor
+  // ray. Only that first part is on screen; the anchor itself is high above the frame (like intro.js).
+  function webShot(h, ax, ay, az, n, step, life, a) {
+    const dx = ax - h.x, dy = ay - h.y, dz = az - h.z;
+    const L = Math.hypot(dx, dy, dz) || 1;
+    const rot = Math.atan2(dx, dy);            // 0 = vertical, towards the facade
+    for (let i = 0; i < n; i++) {
+      const k = (i + 1) * step;
+      const s = 1.5 - i * 0.18;
+      const w = normal.spawn(h.x + (dx / L) * k, h.y + (dy / L) * k, h.z + (dz / L) * k, 0, 0, 0,
+        life, s, s * 0.8, SHAPE.streak, 0xf7fbff, a, 0, 0, true, i * 0.03);
+      normal.rot[w] = rot;
+      normal.spin[w] = 0;
+    }
+  }
+
+  on('swingOn', () => {
+    const pl = player();
+    const fy = floorY();
+    const side = pl.x > 0.3 ? -1 : 1;
+    const h = handPos(side);
+    impactFrame({ bg: 0xeaf6ff, dot: 0xc8ddf0, line: INK, frames: 3, ms: 120 });
+    flash('cyan', 0.45, 340);
+    sticker('thwip', { x: h.x + side * 0.95, y: h.y + 0.5, z: 0.15 }, { width: 0.24, life: 0.8, tilt: side * 0.18 });
+    webShot(h, side * CONFIG.web.anchorSide, SG.height + SG.anchorRise, -SG.anchorAhead, 5, 1.1, 0.3, 0.8);
+    sparkBurst(glow, h.x, h.y, h.z, Math.round(12 * rm), [0xffffff, 0xbfe6ff, 0xffd23a], 6.5, 0.42, 0.45);
+    // the deck he pushed off: a web ring and dust right under his feet
+    groundRing({ x: pl.x, y: fy + 0.05, z: 0.1 }, { r0: 0.3, r1: 4.2, width: 0.45, color: 0xffffff, edge: 0xbfe6ff, life: 0.55, scroll: true });
+    puffBurst(pl.x, fy + 0.1, 0.2, Math.round(7 * rm), dustCol, 3.0, 1.3, 0.4, 0.9, 0.4);
+    shake(0.06, 0.22);
+  });
+
+  // her yayda el yeniden şeridi binalara yapıştırır: tarafın üstüne THWIP! + gergin ağ çizgisi
+  on('swingArc', (d) => {
+    const side = d.side < 0 ? -1 : 1;
+    const h = handPos(side);
+    webShot(h, side * CONFIG.web.anchorSide, SG.height + SG.anchorRise, -SG.anchorAhead, 4, 1.0, 0.26, 0.7);
+    sparkBurst(glow, h.x, h.y, h.z, Math.round(6 * rm), [0xffffff, 0xbfe6ff], 5, 0.32, 0.34);
+    const now = performance.now();
+    if (!reduceMotion && now - lastThwipMs > 850) {
+      lastThwipMs = now;
+      sticker('thwip', { x: h.x + side * 1.0, y: h.y + 0.4, z: 0.15 }, { width: 0.2, life: 0.62, tilt: side * 0.24 });
+    }
+  });
+
+  on('swingOff', (d) => {
+    swingTrailAcc = swingSparkAcc = 0;
+    if (d.reset) return;                       // run restarted: no landing, the deck is gone
+    const pl = player();
+    const fy = floorY();
+    puffBurst(pl.x, fy + 0.1, 0.2, Math.round(8 * rm), dustCol, 3.4, 1.4, 0.45, 1.0, 0.45);
+    groundRing({ x: pl.x, y: fy + 0.05, z: 0.15 }, { r0: 0.3, r1: 3.4, width: 0.4, color: 0xffffff, edge: 0xbfe6ff, life: 0.5, scroll: true });
+    if (!reduceMotion) for (const dx of [-0.5, 0.5]) streak(pl.x + dx, fy + 0.25, 0.3, 0, 6, 1.4, 0.25, 0.6, true);
+    flash('cyan', 0.28, 240);
+    shake(0.04, 0.14);
+  });
+
   let venomOn = false;
   on('venomNear', () => { venomOn = true; dom.venom.hidden = false; });
   on('venomFar', () => { venomOn = false; dom.venom.hidden = true; });
@@ -1286,6 +1352,23 @@ export function initFx(game) {
             0.9, -0.4, 1.2, true, 0, rnd(-7, 7));
         }
       }
+      if (st.swingTime > 0) { // ağ kuyruğu: arkada kıvrılan beyaz şerit + uçuşan ağ parıltısı
+        swingTrailAcc -= dt;
+        while (swingTrailAcc <= 0) {
+          swingTrailAcc += 0.055;
+          const w = normal.spawn(pl.x + rnd(-0.22, 0.22), pl.y + rnd(0.2, 1.4), 0.1,
+            0, rnd(-0.3, 0.4), rnd(1, 2.2), rnd(0.3, 0.5), 1.9, 1.4, SHAPE.streak, 0xf7fbff, 0.5, 0, 0, true);
+          normal.rot[w] = Math.PI / 2 + rnd(-0.35, 0.35);
+          normal.spin[w] = 0;
+        }
+        swingSparkAcc -= dt;
+        while (swingSparkAcc <= 0) {
+          swingSparkAcc += 0.12;
+          glow.spawn(pl.x + rnd(-0.5, 0.5), pl.y + rnd(0.1, 1.6), rnd(-0.2, 0.3),
+            rnd(-0.8, 0.8), rnd(0, 1.2), rnd(1.5, 4), rnd(0.3, 0.5), 0.28, 0.02, SHAPE.star,
+            [0xffffff, 0xbfe6ff, 0xffd23a][(Math.random() * 3) | 0], 0.9, 0, 1.2, true, 0, rnd(-6, 6));
+        }
+      }
     }
 
     // Örümcek Yayı: taban parıltısı ayakların üstünde durur, sıçrayışta alevlenir
@@ -1358,6 +1441,7 @@ export function initFx(game) {
       if (running && !game.halted && !reduceMotion) {
         const k = THREE.MathUtils.clamp((st.speed - CONFIG.startSpeed) / Math.max(1, CONFIG.maxSpeed - CONFIG.startSpeed), 0, 1);
         o = k < 0.06 ? 0 : 0.1 + 0.4 * k * k;
+        if (st.swingTime > 0) o = Math.max(o, 0.5); // Ağ Salınışı: yukarıda hep hız çizgisi
       }
       if (introSpeedUntil > performance.now()) o = Math.max(o, 0.45);
       o = Math.round(o * 40) / 40;

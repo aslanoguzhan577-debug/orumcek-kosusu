@@ -2,7 +2,7 @@
 //
 // Hooks into the game only through the public API:
 //   reads   game.state (mode, score, coins, distance, multiplier, webCharges, ironCount, ironTime,
-//                       senseTime, magnetTime, bugleTime, springTime: seconds left, undefined = 0)
+//                       senseTime, magnetTime, bugleTime, springTime, swingTime: seconds left, undefined = 0)
 //           and game.mult.factor
 //   calls   game.start() / pause() / resume() / restart(), game.flash.use()
 //   listens events: start, pause, resume, gameover, missionDone, missionSet, flashBoost
@@ -91,7 +91,7 @@ let overAt = Infinity;     // time (ms) from which the game-over card may show
 let lastResult = null;     // { name, score, coins, distance, record, entry }
 let ironMax = 1;
 let prevIronTime = 0;
-const timers = ['sense', 'magnet', 'bugle', 'spring'].map((kind) => {
+const timers = ['sense', 'magnet', 'bugle', 'spring', 'swing'].map((kind) => {
   const box = $('h-' + kind);
   const cv = box && box.querySelector('canvas');
   if (cv) drawPowerIcon(cv, kind);
@@ -817,6 +817,7 @@ function updateHud() {
   updateTimer(timers[1], st.magnetTime || 0);
   updateTimer(timers[2], st.bugleTime || 0);
   updateTimer(timers[3], st.springTime || 0);
+  updateTimer(timers[4], st.swingTime || 0);
 
   // Repulsor boost button (Iron Man fly skill)
   if (el.repulsor && game.repulsor) {

@@ -14,6 +14,7 @@
 //   player.setOverride(name, seconds)  force a model state ('stumble', 'web', 'caught');
 //                            seconds = Infinity keeps it until reset / clearOverride().
 //   player.controlsLocked    true ignores all input (G8 caught).
+//   player.verticalLocked    true ignores "up" / "down" only (powerups/swing.js owns the height).
 //   player.setModel(model)   swap the character model (G6).
 //   player.useModel(model)   switch to another (pre-built) model, keeping the state (G10).
 //                            Both roots stay children; only the active one is visible.
@@ -89,6 +90,7 @@ export class Player {
     this.override = null;
     this.overrideTimer = 0;
     this.controlsLocked = false;
+    this.verticalLocked = false;
     this.state = 'idle';
     this._modelState = null;
     this.root.position.set(this.x, this.y, 0);
@@ -159,6 +161,7 @@ export class Player {
   }
 
   _up() {
+    if (this.verticalLocked) return; // a power-up owns the height (Ağ Salınışı)
     if (this.grounded || this._coyote > 0) {
       this.jump(); // also cancels a slide; just ran off a roof edge = still a normal jump
       return;
@@ -173,6 +176,7 @@ export class Player {
   }
 
   _down() {
+    if (this.verticalLocked) return; // ... and the same for the slide / fast drop
     if (!this.grounded) {
       if (this.vy > -CONFIG.fastDropSpeed) this.vy = -CONFIG.fastDropSpeed;
       this._jumpQueued = false;

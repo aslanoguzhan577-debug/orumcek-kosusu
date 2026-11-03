@@ -26,6 +26,7 @@ export const MISSION_POOL = [
   { id: 'slide',     text: '{n} kez kay',                        base: 15,   growth: 8 },
   { id: 'lane',      text: '{n} kez şerit değiştir',             base: 25,   growth: 12 },
   { id: 'web',       text: '{n} kez ağ at',                      base: 10,   growth: 5 },
+  { id: 'swing',     text: '{n} kez ağla salın',                 base: 2,    growth: 1 },
   { id: 'powerup',   text: '{n} güç topla',                      base: 4,    growth: 2 },
   { id: 'magnet',    text: '{n} mıknatıs topla',                 base: 2,    growth: 1 },
   { id: 'bugle',     text: '{n} Bugle Manşeti topla',            base: 2,    growth: 1 },
@@ -101,19 +102,20 @@ function defaults() {
   return { set: 1, level: 0, items: makeSet(1) };
 }
 
-// null = broken or stale save (unknown mission, other amounts, other order, bad numbers).
+// null = broken save (bad numbers). A stale set (the pool changed) keeps set + level, new missions.
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
     if (!Number.isInteger(s.set) || s.set < 1) return null;
     if (!Number.isInteger(s.level) || s.level < 0 || s.level > s.set - 1) return null;
-    if (!Array.isArray(s.items) || s.items.length !== PER_SET) return null;
     const fresh = makeSet(s.set);
+    const stale = { set: s.set, level: Math.min(s.level, MAX_BASE - 1), items: fresh };
+    if (!Array.isArray(s.items) || s.items.length !== PER_SET) return stale;
     const items = [];
     for (let i = 0; i < PER_SET; i++) {
       const want = fresh[i];
       const got = s.items[i];
-      if (!got || got.id !== want.id || got.goal !== want.goal) return null;
+      if (!got || got.id !== want.id || got.goal !== want.goal) return stale;
       const progress = Number(got.progress);
       if (!Number.isFinite(progress) || progress < 0) return null;
       items.push({
@@ -159,6 +161,7 @@ const COUNTED = {
   slide: ['slide'],
   lane: ['lane'],
   web: ['web'],
+  swingOn: ['swing'],
   senseDodge: ['sense'],
   ironSave: ['iron'],
   specialOn: ['special'],

@@ -1,4 +1,4 @@
-// tools/test-skills.mjs — mission setleri, skor çarpanı ve yeni skor formülü (PLAN.md 10).
+// tools/test-skills.mjs — mission setleri, skor çarpanı, yeni güçler ve Ağ Salınışı (PLAN.md 10).
 // Run: node tools/test-skills.mjs
 // No browser: game.js runs on stubbed world / player, missions.js on a stubbed localStorage.
 
@@ -202,11 +202,11 @@ eq(capped.level, 29, 'the level stops at 29 finished sets');
 eq(up.multiplier, 30, 'the multiplier never passes x30');
 
 // ---------- eski / uyumsuz kayıt ----------
-store.set(KEY, json({ set: 1, level: 0, items: [{ id: 'coins', goal: 999, progress: 0, done: false }, { id: 'jump', goal: 30, progress: 0, done: false }, { id: 'lane', goal: 25, progress: 0, done: false }] }));
+store.set(KEY, json({ set: 3, level: 2, items: [{ id: 'coins', goal: 999, progress: 0, done: false }, { id: 'jump', goal: 30, progress: 0, done: false }, { id: 'lane', goal: 25, progress: 0, done: false }] }));
 const msOld = await import('../src/missions.js?stale');
-eq(msOld.missions.set, 1, 'a stale save = set 1');
-eq(msOld.missions.level, 0, 'a stale save = level 0');
-eq(json(msOld.missions.items), json(ms.makeSet(1)), 'a stale save = fresh missions');
+eq(msOld.missions.set, 3, 'a stale save (pool changed) keeps its set');
+eq(msOld.missions.level, 2, 'a stale save keeps its level = the earned multiplier');
+eq(json(msOld.missions.items), json(ms.makeSet(3)), 'a stale save gets that set\'s fresh missions');
 
 // ---------- Bugle Manşeti çarpanı ve Örümcek Yayı sıçrayışı (game.js okur) ----------
 game.state.bugleTime = 0;
@@ -318,5 +318,134 @@ eq(pl.sliding, true, 'the spider-sense rescue slides through the recovery');
 
 pl.reset();
 eq(pl._slideRecover, 0, 'reset clears the recovery');
+
+// ---------- Ağ Salınışı (powerups/swing.js): yüksekte salınır, çarpmaz, havada altın dizer ----------
+const { SwingPowerup } = await import('../src/powerups/swing.js');
+const SW_G = CONFIG.swing;
+const graceAsk = [];
+const fakeObs = {
+  coins: [], _coinPool: [{ tag: 'reused' }], registered: null,
+  registerPickup(kind, hooks) { this.registered = { kind, hooks }; },
+  generator: { extras: [], addExtra(fn) { this.extras.push(fn); } },
+  grace(s) { graceAsk.push(s); },
+};
+const anchors = [];
+let lineHidden = 0;
+const fakeWeb = {
+  drawLineTo(a) { anchors.push({ x: a.x, y: a.y, z: a.z }); },
+  hideLine() { lineHidden++; },
+};
+let venomDrops = 0;
+const fakeChaser = { isNear: true, _dropBack() { venomDrops++; } };
+const swingLog = [];
+events.addEventListener('swingOn', () => swingLog.push('on'));
+events.addEventListener('swingArc', (e) => swingLog.push(e.detail.side));
+events.addEventListener('swingOff', (e) => swingLog.push(e.detail.reset ? 'reset' : 'off'));
+
+game.restart();
+game.state.intro = false;
+const swing = game.addSystem(new SwingPowerup({ player: pl, obstacles: fakeObs, web: fakeWeb, chaser: fakeChaser }));
+eq(fakeObs.registered.kind, 'swing', 'the swing registers its pickup');
+eq(fakeObs.generator.extras.length, 1, 'and one pattern extra');
+ok(fakeObs.registered.hooks.create(), 'its pickup model comes from pickup-art');
+
+// yerleştirme: blok başına tam bir rastgele sayı (rayların determinantlığı için şart)
+const pushed = [];
+let rolls = 0;
+const block = (A, free) => ({
+  rng: () => { rolls++; return 0.05; }, A, route: 1, pickups: 0, routeFree: free,
+  farFromPickup: () => true, push: (o) => pushed.push(o),
+});
+fakeObs.generator.extras[0](block(100, [90, 130]));
+eq(rolls, 1, 'the swing extra draws exactly one random number per block');
+eq(pushed.length, 1, 'a free stretch of the route lane gets a pickup');
+eq(pushed[0].kind, 'swing', 'of kind swing');
+fakeObs.generator.extras[0](block(120, [110, 150]));
+eq(pushed.length, 1, 'the minimum gap keeps the next one away');
+eq(rolls, 2, 'and the declined block still drew its one number');
+
+// another flight owns the height: the pickup counts (obstacles.js emits it), the swing does not start
+game.heroSpecials = { active: true };
+swing.start();
+eq(game.state.swingTime, 0, 'no swing while another flight is up');
+eq(swing.active, false, 'and nothing is queued for later');
+delete game.heroSpecials;
+
+pl.reset();
+game.state.speed = CONFIG.startSpeed;
+const st = game.state;
+swing.start();
+eq(st.swingTime, SW_G.duration, 'collecting fills the countdown');
+eq(pl.verticalLocked, true, 'and takes the height away from the jump');
+eq(swingLog.pop(), 'on', 'swingOn announced');
+eq(venomDrops, 1, 'Venom falls back');
+
+let upFrames = 0, minY = Infinity, lockTested = false, coinsAtStop = -1;
+const roof = CONFIG.obstacles.wagon.height;
+while (swing.active) {
+  pl.floorY = st.swingTime < 0.5 ? roof : 0;  // obstacles.js: her karede taze zemin (sonda bir vagon)
+  swing.beforePlayer(DT);
+  pl.update(DT, true);
+  swing.update(DT);
+  upFrames++;
+  if (swing.time > 1 && swing.time < SW_G.duration - 1) minY = Math.min(minY, pl.y);
+  if (coinsAtStop < 0 && st.swingTime <= SW_G.coinStop) coinsAtStop = fakeObs.coins.length;
+  if (!lockTested && swing.time > 2) {
+    lockTested = true;
+    pl.handleAction('up');
+    eq(pl.grounded, true, 'up does nothing while he swings');
+    pl.handleAction('down');
+    eq(pl.sliding, false, 'and neither does down');
+    pl.handleAction('left');
+    eq(pl.lane, 0, 'lanes still change');
+  }
+}
+ok(Math.abs(upFrames * DT - SW_G.duration) <= DT * 2, `the countdown ends the swing (${upFrames} frames)`);
+eq(st.swingTime, 0, 'the countdown stops at 0');
+eq(swing.active, false, 'and the swing is over');
+eq(pl.verticalLocked, false, 'the jump is his again');
+ok(minY > CONFIG.obstacles.wagon.height, `he stays above every train roof (${minY.toFixed(2)} m)`);
+ok(graceAsk.every((g) => g > 0), 'every swing frame asks for collision grace');
+eq(graceAsk.length, upFrames + 1, 'once per frame, plus the landing');
+eq(graceAsk[graceAsk.length - 1], 1.5, 'the landing gets the usual 1.5 s');
+eq(anchors.length, upFrames, 'the web line is redrawn every frame');
+eq(anchors[0].y, SW_G.height + SW_G.anchorRise, 'to an anchor high on the facade');
+ok(anchors[0].z < 0, 'and ahead of him');
+const arcs = swingLog.filter((v) => v === 1 || v === -1);
+ok(arcs.length >= Math.floor(SW_G.duration / SW_G.arcTime) - 1, 'a new web shot each arc');
+ok(arcs.every((s, i) => s === (i % 2 ? -1 : 1)), 'the anchor alternates sides');
+eq(new Set(anchors.map((a) => a.x)).size, 2, 'both sides of the street');
+ok(fakeObs.coins.length > 5, 'the swing lays a coin ribbon');
+ok(fakeObs.coins.some((c) => c.tag === 'reused'), 'with pooled coin objects');
+ok(fakeObs.coins.every((c) => c.y > CONFIG.obstacles.wagon.height), 'all of it in the air');
+eq(new Set(fakeObs.coins.map((c) => c.x)).size, CONFIG.laneCount, 'the ribbon snakes over all lanes');
+eq(fakeObs.coins.length, coinsAtStop, 'and stops before the landing');
+eq(swingLog[swingLog.length - 1], 'off', 'swingOff announced');
+ok(Math.abs(pl.y - roof) < 0.05, `he lands on the train roof under him (${pl.y.toFixed(2)} m)`);
+eq(swing.surfaceY, roof, 'and the shadow floor follows it');
+ok(pl.grounded, 'grounded');
+ok(lineHidden > 0, 'the web line is hidden');
+ok(pl.x < -CONFIG.laneWidth * 0.9, 'the lane change survived the swing');
+
+swingLog.length = 0;
+const graceBefore = graceAsk.length;
+swing.start();
+ok(swing.active, 'a later pickup swings again');
+game.restart();
+eq(st.swingTime, 0, 'a run start clears the countdown');
+eq(swing.active, false, 'and the swing');
+eq(pl.verticalLocked, false, 'and the height lock');
+eq(swingLog[swingLog.length - 1], 'reset', 'announced as a reset, without a landing');
+eq(graceAsk.length, graceBefore, 'the reset asks for no landing grace');
+
+swingLog.length = 0;
+swing.start();
+game.halted = true;      // yakalanma sahnesi: dünya durur, ağ çizgisi ekranda kalamaz
+swing.update(DT);
+eq(swing.active, false, 'a catch ends the swing');
+eq(st.swingTime, 0, 'and its countdown');
+eq(graceAsk.length, graceBefore, 'the quiet end asks for no grace');
+eq(swingLog[swingLog.length - 1], 'reset', 'announced without a landing');
+game.halted = false;
 
 console.log(`OK ${checks} checks`);

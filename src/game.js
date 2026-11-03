@@ -25,6 +25,7 @@ const state = {
   magnetTime: 0,    // magnet seconds left (powerups/magnet.js), 0 = off
   bugleTime: 0,     // Bugle Manşeti seconds left (powerups/bugle.js): > 0 = factor 2
   springTime: 0,    // Örümcek Yayı seconds left (powerups/spring.js): > 0 = higher jumps
+  swingTime: 0,     // Ağ Salınışı seconds left (powerups/swing.js): > 0 = swinging above the track
   time: 0,         // seconds of running this round (extra, not in contract)
   intro: false,     // true while the start-of-run clip plays (intro.js)
 };

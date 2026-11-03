@@ -1,6 +1,7 @@
 // tools/stub-hooks.mjs — node module resolver hooks so tools/test-skills.mjs can import
-// src/player.js headless. The browser gets `three` from index.html's import map and there is
-// no node_modules here; world.js / curve.js are stubbed down to the two things player.js uses.
+// src/player.js and the power-up systems headless. The browser gets `three` from index.html's
+// import map and there is no node_modules here; world.js / curve.js are stubbed down to the two
+// things player.js uses.
 const CONFIG_URL = new URL('../src/config.js', import.meta.url).href;
 const data = (src) => 'data:text/javascript,' + encodeURIComponent(src);
 
@@ -19,10 +20,16 @@ import { CONFIG } from '${CONFIG_URL}';
 export const laneX = (lane) => (lane - (CONFIG.laneCount - 1) / 2) * CONFIG.laneWidth;
 `);
 const CURVE = data('export const curve = { bank: 0 };');
+// pickup-art.js is pure THREE + canvas: node only needs the factory swing.js registers.
+const PICKUP_ART = data(`
+const item = () => ({ root: { position: { set() {} }, scale: { setScalar() {} }, rotation: { set() {} } }, update() {} });
+export const createSwingPickup = item;
+`);
 
 export async function resolve(spec, ctx, next) {
   if (spec === 'three') return { shortCircuit: true, url: THREE };
   if (spec.endsWith('/world.js')) return { shortCircuit: true, url: WORLD };
   if (spec.endsWith('/curve.js')) return { shortCircuit: true, url: CURVE };
+  if (spec.endsWith('/pickup-art.js')) return { shortCircuit: true, url: PICKUP_ART };
   return next(spec, ctx);
 }

@@ -302,6 +302,24 @@ export const CONFIG = {
     pickupScale: 1.3,
   },
 
+  // --- Ağ Salınışı (powerups/swing.js): 8 s binalar arasında yüksekte ağla salınma ---
+  swing: {
+    duration: 8,           // seconds
+    height: 6,             // m: the middle of the arc; a wagon roof is 2.88, so nothing reaches him
+    arcRise: 1.2,          // the arc swings this much above and below `height`
+    arcTime: 0.7,          // seconds per arc (the intro clip's swing cadence)
+    takeoffTime: 0.5,      // s to rise to the arc ...
+    landingTime: 0.8,      // ... and to get back down at the end (1.5 s grace after)
+    pickupChance: 0.12,    // a little rarer than the magnet: ~1 per 2400 m
+    pickupMinGap: 500,
+    pickupY: 0.15,
+    pickupScale: 1.3,
+    anchorAhead: 12,       // the web anchor on the facade: this far ahead of the arc's middle ...
+    anchorRise: 26,        // ... and this far above the swing height (CONFIG.web.anchorSide: |x| 8 m)
+    coinAhead: 22,         // the air coin ribbon is laid this far ahead (the magnet's reach)
+    coinStop: 1,           // and stops this many seconds before the end
+  },
+
   // --- Start-of-run intro clip (intro.js). Seconds unless noted; z is metres behind the
   //     player's start spot (the world stands still during the clip). ---
   intro: {

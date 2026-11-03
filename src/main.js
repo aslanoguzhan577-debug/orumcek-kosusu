@@ -16,6 +16,7 @@ import { SensePowerup } from './powerups/sense.js';
 import { MagnetPowerup } from './powerups/magnet.js';
 import { BuglePowerup } from './powerups/bugle.js';
 import { SpringPowerup } from './powerups/spring.js';
+import { SwingPowerup } from './powerups/swing.js';
 import { FlashBooster } from './powerups/flash.js';
 import { RepulsorBoost } from './powerups/repulsor.js';
 import { HERO_SPECIAL_TEXTURES } from './powerups/hero-specials.js';
@@ -142,6 +143,9 @@ game.bugle = bugle;
 const spring = new SpringPowerup({ obstacles }); // super-high jump
 game.addSystem(spring);
 game.spring = spring;
+const swing = new SwingPowerup({ player, obstacles, web, chaser }); // web-swing above the city
+game.addSystem(swing);
+game.swing = swing;
 const flash = new FlashBooster(); // market consumable: start-of-run score boost
 game.addSystem(flash);
 game.flash = flash;
@@ -202,7 +206,7 @@ renderer.setAnimationLoop((now) => {
   const capHover = (web.heroSpecials && web.heroSpecials.active && web.heroSpecials.mode === 'cap') ? 0.32 : 0;
   const kitty = web.heroSpecials?.skills?.kitty;
   const batman = web.heroSpecials?.skills?.batman;
-  const flying = (batman && batman.currentFlyOffset > 0.001) ? batman : (kitty && kitty.currentFlyOffset > 0) ? kitty : null;
+  const flying = (batman && batman.currentFlyOffset > 0.001) ? batman : (kitty && kitty.currentFlyOffset > 0) ? kitty : swing.active ? swing : null;
   // a flyer holds one altitude above the street, so its saved surface is the shadow's floor
   const baseFloor = flying ? flying.surfaceY : Math.max(0, player.floorY - capHover);
   const height = Math.max(0, player.y - baseFloor); // (z: the intro clip moves the root)

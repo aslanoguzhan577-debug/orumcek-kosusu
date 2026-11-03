@@ -1,14 +1,15 @@
 // pickup-art.js — art for the power-up pickups. No game logic.
 //
 //   import { createWebPickup, createIronPickup, createSensePickup, createMagnetPickup,
-//            createBuglePickup, createSpringPickup } from './pickup-art.js';
+//            createBuglePickup, createSpringPickup, createSwingPickup } from './pickup-art.js';
 //   const p = createWebPickup();   // { root, update(dt) }
 //   scene.add(p.root); p.root.position.set(x, y, z);  // y = surface the item hovers over
 //   every frame: p.update(dt);
 //
 // Sense = Funko head + yellow spider-sense squiggles, Magnet = red horseshoe magnet with silver
 // tips and a spider badge, Bugle = folded Daily Bugle front page, Spring = web-strand coil with
-// red soles; same interface. drawPowerIcon(canvas, 'sense' | 'magnet' | 'bugle' | 'spring' |
+// red soles, Swing = web strand over a steel beam with a gold spider swinging under it; same
+// interface. drawPowerIcon(canvas, 'sense' | 'magnet' | 'bugle' | 'spring' | 'swing' |
 // 'ironSpider' | 'heroSpecial' | 'web') paints the matching 2D HUD / market icon; the market-only
 // Flaş Fotoğraf has no pickup, its icon is the press camera.
 // All are about 1 m tall including the float: the lowest point hovers ~0.1 m above the
@@ -736,6 +737,74 @@ function drawFlash2D(g, S) {
   g.beginPath(); g.arc(cx + S * 0.24, cy - S * 0.285, S * 0.03, 0, Math.PI * 2); g.fill();
 }
 
+// HUD / market icon: a web strand thrown over a beam, a gold spider swinging under it
+function drawSwing2D(g, S) {
+  const cx = S / 2, cy = S * 0.46, R = S * 0.3, top = cy - R;
+  g.save();
+  g.translate(S / 2, S / 2);
+  g.rotate(-0.06);                                    // a sticker, not a diagram
+  g.translate(-S / 2, -S / 2);
+
+  burstShape(g, cx, cy - S * 0.02, S * 0.47, S * 0.33, 12, 0.24); // the comic burst behind
+  g.fillStyle = '#dceeff';
+  g.fill();
+  g.lineWidth = S * 0.026;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+  g.save();                                            // halftone dots, clipped to the burst
+  burstShape(g, cx, cy - S * 0.02, S * 0.47, S * 0.33, 12, 0.24);
+  g.clip();
+  g.fillStyle = 'rgba(120,180,255,.55)';
+  for (let iy = 0; iy < 12; iy++) {
+    for (let ix = 0; ix < 12; ix++) {
+      const x = ix * S / 11, y = iy * S / 11;
+      g.beginPath();
+      g.arc(x, y, S * 0.012 * (0.5 + 0.5 * Math.sin(ix * 2.1 + iy * 1.7)), 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  g.restore();
+
+  const arc = () => { g.beginPath(); g.arc(cx, cy, R, Math.PI, Math.PI * 2); };
+  g.lineCap = 'round';
+  for (const [k, a] of [[1.16, 0.5], [1.3, 0.28]]) {   // speed lines chasing the strand
+    g.strokeStyle = `rgba(47,140,255,${a})`;
+    g.lineWidth = S * 0.03;
+    g.setLineDash([S * 0.08, S * 0.05]);
+    g.beginPath(); g.arc(cx, cy, R * k, Math.PI * 1.08, Math.PI * 1.92); g.stroke();
+    g.setLineDash([]);
+  }
+  strokeInked(g, '#ffffff', S * 0.115, S * 0.07, arc); // the web itself
+  g.strokeStyle = 'rgba(150,205,255,.85)';
+  g.lineWidth = S * 0.018;
+  arc();
+  g.stroke();
+
+  const bw = S * 0.5, bh = S * 0.09;                   // the beam it is thrown over
+  roundedBox(g, cx - bw / 2, top - bh / 2, bw, bh, bh * 0.45);
+  g.fillStyle = PAGE_BLUE;
+  g.fill();
+  g.lineWidth = S * 0.05;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+  g.fillStyle = 'rgba(255,255,255,.35)';               // a vinyl highlight on the beam
+  g.fillRect(cx - bw / 2 + bh * 0.3, top - bh * 0.28, bw - bh * 0.6, bh * 0.18);
+
+  g.strokeStyle = '#111111';                           // the hanging thread
+  g.lineWidth = S * 0.035;
+  g.beginPath(); g.moveTo(cx, top + bh * 0.4); g.lineTo(cx, cy + R * 0.42); g.stroke();
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = S * 0.016;
+  g.beginPath(); g.moveTo(cx, top + bh * 0.4); g.lineTo(cx, cy + R * 0.42); g.stroke();
+
+  const ss = S * 0.46;
+  g.save();
+  g.translate(cx - ss / 2, cy + R * 0.42 - ss * 0.34);
+  drawSpider(g, ss, '#ffdc40');                        // ... and the spider riding it
+  g.restore();
+  g.restore();
+}
+
 export function drawPowerIcon(canvas, kind) {
   const g = canvas.getContext('2d');
   const S = canvas.width;
@@ -753,6 +822,8 @@ export function drawPowerIcon(canvas, kind) {
     drawBugle2D(g, S);
   } else if (kind === 'spring') {
     drawSpring2D(g, S);
+  } else if (kind === 'swing') {
+    drawSwing2D(g, S);
   } else if (kind === 'flash') {
     drawFlash2D(g, S);
   } else {
@@ -1100,6 +1171,91 @@ export function createSpringPickup() {
     const bob = Math.sin(t * 2.6) * 0.05;
     squash.position.y = baseY + bob;
     glow.position.y = SPR_TOP * 0.5 + baseY + bob;
+    glow.scale.setScalar(2.0 * (1 + 0.1 * Math.sin(t * 4.2)));
+  };
+  update(0);
+  return { root, update };
+}
+
+// ================= Ağ Salınışı (3D) =================
+// A strand of web thrown over a steel beam: a white half-ring on a blue vinyl beam with a gold
+// spider swinging underneath it on its own thread. Body (ring + beam, vertex colours) with its ink
+// outline, thread, spider decal, halo sprite: 5 draw calls. Geometries, materials and the decal
+// texture are shared; update() allocates nothing.
+
+const SW = { r: 0.42, tube: 0.055, beamR: 0.075, beamL: 0.72, yc: 0.155, hang: 0.35, decal: 0.19 };
+const SW_PIVOT = SW.yc + SW.r;                      // where the strand rests on the beam
+const SW_TOP = SW_PIVOT + SW.beamR;                 // ... and its highest point, y = 0 being the floor
+
+function buildSwingBody() {
+  const arc = new THREE.TorusGeometry(SW.r, SW.tube, 8, 22, Math.PI).translate(0, SW.yc, 0);
+  const beam = new THREE.CylinderGeometry(SW.beamR, SW.beamR, SW.beamL, 12, 1)
+    .rotateZ(Math.PI / 2).translate(0, SW.yc + SW.r, 0);
+  const nArc = arc.attributes.position.count;
+  const geo = mergeGeometries([arc, beam]);
+  arc.dispose(); beam.dispose();
+  addColors(geo, (i) => (i < nArc ? 0xf7fbff : 0x2f8cff)); // white strand, blue beam
+  return geo;
+}
+
+let shared4 = null;
+function buildShared4() {
+  if (!shared) shared = buildShared();
+  const sw = {};
+  sw.bodyGeo = buildSwingBody();
+  sw.bodyMat = toonMaterial(0xffffff, {
+    vertexColors: true, shade: 'soft', emissive: 0x123a6e,
+    gloss: { color: 0xffffff, strength: 0.6, threshold: 0.93, soft: 0.02 },
+  });
+  sw.threadGeo = new THREE.CylinderGeometry(0.022, 0.022, SW.hang, 6, 1).translate(0, -SW.hang / 2, 0);
+  sw.threadMat = toonMaterial(0xf7fbff, { shade: 'soft', emissive: 0x123a6e });
+  const dz = 0.006;
+  const f = new THREE.CircleGeometry(SW.decal, 20).translate(0, -SW.hang, dz);
+  const k = new THREE.CircleGeometry(SW.decal, 20).rotateY(Math.PI).translate(0, -SW.hang, -dz);
+  sw.spiderGeo = mergeGeometries([f, k]);
+  f.dispose(); k.dispose();
+  sw.spiderMat = new THREE.MeshBasicMaterial({
+    map: canvasTexture(128, (g, S) => {
+      g.save();
+      g.translate(S * 0.08, S * 0.08);              // the legs must stay inside the disc
+      drawSpider(g, S * 0.84, '#ffdc40');
+      g.restore();
+    }), transparent: true, depthWrite: false, toneMapped: false,
+  });
+  sw.glowMat = new THREE.SpriteMaterial({ map: shared.web.glowMat.map, color: 0xbfe6ff, transparent: true, opacity: 0.8, depthWrite: false });
+  return { sw };
+}
+
+export function createSwingPickup() {
+  if (!shared4) shared4 = buildShared4();
+  const s = shared4.sw;
+  const root = new THREE.Group();
+  root.name = 'swing-pickup';
+  const spin = new THREE.Group(); // spins, bobs, leans
+  const body = new THREE.Mesh(s.bodyGeo, s.bodyMat);
+  addOutline(body, OUTLINE, INK);
+  const pend = new THREE.Group(); // swings on the strand's crown
+  pend.position.y = SW_PIVOT;
+  const thread = new THREE.Mesh(s.threadGeo, s.threadMat);
+  const spider = new THREE.Mesh(s.spiderGeo, s.spiderMat);
+  spider.renderOrder = 1;
+  pend.add(thread, spider);
+  spin.add(body, pend);
+  const glow = new THREE.Sprite(s.glowMat);
+  glow.renderOrder = 2;
+  glow.position.z = -0.35;
+  root.add(spin, glow);
+
+  const baseY = 0.1;
+  let t = Math.random() * 20;
+  const update = (dt) => {
+    t += dt;
+    spin.rotation.y += dt * 1.8;
+    spin.rotation.z = Math.sin(t * 1.4) * 0.1;      // the whole thing leans, like a swing
+    const bob = Math.sin(t * 2.6) * 0.05;
+    spin.position.y = baseY + bob;
+    pend.rotation.z = Math.sin(t * 2.2) * 0.38;     // ... and the spider swings under it
+    glow.position.y = SW_TOP * 0.55 + baseY + bob;
     glow.scale.setScalar(2.0 * (1 + 0.1 * Math.sin(t * 4.2)));
   };
   update(0);
