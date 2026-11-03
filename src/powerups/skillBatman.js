@@ -24,10 +24,12 @@ export const FLY_ALTITUDE = 3.6;
 export const TAKEOFF_TIME = 0.8;
 export const LANDING_TIME = 1.0;
 const GLIDE_PITCH_ANGLE = 0.52;
-const CAPE_SEGMENTS_X = 24;
+const CAPE_SEGMENTS_X = 48; // 8 columns per scallop, so every hem point lands on a column
 const CAPE_SEGMENTS_Y = 12;
 const CAPE_WINGSPAN = 2.8;
-const CAPE_LENGTH = 1.6;
+const CAPE_LENGTH = 1.1; // centre drop along the sheet; longer would dip into wagon roofs (2.88 m) at glide altitude
+const CAPE_TILT = 0.42; // the sheet trails back ~24 deg; steeper faces the key light and loses the dark navy
+const CAPE_COS = Math.cos(CAPE_TILT), CAPE_SIN = Math.sin(CAPE_TILT);
 const NAVY = 0x23263a, YELLOW = 0xf4c922, BAT = 0x17171f;
 const TRAIL_N = 12;
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
@@ -153,7 +155,7 @@ export class BatmanSkill {
     // cape (on the player, at the shoulders)
     this.capeGroup = new THREE.Group();
     this.capeGroup.name = 'batmanGliderCape';
-    this.capeGroup.position.set(0, 0.96, -0.08);
+    this.capeGroup.position.set(0, 0.83, 0.28); // just under the head, behind his back (torso back z = 0.17)
     this.capeGroup.visible = false;
     this._buildCape();
     player.root.add(this.capeGroup);
@@ -197,22 +199,28 @@ export class BatmanSkill {
   }
 
   _buildCape() {
+    // a stiff bat-glider sheet: h runs up the sheet (0 = shoulder line), the sheet is tilted back so
+    // everything below the shoulders trails away from his back (z = -h * sin >= 0 for h <= 0)
     const cols = CAPE_SEGMENTS_X, rows = CAPE_SEGMENTS_Y;
     const total = (cols + 1) * (rows + 1);
-    const geo = new THREE.PlaneGeometry(CAPE_WINGSPAN, CAPE_LENGTH, cols, rows);
+    const geo = new THREE.PlaneGeometry(1, 1, cols, rows);
     this.capeGeo = geo;
     const base = new Float32Array(total * 3);
     const pos = geo.attributes.position;
+    const tipH = 0.36;
     for (let i = 0; i < total; i++) {
       const iy = Math.floor(i / (cols + 1)), ix = i % (cols + 1);
       const u = (ix / cols) * 2 - 1, v = iy / rows, au = Math.abs(u);
-      const span = v < 0.35 ? 0.35 + 0.65 * (v / 0.35) : 1.0 - 0.14 * Math.pow((v - 0.35) / 0.65, 2);
-      const bx = u * (CAPE_WINGSPAN * 0.5) * Math.max(0.32, span);
-      const arch = Math.sin(au * Math.PI * 3.0);
-      const scallop = v > 0.55 ? ((v - 0.55) / 0.45) * (0.16 * (1.0 - Math.abs(arch))) : 0;
-      const tipLift = v > 0.4 ? Math.pow(au, 2.5) * 0.16 : 0;
-      const by = -v * CAPE_LENGTH + scallop + tipLift;
-      const bz = Math.sin(v * Math.PI * 0.75) * 0.15 - Math.pow(au, 1.8) * 0.12 - 0.03;
+      // leading edge: flat under the head (|x| < 0.47), then one convex arc up to the lifted tip
+      const t = Math.max(0, (au - 0.33) / 0.67), top = tipH * (1 - (1 - t) * (1 - t));
+      // hem: lowest at the centre, rising to a point at each tip, scooped between points (au = k/3)
+      const env = -CAPE_LENGTH + (tipH - 0.05 + CAPE_LENGTH) * Math.pow(au, 1.6);
+      const hem = env + 0.26 * (1 - 0.5 * au) * Math.abs(Math.sin(au * Math.PI * 3));
+      const h = top + (hem - top) * v;
+      const bx = u * CAPE_WINGSPAN * 0.5;
+      const by = h * CAPE_COS;
+      // static billow of the wing panels (away from him) and a little dihedral at the tips
+      const bz = -h * CAPE_SIN + 0.08 * Math.sin(v * Math.PI) * smoothstep((au - 0.15) / 0.55) - 0.1 * au * au;
       base[i * 3] = bx; base[i * 3 + 1] = by; base[i * 3 + 2] = bz;
       pos.setXYZ(i, bx, by, bz);
     }
@@ -224,7 +232,9 @@ export class BatmanSkill {
     }));
     this.capeGroup.add(this.capeMesh);
     this.emblemMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.38), new THREE.MeshBasicMaterial({ map: canvasTex(256, 160, drawEmblem), transparent: true, depthWrite: false }));
-    this.emblemMesh.position.set(0, -0.36, 0.12);
+    // on the sheet's still centre, lifted 4 cm off it so the flutter never clips it
+    this.emblemMesh.position.set(0, -0.5 * CAPE_COS, 0.5 * CAPE_SIN + 0.04);
+    this.emblemMesh.rotation.x = -CAPE_TILT;
     this.capeGroup.add(this.emblemMesh);
   }
 
@@ -377,21 +387,22 @@ export class BatmanSkill {
     }
   }
 
+  // rigid near his back; the flutter grows toward the hem and the tips, the slow billow only pushes away from him
   _updateCapePhysics(time) {
     const pos = this.capeGeo.attributes.position;
     const arr = pos.array, base = this.capeBasePositions;
     const cols = CAPE_SEGMENTS_X, rows = CAPE_SEGMENTS_Y;
+    const breathe = 0.5 + 0.5 * Math.sin(time * 1.8), flap = Math.sin(time * 7.0);
     for (let i = 0; i < pos.count; i++) {
       const i3 = i * 3;
-      const bx = base[i3], by = base[i3 + 1], bz = base[i3 + 2];
+      const bx = base[i3];
       const iy = Math.floor(i / (cols + 1)), ix = i % (cols + 1);
-      const au = Math.abs((ix / cols) * 2 - 1);
-      const yr = iy / rows;
-      const z = Math.sin(bx * 5.0 + time * 22.0) * 0.12 * yr + Math.sin(bx * 11.0 - time * 32.0) * 0.038 * yr
-        + Math.cos(by * 7.0 + time * 18.0) * 0.045 * yr + Math.cos(time * 26.0 + au * 4.0) * 0.055 * yr * au;
-      arr[i3] = bx + Math.sin(time * 12.0 + by * 3.5) * 0.02 * yr;
-      arr[i3 + 1] = by + Math.cos(time * 14.0 + bx * 4.5) * 0.02 * yr;
-      arr[i3 + 2] = bz + z;
+      const au = Math.abs((ix / cols) * 2 - 1), v = iy / rows;
+      const e = Math.max(v, au), w = e * e * e;
+      const billow = 0.07 * breathe * Math.sin(v * Math.PI) * smoothstep((au - 0.15) / 0.55);
+      const flutter = w * (0.05 * Math.sin(bx * 4.2 - time * 13.0 + v * 4.0) + 0.022 * Math.sin(bx * 9.5 + time * 21.0 - v * 6.0));
+      arr[i3 + 1] = base[i3 + 1] + au * au * au * 0.045 * flap + w * 0.015 * Math.sin(time * 17.0 + bx * 6.0);
+      arr[i3 + 2] = base[i3 + 2] + billow + flutter;
     }
     pos.needsUpdate = true;
     this.capeGeo.computeVertexNormals();
@@ -409,7 +420,8 @@ export class BatmanSkill {
     this.capeGroup.updateWorldMatrix(true, false);
     const tip = _v;
     for (let r = 0; r < 2; r++) {
-      this.capeGroup.localToWorld(tip.set((r ? 1 : -1) * 1.3 * this.capeGroup.scale.x, -0.55, 0.05));
+      // the wingtip point of _buildCape (h ~ 0.34 up the sheet)
+      this.capeGroup.localToWorld(tip.set((r ? 1 : -1) * 1.4 * this.capeGroup.scale.x, 0.31 * this.capeGroup.scale.y, -0.24));
       const a = r * TRAIL_N * 3;
       T[a] = tip.x; T[a + 1] = tip.y; T[a + 2] = tip.z;
     }
