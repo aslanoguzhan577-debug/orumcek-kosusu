@@ -281,7 +281,6 @@ export class HeroSpecials {
       ironman: createIronManSkill({ scene, player, obstacles, cameraRig }),
       panther: createBlackPantherSkill({ scene, player, obstacles, cameraRig, chaser }),
     };
-    this.startDistance = 0;
   }
 
   // main.js, once the skins exist (still at load): per-skin ghost / overlay layers and rigs.
@@ -407,7 +406,6 @@ export class HeroSpecials {
     }
 
     if (skin === 'batman') {
-      this.startDistance = (game.state && typeof game.state.distance === 'number') ? game.state.distance : (game.world?.distance || 0); // ui.js still reads it for the bar
       if (!this.skills.batman.activate(dur)) return false;
       this._start(skin, dur);
       return true;
@@ -926,7 +924,6 @@ export class HeroSpecials {
     this.timeAlive = 0;
     this.mode = null;
     this._lastSmashTime = -Infinity;
-    this.startDistance = 0;
   }
 
   dispose() {

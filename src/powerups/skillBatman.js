@@ -274,7 +274,6 @@ export class BatmanSkill {
   beforePlayer(dt) {
     if (!this.active && this.currentFlyOffset <= 0.001) return;
     if (this.active && !game.halted) {
-      this.timeAlive += dt;
       this.elapsed += dt;
       const remaining = Math.max(0, this.maxTime - this.elapsed);
       let takeoffRatio = 1.0;
