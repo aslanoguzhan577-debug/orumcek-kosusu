@@ -897,14 +897,55 @@
 #ui .mission-card { gap: 8px; padding: 12px 14px; }
 #ui .ms-title { font-family: var(--font-h); font-weight: 400; font-size: 21px; letter-spacing: .06em; color: var(--blue); text-align: center; line-height: 1; }
 #ui .ms-list { display: flex; flex-direction: column; gap: 6px; width: 100%; }
-#ui .ms-row { display: flex; align-items: center; gap: 8px; }
-#ui .ms-txt { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 800; color: var(--navy); line-height: 1.1; }
-#ui .ms-bar { flex: none; width: 64px; height: 12px; background: #fff; border: 2px solid var(--ink); border-radius: 6px; overflow: hidden; }
-#ui .ms-bar i { display: block; width: 100%; height: 100%; transform-origin: left center; background: linear-gradient(180deg, #ffe27a, #ffb800); }
-#ui .ms-n { flex: none; min-width: 56px; text-align: right; font-size: 13px; font-weight: 800; color: var(--navy); font-variant-numeric: tabular-nums; }
-#ui .ms-row.done .ms-txt { color: var(--red-d); }
-#ui .ms-row.done .ms-n { font-family: var(--font-h); font-size: 20px; color: var(--red); }
-#ui .ms-row.done .ms-bar i { background: linear-gradient(180deg, #7bf39a, #17c14a); }
+#ui .ms-row { display: flex; align-items: center; gap: 10px; }
+#ui .ms-txt {
+  flex: 1 1 auto; min-width: 0;
+  font-family: var(--font-h); font-weight: 400;
+  font-size: clamp(18px, 5.2vw, 25px); letter-spacing: .035em; line-height: 1.04;
+  color: var(--navy); text-shadow: 1px 1px 0 rgba(255, 255, 255, .85);
+}
+/* sayı sticker'ı: mürekkep yıldızının üstünde sarı yıldız, ortada sayı */
+#ui .ms-n {
+  --burst: polygon(50% 0%, 61% 12%, 78% 7%, 82% 24%, 100% 32%, 89% 50%, 100% 68%, 82% 76%, 78% 93%, 61% 88%, 50% 100%, 39% 88%, 22% 93%, 18% 76%, 0% 68%, 11% 50%, 0% 32%, 18% 24%, 22% 7%, 39% 12%);
+  position: relative; flex: none;
+  min-width: 78px; padding: 10px 12px 9px;
+  font-family: var(--font-h); font-weight: 400; line-height: 1; letter-spacing: .02em;
+  text-align: center; color: var(--navy);
+  transform: rotate(-7deg);
+  animation: ms-sticker 3.6s ease-in-out infinite;
+}
+#ui .ms-n::before, #ui .ms-n::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; clip-path: var(--burst);
+}
+#ui .ms-n::before { background: var(--ink); transform: scale(1.08); }
+#ui .ms-n::after { background: linear-gradient(155deg, #fff8d0, var(--yellow) 52%, #ffb800); }
+#ui .ms-now {
+  font-size: 27px; color: var(--red);
+  -webkit-text-stroke: 1.4px var(--ink); paint-order: stroke fill;
+}
+#ui .ms-goal { font-size: 15px; }
+#ui .ms-row.done .ms-txt { color: var(--red-d); text-decoration: line-through solid var(--red) 2px; }
+/* biten görev: kırmızı mühür */
+#ui .ms-row.done .ms-n {
+  min-width: 0; padding: 5px 10px 4px;
+  font-size: 20px; letter-spacing: .07em; color: var(--red-d);
+  background: rgba(255, 246, 220, .9);
+  border: 3px solid var(--red-d); border-radius: 10px;
+  outline: 2px solid var(--red); outline-offset: 2px;
+  transform: rotate(6deg);
+  animation: none;
+}
+#ui .ms-row.done .ms-n::before, #ui .ms-row.done .ms-n::after { content: none; }
+@keyframes ms-sticker { 0%, 100% { transform: rotate(-7deg) scale(1); } 50% { transform: rotate(-4deg) scale(1.05); } }
+@media (max-height: 560px) {
+  #ui .ms-txt { font-size: 18px; }
+  #ui .ms-n { min-width: 66px; padding: 7px 10px 6px; }
+  #ui .ms-now { font-size: 22px; }
+  #ui .ms-goal { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #ui .ms-n { animation: none; }
+}
 
 /* koşu içi bildirimler: görev bitti / yeni çarpan */
 #ui .ms-toast, #ui .ms-banner {
@@ -913,7 +954,8 @@
 }
 #ui .ms-toast {
   top: 78px; padding: 6px 14px 5px;
-  background: var(--cream); color: var(--navy); font-size: 16px; font-weight: 800;
+  background: var(--cream); color: var(--navy);
+  font-family: var(--font-h); font-size: 20px; letter-spacing: .04em;
   animation: ms-toast 1.9s ease-out;
 }
 #ui .ms-banner {

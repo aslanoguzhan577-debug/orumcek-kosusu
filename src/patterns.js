@@ -115,6 +115,8 @@ export function trainSpawnD(meetD, trainSpeed) {
 }
 
 // Seconds the route needs after an obstacle before the next one (land / fall + react).
+// 'high' (0.6) is also what keeps the slide rhythm fair: standing up after a slide takes
+// CONFIG.slideRecover (0.25) + 0.7 of sliding, and a spammed press is always fired in time.
 const AFTER_TIME = { low: 0.75, car: 0.85, high: 0.6, wagons: 0.9 };
 
 const CAR_COLORS = 6;

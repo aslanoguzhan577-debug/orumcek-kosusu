@@ -79,6 +79,7 @@ export class Player {
     this.grounded = true;
     this.sliding = false;
     this.slideTimer = 0;
+    this._slideRecover = 0;
     this._laneFromX = this.x;
     this._laneT = 1;
     this._prevX = this.x;
@@ -178,6 +179,17 @@ export class Player {
       if (CONFIG.slideAfterDrop) this._slideQueued = true;
       return;
     }
+    // Subway Surfers rhythm: a press while sliding or standing up is only remembered,
+    // so spamming down cannot slide under everything.
+    if (this.sliding || this._slideRecover > 0) { this._slideQueued = true; return; }
+    this._startSlide();
+  }
+
+  // The spider-sense rescue (sense.js): a slide now, stand-up recovery or not.
+  rescueSlide() {
+    if (!this.grounded) { this._down(); return; } // in the air it stays a fast drop
+    this._slideRecover = 0;
+    this._slideQueued = false;
     this._startSlide();
   }
 
@@ -185,6 +197,7 @@ export class Player {
     const wasSliding = this.sliding;
     this.sliding = true;
     this.slideTimer = CONFIG.slideDuration;
+    this._slideRecover = 0;
     if (!wasSliding) emit('slide');
   }
 
@@ -237,7 +250,16 @@ export class Player {
     // --- slide timer ---
     if (this.sliding) {
       this.slideTimer -= dt;
-      if (this.slideTimer <= 0) this._endSlide();
+      if (this.slideTimer <= 0) { this._endSlide(); this._slideRecover = CONFIG.slideRecover; }
+    } else if (this._slideRecover > 0) {
+      this._slideRecover -= dt;
+      if (this._slideRecover <= 0) {
+        this._slideRecover = 0;
+        if (this._slideQueued && this.grounded) {
+          this._slideQueued = false;
+          this._startSlide();
+        }
+      }
     }
 
     // --- forced state timer ---

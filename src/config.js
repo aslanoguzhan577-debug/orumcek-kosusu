@@ -34,6 +34,7 @@ export const CONFIG = {
   jumpBufferHeight: 0.6,   // "up" pressed while falling this close to the floor = jump on landing
   coyoteTime: 0.12,        // "up" this soon after running off a roof edge = normal jump, not a web
   slideDuration: 0.7,
+  slideRecover: 0.25,      // s he stands up before the next slide can start (a press in it is remembered)
 
   // --- Input ---
   input: {

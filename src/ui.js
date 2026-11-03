@@ -385,7 +385,7 @@ function refreshMenu() {
   paintMissions();
 }
 
-// Görev kartı: "Görevler · Set N · xM" + üç görev satırı (metin, ilerleme çubuğu, tik).
+// Görev kartı: "Görevler · Set N · xM" + üç görev satırı (Bangers yazı, patlak sayı sticker'ı).
 function paintMissions() {
   el.msTitle.textContent = `GÖREVLER · SET ${missions.set} · x${game.mult.base}`;
   el.msList.textContent = '';
@@ -395,17 +395,20 @@ function paintMissions() {
     const txt = document.createElement('span');
     txt.className = 'ms-txt';
     txt.textContent = missionText(it.id, it.goal);
-    const bar = document.createElement('span');
-    bar.className = 'ms-bar';
-    const fill = document.createElement('i');
-    fill.style.transform = `scaleX(${Math.min(1, it.progress / it.goal)})`;
-    bar.appendChild(fill);
     const n = document.createElement('b');
     n.className = 'ms-n';
-    n.textContent = it.done ? '✔' : `${fmt(Math.floor(it.progress))}/${fmt(it.goal)}`;
-    row.appendChild(txt);
-    row.appendChild(bar);
-    row.appendChild(n);
+    if (it.done) {
+      n.textContent = 'TAMAM!';
+    } else {
+      const now = document.createElement('span');
+      now.className = 'ms-now';
+      now.textContent = fmt(it.progress);
+      const goal = document.createElement('span');
+      goal.className = 'ms-goal';
+      goal.textContent = '/' + fmt(it.goal);
+      n.append(now, goal);
+    }
+    row.append(txt, n);
     el.msList.appendChild(row);
   }
 }

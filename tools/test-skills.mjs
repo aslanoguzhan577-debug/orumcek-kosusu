@@ -277,4 +277,46 @@ game.mult.run = 0;
 eq(fl.use(), true, 'a fresh run can spend the spare');
 eq(game.mult.run, 5, 'and it starts at x5 again');
 
+// ---------- kayış ritmi (player.js): spam uzatmaz, ayağa kalkış hatırlanır ----------
+const { register } = await import('node:module');
+register('./stub-hooks.mjs', import.meta.url); // node'da three yok: src/player.js öyle yüklenir
+const { Player } = await import('../src/player.js');
+const DT = 1 / 60;
+const pl = new Player({ root: {}, setState() {}, update() {} });
+const until = (fn, max = 300) => { let n = 0; while (!fn() && n < max) { pl.update(DT, true); n++; } return n; };
+
+pl.reset();
+pl.handleAction('down');
+eq(pl.sliding, true, 'down starts a slide');
+pl.handleAction('down');
+pl.handleAction('down');
+eq(pl.slideTimer, CONFIG.slideDuration, 'a press while sliding does not extend the slide');
+let frames = until(() => !pl.sliding);
+ok(Math.abs(frames * DT - CONFIG.slideDuration) <= DT, `the slide lasts exactly slideDuration (${frames} frames)`);
+ok(pl._slideRecover > 0, 'he stands up for slideRecover seconds');
+
+pl.handleAction('down');
+eq(pl.sliding, false, 'a press during the recovery does not start a slide yet');
+frames = until(() => pl.sliding);
+eq(pl.sliding, true, 'the remembered press starts the next slide');
+ok(Math.abs(frames * DT - CONFIG.slideRecover) <= DT, `the next slide comes exactly when the recovery ends (${frames} frames)`);
+
+pl.reset();
+pl.handleAction('down');
+until(() => !pl.sliding);
+pl.handleAction('down');
+pl.handleAction('up');
+ok(!pl.grounded, 'a jump during the recovery works');
+eq(pl._slideQueued, false, 'and the jump drops the remembered press');
+
+pl.reset();
+pl.handleAction('down');
+until(() => !pl.sliding);
+pl.handleAction('down');
+pl.rescueSlide();
+eq(pl.sliding, true, 'the spider-sense rescue slides through the recovery');
+
+pl.reset();
+eq(pl._slideRecover, 0, 'reset clears the recovery');
+
 console.log(`OK ${checks} checks`);

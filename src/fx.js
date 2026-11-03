@@ -8,7 +8,8 @@
 //     nano swirl. Fixed pools, custom shader (soft AA discs / 4-point stars / squares /
 //     rings with an ink outline), no per-frame allocation. 2 draw calls while anything is alive.
 //   * a pool of 5 comic text sprites (GÜM! ÇAT! FİŞŞ! ...) with prebuilt canvas textures.
-//   * one forward shockwave ring mesh (ironSave).
+//   * one forward shockwave ring mesh (ironSave) and two additive sole-glow sprites
+//     (Örümcek Yayı), both built once and only moved/faded per frame.
 //   * DOM layers (created here, styled in ui.css): speed lines, venom vignette, colour flash,
 //     black "caught" splash.
 // The effects run on their own rAF loop so they keep animating in 'over' mode (game systems
@@ -18,6 +19,7 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { events } from './events.js';
+import { INK, groundRing, burst, sticker, impactFrame } from './vfxCore.js';
 
 const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const SHAKE_K = reduceMotion ? 0.25 : 1;
@@ -258,7 +260,10 @@ const WORDS = {
   smash: { t: 'SMASH!', burst: '#39ff14', fill: '#0a3d00' },
   venom: { t: 'VENOM BLAST!', burst: '#ffcc00', fill: '#ff3300' },
   gong:  { t: 'GONG!',  burst: '#38d5ff', fill: '#0e3a9c' },
+  manset: { t: 'x2 MANŞET!', paper: true, fill: '#12161f' },
 };
+// Flaş Fotoğraf'ın üç kademesi (game.mult.run = 5 / 6 / 7): "xN" diyafon sticker'ı
+for (let b = 5; b <= 7; b++) WORDS['x' + b] = { t: 'x' + b, shutter: true, fill: '#e0262c' };
 const FONT = "'Bangers', Impact, 'Arial Black', sans-serif";
 
 function drawWord(canvas, def, seed) {
@@ -316,8 +321,45 @@ function drawWord(canvas, def, seed) {
     g.fill();
     g.stroke();
   }
-  let size = def.burst ? 150 : 170;
-  const maxW = def.bubble ? W * 0.78 : def.burst ? W * 0.62 : W * 0.9;
+  if (def.paper) {
+    // katlanmış gazete sayfası: Künye bandı + gri yazı satırları
+    g.save();
+    g.translate(W / 2, H / 2);
+    g.rotate(-0.06);
+    const w = W * 0.84, h = H * 0.68;
+    g.fillStyle = '#f4f1e6';
+    g.strokeStyle = '#0d0d14';
+    g.lineWidth = 14;
+    g.fillRect(-w / 2, -h / 2, w, h);
+    g.strokeRect(-w / 2, -h / 2, w, h);
+    g.fillStyle = '#0d0d14';
+    g.fillRect(-w / 2 + 14, -h / 2 + 14, w - 28, h * 0.15);
+    g.fillStyle = 'rgba(13,13,20,.3)';
+    for (let i = 0; i < 6; i++) {
+      const lw = (i % 3 === 2 ? 0.34 : 0.52) * w;
+      g.fillRect(-w / 2 + 20, -h / 2 + h * 0.56 + i * (h * 0.07), lw, h * 0.03);
+      g.fillRect(w / 2 - 20 - lw, -h / 2 + h * 0.56 + i * (h * 0.07), lw, h * 0.03);
+    }
+    g.restore();
+  }
+  if (def.shutter) {
+    // fotoğraf makinesi diyafonu: mürekkep halka + kapanan altı kanat
+    const cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.42;
+    g.beginPath(); g.arc(cx, cy, R, 0, 6.283);
+    g.fillStyle = '#ffffff'; g.fill();
+    g.lineWidth = 14; g.strokeStyle = '#0d0d14'; g.stroke();
+    g.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * 6.283 + 0.55;
+      g.moveTo(cx + Math.cos(a) * R * 0.3, cy + Math.sin(a) * R * 0.3);
+      g.lineTo(cx + Math.cos(a + 1.05) * R * 0.95, cy + Math.sin(a + 1.05) * R * 0.95);
+    }
+    g.lineWidth = 10; g.strokeStyle = '#c9ccd4'; g.stroke();
+    g.lineWidth = 8; g.strokeStyle = '#0d0d14';
+    g.strokeRect(-W * 0.02, cy - R * 0.1, W * 0.04, R * 0.2);
+  }
+  let size = def.burst || def.paper || def.shutter ? 150 : 170;
+  const maxW = W * (def.bubble ? 0.78 : def.burst ? 0.62 : def.paper ? 0.74 : def.shutter ? 0.5 : 0.9);
   g.font = `${size}px ${FONT}`;
   const w = g.measureText(def.t).width;
   if (w > maxW) { size = Math.floor(size * maxW / w); g.font = `${size}px ${FONT}`; }
@@ -365,6 +407,41 @@ function makeSpeedLines() {
     g.fill();
   }
   return c.toDataURL('image/png');
+}
+
+// Örümcek Yayı: ağ desenli taban parıltısı — bir kez çizilir, iki sprite aynı dokuyu kullanır.
+function makeSoleCanvas() {
+  const S = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const C = S / 2, N = 8, R = C * 0.92;
+  const grd = g.createRadialGradient(C, C, 2, C, C, C);
+  grd.addColorStop(0, 'rgba(255,255,255,.95)');
+  grd.addColorStop(0.4, 'rgba(150,225,255,.5)');
+  grd.addColorStop(0.75, 'rgba(224,38,44,.26)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, S, S);
+  g.strokeStyle = 'rgba(255,255,255,.95)';
+  g.lineWidth = 2.6;
+  g.lineJoin = 'round';
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * 6.283;
+    g.beginPath(); g.moveTo(C, C); g.lineTo(C + Math.cos(a) * R, C + Math.sin(a) * R); g.stroke();
+  }
+  for (let k = 1; k <= 3; k++) {
+    const r = (R * k) / 3.3;
+    for (let i = 0; i < N; i++) {
+      const a0 = (i / N) * 6.283, a1 = ((i + 1) / N) * 6.283, sag = r * 0.8;
+      g.beginPath();
+      g.moveTo(C + Math.cos(a0) * r, C + Math.sin(a0) * r);
+      g.quadraticCurveTo(C + Math.cos((a0 + a1) / 2) * sag, C + Math.sin((a0 + a1) / 2) * sag,
+        C + Math.cos(a1) * r, C + Math.sin(a1) * r);
+      g.stroke();
+    }
+  }
+  return c;
 }
 
 function el(tag, cls, parent) {
@@ -440,12 +517,13 @@ export function initFx(game) {
   }
   let textHead = 0;
   const _v = new THREE.Vector3();
-  function showText(key, x, y, z, widthFrac, life = 0.8, scroll = true, wobble = false) {
+  function showText(key, x, y, z, widthFrac, life = 0.8, scroll = true, wobble = false, spin = false) {
     const s = texts[textHead];
     textHead = (textHead + 1) % texts.length;
     s.sprite.material.map = wordTex[key];
     s.rot0 = wobble ? 0 : (Math.random() - 0.5) * 0.35;
     s.wobble = wobble;
+    s.spin = spin;
     s.sprite.material.rotation = s.rot0;
     s.sprite.position.set(x, y, z);
     // size relative to what the camera sees at that distance, so it fits any screen
@@ -480,6 +558,26 @@ export function initFx(game) {
   scene.add(ring);
   let ringT = -1;
   const RING_TIME = 0.65;
+
+  // ----- Örümcek Yayı: ağ desenli taban parıltısı (tek doku, iki sprite, hiç yeniden çizilmez) -----
+  const soleTex = new THREE.CanvasTexture(makeSoleCanvas());
+  soleTex.colorSpace = THREE.SRGBColorSpace;
+  const soles = [];
+  for (const dx of [-0.2, 0.2]) {
+    const mat = new THREE.SpriteMaterial({
+      map: soleTex, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, fog: false, opacity: 0,
+    });
+    const sp = new THREE.Sprite(mat);
+    sp.visible = false;
+    sp.renderOrder = 4;
+    sp.name = 'fx-sole';
+    scene.add(sp);
+    soles.push({ sprite: sp, dx });
+  }
+  let springActive = false;
+  let soleBoost = 0;      // set on take-off, decays: the glow flashes brighter with each jump
+  let lastBoingMs = -1e9;
 
   // ----- DOM helpers -----
   const flashColors = {
@@ -625,6 +723,21 @@ export function initFx(game) {
       }
       normal.spawn(pl.x, fy + 0.06, 0.1, 0, 0, 0, 0.22, 1.0, 3.8, SHAPE.flat, 0xffd23a, 0.95, 0, 0, true);
       normal.spawn(pl.x, fy + 0.07, 0.1, 0, 0, 0, 0.3, 0.6, 3.0, SHAPE.flat, 0xffffff, 0.85, 0, 0, true, 0.04);
+    }
+    // Örümcek Yayı: her adımda yerden beyaz ağ halkası fırlar, taban parıltısı alevlenir,
+    // arada da "BOING!" sticker'ı (vfxCore havuzları; V yoksa kendileri hiçbir şey yapmaz)
+    if (springActive) {
+      const at = { x: pl.x, y: fy + 0.04, z: 0.1 };
+      soleBoost = 1;
+      groundRing(at, { r0: 0.3, r1: 3.6, width: 0.5, color: 0xffffff, edge: 0xbfe6ff, life: 0.5, scroll: true });
+      burst('ring', at, { color: 0xffffff, size: 1.1, grow: 3.2, life: 0.42, alpha: 0.85, spin: 3 });
+      groundRing({ x: pl.x, y: fy + 0.05, z: 0.35 }, { r0: 0.2, r1: 2.2, width: 0.3, color: 0xffd23a, life: 0.34, scroll: true });
+      sparkBurst(glow, pl.x, fy + 0.25, 0.15, Math.round(9 * rm), [0xffffff, 0x9fd8ff, 0xffd23a], 6.5, 0.36, 0.5);
+      const boingAt = performance.now();
+      if (!reduceMotion && boingAt - lastBoingMs > 1400) {
+        lastBoingMs = boingAt;
+        sticker('boing', { x: pl.x + (pl.x > 0.3 ? -1.3 : 1.3), y: fy + 1.7, z: 0.3 }, { width: 0.2, life: 0.75 });
+      }
     }
     // occasional comic word, always off to the side; high jumps get it more often
     const now = performance.now();
@@ -958,6 +1071,42 @@ export function initFx(game) {
     glow.spawn(tx, ty, tz, 0, 0, 0, 0.16, 0.5, 0.9, SHAPE.star, 0xfff2a0, 0.9, 0, 0, false, T, 3);
   });
 
+  // ----- Örümcek Yayı: taban parıltısı yalnızca süre varken -----
+  on('springOn', () => {
+    springActive = true;
+    for (const s of soles) s.sprite.visible = true;
+  });
+  on('springOff', () => {
+    springActive = false;
+    soleBoost = 0;
+    for (const s of soles) { s.sprite.visible = false; s.sprite.material.opacity = 0; }
+  });
+
+  // ----- Bugle Manşeti: gazete sayfası dönerek girer, sonra altın parıltı kuyruğu -----
+  let bugleActive = false;
+  let bugleAcc = 0;
+  on('bugleOn', () => {
+    const pl = player();
+    bugleActive = true;
+    bugleAcc = 0;
+    impactFrame({ bg: 0xf4f1e6, dot: 0xd9d2c0, line: INK, frames: 3, ms: 130 });
+    flash('gold', 0.5, 320);
+    showText('manset', pl.x, pl.y + 2.4, 0, 0.46, 1.15, true, false, true);
+    sparkBurst(glow, pl.x, pl.y + 1.2, 0.2, Math.round(14 * rm), [0xffd23a, 0xfff2a0, 0xffffff], 6, 0.46, 0.5);
+    shake(0.05, 0.2);
+  });
+  on('bugleOff', () => { bugleActive = false; });
+
+  // ----- Flaş Fotoğraf: tam ekran beyaz flaş + diyafon "xN" sticker'ı (banner zaten ui.js'te) -----
+  on('flashBoost', (d) => {
+    const pl = player();
+    flash('white', 1, 300);
+    const key = 'x' + (d.bonus || 5);
+    if (wordTex[key]) showText(key, pl.x + (pl.x > 0.3 ? -1.5 : 1.5), pl.y + 2, 0, 0.26, 0.95, true, false, true);
+    sparkBurst(glow, pl.x, pl.y + 1.3, 0.2, Math.round(12 * rm), [0xffffff, 0xffd23a], 8, 0.5, 0.42);
+    shake(0.05, 0.14);
+  });
+
   let venomOn = false;
   on('venomNear', () => { venomOn = true; dom.venom.hidden = false; });
   on('venomFar', () => { venomOn = false; dom.venom.hidden = true; });
@@ -1041,6 +1190,10 @@ export function initFx(game) {
     ringT = -1;
     ironActive = false;
     senseActive = magnetActive = false;
+    springActive = bugleActive = false;
+    soleBoost = 0;
+    lastBoingMs = -1e9;
+    for (const s of soles) { s.sprite.visible = false; s.sprite.material.opacity = 0; }
     venomOn = false;
     dom.venom.hidden = true;
     introSpeedUntil = 0;
@@ -1049,7 +1202,11 @@ export function initFx(game) {
     splashOff();
   }
   on('start', clearAll);
-  on('gameover', () => { venomOn = senseActive = magnetActive = false; dom.venom.hidden = true; });
+  on('gameover', () => {
+    venomOn = senseActive = magnetActive = springActive = bugleActive = false;
+    dom.venom.hidden = true;
+    for (const s of soles) { s.sprite.visible = false; s.sprite.material.opacity = 0; }
+  });
 
   // ----- per-frame -----
   let last = performance.now();
@@ -1119,6 +1276,27 @@ export function initFx(game) {
         magAcc -= dt;
         if (magAcc <= 0) { magAcc = 0.95; magnetPulse(true); }
       }
+      if (bugleActive) { // altın parıltı kuyruğu: scroll onu kendiliğinden arkaya taşır
+        bugleAcc -= dt;
+        while (bugleAcc <= 0) {
+          bugleAcc += 0.07;
+          glow.spawn(pl.x + rnd(-0.35, 0.35), pl.y + rnd(0.3, 1.8), rnd(-0.1, 0.3),
+            rnd(-0.6, 0.6), rnd(0.6, 1.8), rnd(-0.5, 0.6),
+            rnd(0.35, 0.6), 0.24, 0.02, SHAPE.star, [0xffd23a, 0xfff2a0, 0xffb52e][(Math.random() * 3) | 0],
+            0.9, -0.4, 1.2, true, 0, rnd(-7, 7));
+        }
+      }
+    }
+
+    // Örümcek Yayı: taban parıltısı ayakların üstünde durur, sıçrayışta alevlenir
+    if (springActive) {
+      soleBoost = Math.max(0, soleBoost - dt * 3);
+      const w = 1 + 0.09 * Math.sin(simTime * 9);
+      for (const s of soles) {
+        s.sprite.position.set(pl.x + s.dx, pl.y + 0.12 + soleBoost * 0.06, 0.06);
+        s.sprite.scale.setScalar((0.42 + soleBoost * 0.2) * w);
+        s.sprite.material.opacity = THREE.MathUtils.clamp(0.5 + 0.16 * Math.sin(simTime * 9) + soleBoost * 0.5, 0, 1);
+      }
     }
 
     // pixel scale for point sizes
@@ -1144,6 +1322,10 @@ export function initFx(game) {
       if (s.wobble) { // speech bubble: shakes with fright
         s.sprite.material.rotation = Math.sin(s.t * 24) * 0.09;
         sc *= 1 + 0.05 * Math.sin(s.t * 19);
+      }
+      if (s.spin) { // gazete sayfası / diyafon: dönerek yerine oturur
+        const u = Math.min(1, s.t / (s.life * 0.32));
+        s.sprite.material.rotation = s.rot0 + (1 - u) * (1 - u) * -2.6;
       }
       s.sprite.scale.set(s.baseW * sc, s.baseW * sc * s.aspect, 1);
       if (!s.wobble) s.sprite.position.y += dt * 0.6;
@@ -1191,12 +1373,12 @@ export function initFx(game) {
   return {
     dispose() {
       cancelAnimationFrame(raf);
-      scene.remove(normal.points, glow.points, ring);
+      scene.remove(normal.points, glow.points, ring, ...soles.map((s) => s.sprite));
       for (const t of texts) scene.remove(t.sprite);
       dom.root.remove();
     },
     // all word textures, for the start-up warm-up (src/warmup.js)
-    textures: Object.values(wordTex),
+    textures: [...Object.values(wordTex), soleTex],
     // for console testing
     _debug: { dbg, normal, glow, texts, dom, get ironActive() { return ironActive; }, get venomOn() { return venomOn; } },
   };

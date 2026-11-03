@@ -330,7 +330,7 @@ export class SensePowerup {
 
   _do(action, p) {
     if (action === 'left' || action === 'right') p.changeLane(action === 'left' ? -1 : 1);
-    else if (action === 'slide') p.handleAction('down');
+    else if (action === 'slide') p.rescueSlide();
     else if (jumpable(p)) p.handleAction('up');
     else return;
     this.dodges++;
