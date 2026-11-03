@@ -1,8 +1,9 @@
-// powerups/swing.js — Ağ Salınışı (PLAN.md 10): 8 seconds of swinging high between the buildings.
+// powerups/swing.js — Ağ Salınışı (PLAN.md 10): seconds of swinging high between the buildings
+// (CONFIG.swing.duration at upgrade level 0, longer with the market upgrade).
 //
 // Pickup: kind 'swing', placed by a pattern-generator extra in the middle of the route lane's free
-// stretch, a little rarer than the magnet. Collecting sets game.state.swingTime =
-// CONFIG.swing.duration and emits 'swingOn'; it counts down only while the run moves, at 0 ->
+// stretch, a little rarer than the magnet. Collecting sets game.state.swingTime to the duration
+// shop.js gives the level and emits 'swingOn'; it counts down only while the run moves, at 0 ->
 // 'swingOff' (restart / menu send 'swingOff' {reset}).
 //
 // The flight is the two mechanics the game already has:
@@ -24,6 +25,7 @@ import { emit } from '../events.js';
 import { game } from '../game.js';
 import { laneX } from '../world.js';
 import { createSwingPickup } from '../pickup-art.js';
+import { getEffectiveSkillDuration } from '../shop.js';
 
 const S = CONFIG.swing;
 const smoothstep = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
@@ -81,14 +83,15 @@ export class SwingPowerup {
     const hs = game.heroSpecials, rep = game.repulsor;
     if (this.player.controlsLocked || this.player.verticalLocked || game.halted
       || (hs && hs.active) || (rep && rep.active) || (game.web && game.web.zipping)) return;
+    const dur = getEffectiveSkillDuration('swing');
     this.active = true;
     this.time = 0;
     this._arc = -1;
     this._coinAcc = 0;
-    game.state.swingTime = S.duration;
+    game.state.swingTime = dur;
     this.player.verticalLocked = true;
     if (this.chaser && this.chaser.isNear && typeof this.chaser._dropBack === 'function') this.chaser._dropBack();
-    emit('swingOn', { duration: S.duration });
+    emit('swingOn', { duration: dur });
   }
 
   _stop(reset) {

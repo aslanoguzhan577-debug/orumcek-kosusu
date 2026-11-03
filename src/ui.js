@@ -413,13 +413,23 @@ function paintMissions() {
   }
 }
 
-// Koşu içi bildirimler: kısa görev satırı, büyük çarpan afişi.
+// Koşu içi bildirimler: kısa görev satırı, büyük çarpan afişi. Hepsi aynı yere çizildiği için
+// aynı karede ikisi gelirse sıraya girer, ilki bitince ikincisi görünür.
+const flashes = [];
+let flashing = false;
 function hudFlash(text, cls) {
+  flashes.push([text, cls]);
+  if (!flashing) nextFlash();
+}
+function nextFlash() {
+  const next = flashes.shift();
+  if (!next) { flashing = false; return; }
+  flashing = true;
   const node = document.createElement('div');
-  node.className = cls;
-  node.textContent = text;
+  node.className = next[1];
+  node.textContent = next[0];
   el.hud.appendChild(node);
-  setTimeout(() => node.remove(), 1900); // matches the ms-toast / ms-banner animation
+  setTimeout(() => { node.remove(); nextFlash(); }, 1900); // matches the ms-toast / ms-banner animation
 }
 events.addEventListener('missionDone', (e) => hudFlash('✔ ' + e.detail.text, 'ms-toast'));
 events.addEventListener('missionSet', (e) => hudFlash('ÇARPAN x' + e.detail.multiplier + '!', 'ms-banner'));

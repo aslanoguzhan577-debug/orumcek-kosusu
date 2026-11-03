@@ -336,7 +336,8 @@ export class HeroSpecials {
   activate(skin, overrideDuration) {
     const cfg = this.getHeroConfig(skin);
     if (!cfg) return false;
-    if (this.active || game.halted || (this.player && this.player.controlsLocked)) return false;
+    // verticalLocked: Ağ Salınışı / Duvar Koşusu owns the height while they run
+    if (this.active || game.halted || (this.player && (this.player.controlsLocked || this.player.verticalLocked))) return false;
     const dur = (overrideDuration && overrideDuration > 0) ? overrideDuration : cfg.duration;
     const p = this.player;
 

@@ -1,9 +1,10 @@
-// powerups/wall.js — Duvar Koşusu (PLAN.md 10): 6 seconds of running sideways on the facade next
-// to the track.
+// powerups/wall.js — Duvar Koşusu (PLAN.md 10): seconds (CONFIG.wall.duration at level 0, longer
+// with the market upgrade) of running sideways on the facade next to the track.
 //
 // Pickup: kind 'wall', placed by a pattern-generator extra in the middle of the route lane's free
-// stretch. Collecting sets game.state.wallTime = CONFIG.wall.duration and emits 'wallOn'; it
-// counts down only while the run moves, at 0 -> 'wallOff' (restart / menu send 'wallOff' {reset}).
+// stretch. Collecting sets game.state.wallTime to the duration shop.js gives the level and emits
+// 'wallOn'; it counts down only while the run moves, at 0 -> 'wallOff' (restart / menu send
+// 'wallOff' {reset}).
 //
 // The trick is all built from what the game already has for the swing / Kitty / Batman flights:
 //   * the altitude goes into player.floorY (obstacles.js keeps writing the surface under him into
@@ -29,6 +30,7 @@ import { emit } from '../events.js';
 import { game } from '../game.js';
 import { laneX } from '../world.js';
 import { createWallPickup, createWallPanel } from '../pickup-art.js';
+import { getEffectiveSkillDuration } from '../shop.js';
 
 const S = CONFIG.wall;
 const smoothstep = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
@@ -84,6 +86,7 @@ export class WallPowerup {
     const p = this.player, hs = game.heroSpecials, rep = game.repulsor;
     if (p.controlsLocked || p.verticalLocked || game.halted
       || (hs && hs.active) || (rep && rep.active) || (game.web && game.web.zipping)) return;
+    const dur = getEffectiveSkillDuration('wall');
     this.active = true;
     this.time = 0;
     this.lift = 0;
@@ -91,7 +94,7 @@ export class WallPowerup {
     this.side = p.x >= 0 ? 1 : -1;
     this.outerLane = this.side > 0 ? CONFIG.laneCount - 1 : 0;
     this._fromX = p.x;
-    game.state.wallTime = S.duration;
+    game.state.wallTime = dur;
     p.verticalLocked = true;
     // he commits to the outer lane of that side; from now on only an inner press ends the run
     p.lane = this.outerLane;
@@ -101,16 +104,33 @@ export class WallPowerup {
     this.panels[this.side].root.visible = true;
     this.cameraRig.setDolly(S.camBack, 0);
     if (this.chaser && this.chaser.isNear && typeof this.chaser._dropBack === 'function') this.chaser._dropBack();
-    emit('wallOn', { duration: S.duration, side: this.side });
+    emit('wallOn', { duration: dur, side: this.side });
   }
 
   _stop(reset) {
+    const onWall = this.height > 0;
     this.active = false;
     game.state.wallTime = 0;
     this.lift = 0;
     this.height = 0;
-    this.player.verticalLocked = false;
-    for (const p of Object.values(this.panels)) p.root.visible = false;
+    const p = this.player;
+    p.verticalLocked = false;
+    // A catch froze him on the wall face: back down into the outer lane he ran in. A run reset does
+    // not need it (player.reset already put him in the middle lane) and must not be overwritten.
+    if (reset && onWall && game.state.mode === 'running') {
+      const x = laneX(this.outerLane);
+      p.x = x;
+      p._prevX = x;
+      p._laneFromX = x;
+      p._laneT = 1;
+      p.lane = this.outerLane;
+      p._prevLane = this.outerLane;
+      p.floorY = this.surfaceY;
+      p.y = this.surfaceY;
+      p.vy = 0;
+      p.grounded = true;
+    }
+    for (const panel of Object.values(this.panels)) panel.root.visible = false;
     this.cameraRig.setDolly(0, 0);
     if (!reset) this.obstacles.grace(1.5); // the landing
     emit('wallOff', reset ? { reset: true } : {});

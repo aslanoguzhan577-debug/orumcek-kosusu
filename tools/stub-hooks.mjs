@@ -13,6 +13,11 @@ export class Group {
   remove(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); }
 }
 export class Box3 { constructor() { this.min = vec(); this.max = vec(); } }
+export class Vector3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  clone() { return new Vector3(this.x, this.y, this.z); }
+}
 export const MathUtils = { clamp: (v, a, b) => Math.min(b, Math.max(a, v)) };
 `);
 const WORLD = data(`
@@ -26,6 +31,7 @@ const vec = () => ({ x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; th
 const node = () => ({ position: vec(), rotation: vec(), scale: { setScalar() {} }, visible: true });
 const item = () => ({ root: node(), update() {} });
 export const createSwingPickup = item;
+export const createWebPickup = item;
 export const createDecoyPickup = item;
 export const createWallPickup = item;
 export const createTracerPickup = item;

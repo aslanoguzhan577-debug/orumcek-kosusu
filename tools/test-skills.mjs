@@ -681,7 +681,7 @@ events.addEventListener('tracerOff', (e) => trLog.push(e.detail.reset ? 'reset' 
 game.restart();
 game.state.intro = false;
 game.state.speed = CONFIG.startSpeed;
-game.state.distance = 50;
+game.world.distance = 50;
 pl.x = laneX(2);
 tracer._segs.length = 0;
 tracer._lastA = -Infinity;
@@ -698,17 +698,17 @@ eq(tracer.drone.root.position.z, -TG.ahead, 'ahead of him');
 eq(tracer.drone.root.position.x, laneX(2), 'in the lane the route takes there');
 ok(tracer.ribbon.shown > 1, 'and paints the strip on it');
 game.state.tracerTime = TG.duration;
-for (let i = 0; i < Math.round(TG.stepTime / DT) + 2; i++) { tracer.update(DT); game.state.distance += game.state.speed * DT; }
+for (let i = 0; i < Math.round(TG.stepTime / DT) + 2; i++) { tracer.update(DT); game.world.distance += game.state.speed * DT; }
 eq(game.mult.temp, 1, 'five seconds on the strip = temp +1');
 eq(steps[steps.length - 1], 1, 'and it is announced');
 game.state.multiplier = 0;
 game.update(DT);                          // the real score line: (base + run + temp) * factor
 eq(game.state.multiplier, game.mult.base + game.mult.run + game.mult.temp, 'temp pays the score multiplier');
-game.state.distance = 190;
+game.world.distance = 190;
 tracer.ribbon.segs.length = 0;
 tracer.update(DT);
 ok(tracer.ribbon.segs.some((s) => s.x0 !== s.x1), 'the strip crosses over to the new route lane');
-game.state.distance = 50;
+game.world.distance = 50;
 pl.x = laneX(2) + (TG.ribbonWidth + CONFIG.playerWidth) / 2 - 0.05;
 tracer.update(DT);
 eq(game.mult.temp, 1, 'the strip is as wide as it reads');

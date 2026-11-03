@@ -1,7 +1,7 @@
 // missions.js (PLAN.md 10) — three missions make one set; finishing a set raises the score
 // multiplier base by 1, permanently (x30 at most). Progress is counted from the event bus only,
 // never from the game's own logic; the save (spidey.missions) is written when a mission completes
-// and at game over, not every frame. A broken or stale save starts over at set 1.
+// and when a run ends (game over, pause, the next run, a hidden or closed page), not every frame. A broken or stale save starts over at set 1.
 //
 // Set N is picked from the seed N, so every player sees the same missions in the same order.
 // "Tek koşuda" (onerun) missions start over at every run start unless already finished.
@@ -17,7 +17,8 @@ const KEY = 'spidey.missions';
 const PER_SET = 3;
 const MAX_BASE = 30;
 
-// goal = base + growth * (set - 1)
+// goal = base + growth * (set - 1), never above `max` (a goal that one run could not reach would
+// block the whole set: all three have to finish).
 export const MISSION_POOL = [
   { id: 'coins',     text: '{n} altın topla',                    base: 50,   growth: 25 },
   { id: 'coinsRun',  text: 'Tek koşuda {n} altın topla',         base: 25,   growth: 10, onerun: true },
@@ -26,16 +27,15 @@ export const MISSION_POOL = [
   { id: 'slide',     text: '{n} kez kay',                        base: 15,   growth: 8 },
   { id: 'lane',      text: '{n} kez şerit değiştir',             base: 25,   growth: 12 },
   { id: 'web',       text: '{n} kez ağ at',                      base: 10,   growth: 5 },
-  { id: 'swing',     text: '{n} kez ağla salın',                 base: 2,    growth: 1 },
+  { id: 'swing',     text: '{n} kez ağla salın',                 base: 2,    growth: 1,  max: 5 },
   { id: 'powerup',   text: '{n} güç topla',                      base: 4,    growth: 2 },
-  { id: 'magnet',    text: '{n} mıknatıs topla',                 base: 2,    growth: 1 },
-  { id: 'bugle',     text: '{n} Bugle Manşeti topla',            base: 2,    growth: 1 },
-  { id: 'decoy',     text: '{n} kez Venom\'u kuklayla kandır',    base: 1,    growth: 1 },
-  { id: 'wall',      text: 'Duvarda {n} m koş',                  base: 20,   growth: 10, onerun: true },
-  { id: 'tracer',    text: 'Örümcek İzi ile {n} kez çarpan kazan', base: 1,   growth: 1 },
+  { id: 'magnet',    text: '{n} mıknatıs topla',                 base: 2,    growth: 1,  max: 5 },
+  { id: 'bugle',     text: '{n} Bugle Manşeti topla',            base: 2,    growth: 1,  max: 5 },
+  { id: 'decoy',     text: '{n} Ağ Kuklası topla',               base: 1,    growth: 1,  max: 5 },
+  { id: 'wall',      text: 'Duvarda {n} m koş',                  base: 20,   growth: 10, onerun: true, max: 120 },
+  { id: 'tracer',    text: 'Örümcek İzi ile {n} kez çarpan kazan', base: 1,   growth: 1,  max: 6 },
   { id: 'sense',     text: 'Örümcek hissiyle {n} kez kaç',        base: 4,    growth: 3 },
   { id: 'iron',      text: 'Iron Spider ile {n} kez kurtul',      base: 3,    growth: 2 },
-  { id: 'special',   text: '{n} kez kahraman yeteneği kullan',    base: 3,    growth: 2 },
   { id: 'scoreRun',  text: 'Tek koşuda {n} puan yap',            base: 1200, growth: 600, onerun: true },
   { id: 'noStumble', text: 'Tökezlemeden {n} m koş',             base: 300,  growth: 150, onerun: true },
   { id: 'noCoins',   text: 'Altın toplamadan {n} puan yap',      base: 700,  growth: 350, onerun: true },
@@ -49,7 +49,8 @@ export function missionText(id, goal) {
 }
 
 export function goalFor(def, set) {
-  return def.base + def.growth * (set - 1);
+  const growing = def.base + def.growth * (set - 1);
+  return def.max === undefined ? growing : Math.min(def.max, growing);
 }
 
 export function makeSet(set) {
@@ -165,11 +166,10 @@ const COUNTED = {
   lane: ['lane'],
   web: ['web'],
   swingOn: ['swing'],
-  decoyLure: ['decoy'],               // only a real bait (Venom was near) counts
+  decoyOn: ['decoy'],                 // the pickup itself: a real bait needs Venom near, so it could stay unreachably rare
   tracerStep: ['tracer'],
   senseDodge: ['sense'],
   ironSave: ['iron'],
-  specialOn: ['special'],
 };
 for (const name in COUNTED) events.addEventListener(name, () => bump(COUNTED[name], 1));
 
@@ -193,11 +193,19 @@ const MEASURED = {
 
 events.addEventListener('stumble', () => { stumbleAt = game.state.distance; });
 events.addEventListener('gameover', persist);
+events.addEventListener('pause', persist);
+// Every way a run ends writes the save: gameover, pause, the next run / menu (reset() below) and a
+// page that is hidden or closed. game.toMenu() emits no event of its own.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
+}
+if (typeof window !== 'undefined') window.addEventListener('pagehide', persist);
 
 applyBase();
 
 game.addSystem({
   reset() {
+    persist();          // the run that just ended: keep what it earned before the counters reset
     stumbleAt = 0;
     for (const it of missions.items) if (!it.done && BY_ID.get(it.id).onerun) it.progress = 0;
   },
