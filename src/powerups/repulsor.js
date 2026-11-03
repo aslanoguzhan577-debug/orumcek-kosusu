@@ -282,10 +282,9 @@ export class RepulsorBoost {
           game.cameraRig.shake(0.04, 0.1);
         }
 
-        // Distance reached target score!
+        // Distance reached target score; game.update pays these metres into the multiplied accumulator.
         if (game.state.distance >= this.targetDistance || this.flightTime >= MAX_FLY_DURATION) {
           game.state.distance = Math.max(game.state.distance, this.targetDistance);
-          game.state.score = Math.floor(game.state.distance * CONFIG.scorePerMeter) + game.state.coins * CONFIG.coinScore;
 
           this.phase = 'descend';
           this.elapsed = 0;

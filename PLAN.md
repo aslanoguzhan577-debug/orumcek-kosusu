@@ -173,3 +173,39 @@ Aynı koda dokunan görevler aynı ajanda toplanır. Ajan bir görevi bitirince 
 - **G12:** Sadece `ui.js`, `ui.css` ve `index.html`'deki `#ui` katmanı; oyuna game API'si ve olaylarla bağlanır (G2 ile aynı anda çalışır). Ağ şarjı ve Iron Spider süre göstergeleri de burada. Sekme değişince oyun dursun. Paylaş butonu (`navigator.share`, yoksa panoya kopyala). İsim ve en iyi skor cihazda.
 - **G13:** Telefon boyutunda akıcılık, konsol hataları, 10+ dakikalık koşu, adalet ve zorluk eğrisi.
 - **G14:** Kullanıcının hesabıyla yapılır (GitHub veya Netlify); online skor tablosu kararı o zaman verilir.
+
+## 10. Görevler, skor çarpanı ve yeni güçler (2026-11-03)
+
+Subway Surfers'ın (Poki web sürümü, REA ile incelendi) görev → çarpan sistemi ve bizde karşılığı olmayan güçleri, Spider-Man temasıyla. Sadece mekanik alınır; isim, görsel, ses alınmaz.
+
+### Skor çarpanı
+- `game.mult = { base: 1, run: 0, temp: 0, factor: 1 }`; her kare `game.state.multiplier = (base + run + temp) * factor`.
+  base = 1 + tamamlanan görev seti sayısı (kalıcı, en fazla 30). run = Flaş Fotoğraf (+5/+6/+7, koşu başına). temp = Örümcek İzi (0–3). factor = 2 Bugle Manşeti açıkken.
+  Her koşu başında run, temp sıfırlanır, factor 1 olur; base kalır.
+- Skor birikir: her koşan karede `mesafe artışı × scorePerMeter × multiplier` eklenir; altın başına `coinScore` (10) çarpılmaz. `game.state.score = floor(birikmiş mesafe puanı) + coins × coinScore`.
+- HUD: skorun yanında "x5" rozeti; değişince zıplar, factor 2 iken altın parlar.
+
+### Görevler (`src/missions.js`)
+- Aynı anda 3 görev = bir set. İlerleme cihazda (`spidey.missions`, bozuk kayıt = baştan). Üçü bitince base +1, yeni set gelir (`missionSet {set, multiplier}` olayı, ekranda "ÇARPAN x6!"). Tek görev bitince `missionDone {id, text}` + kısa bildirim.
+- Setler set numarasından tohumlu seçilir: tüm arkadaşlar aynı sırayla aynı görevleri görür. Miktarlar setle büyür.
+- "Tek koşuda" görevlerin ilerlemesi her koşu başında sıfırlanır (bitmişse kalır).
+- Havuz (olaydan sayılır): altın topla (toplam / tek koşu), zıpla (toplam / tek koşu), kay, şerit değiştir, ağ at, güç topla, mıknatıs topla, örümcek hissiyle kaç, Iron Spider ile kurtul, kahraman yeteneği kullan, tek koşuda X puan, tökezlemeden X m, altın toplamadan X puan.
+- Ana menüde "Görevler · Set N · xM" kartı: 3 satır, ilerleme çubuğu, tik.
+
+### Aktarılan güçler (Subway Surfers karşılığı)
+| Bizde | Karşılığı | Nasıl |
+|---|---|---|
+| Ağ Salınışı (`swing`, yerden) | Jetpack | 8 sn binalar arasında yüksekte ağla sallanır (girişteki `swing` pozu), havada altın şeridi, engeller değmez, inişte 1,5 sn koruma. |
+| Örümcek Yayı (`spring`, yerden) | Süper Ayakkabı | 10 sn zıplama ~2,2 kat (tren çatısına doğrudan çıkar). |
+| Bugle Manşeti (`bugle`, yerden) | 2x Çarpan | 10 sn factor = 2. Uçan Daily Bugle gazetesi. |
+| Flaş Fotoğraf (market sarf) | Skor Takviyesi | Koşunun ilk 7 sn'sinde HUD butonu, koşu başına en fazla 3: run = 4 + kullanım (+5, +6, +7). |
+
+Zaten olanlar: Mıknatıs (Coin Magnet), Iron Spider (Kaykay), Iron Man jeti (Hızlı Başlangıç), ağ / mancınık (Pogo).
+
+### Yeni güçler
+- **Ağ Kuklası (`decoy`, yerden):** Ağdan bir kukla bırakır, Venom ona kanıp en geriye düşer; 20 sn içindeki ilk tökezleme Venom'u yaklaştırmaz.
+- **Duvar Koşusu (`wall`, yerden):** 6 sn yandaki bina cephesine sıçrar ve duvarda koşar; engeller değmez, duvarda altın sırası; bitince en yakın dış şeride iner, 1,5 sn koruma.
+- **Örümcek İzi (`tracer`, yerden):** 10 sn küçük bir drone önde uçar, her zaman açık olan güvenli şeride parlayan ağ izi çizer. İz üzerinde her 5 sn kalınca temp +1 (en fazla +3), izden çıkınca temp 0.
+
+### Ponytail ayarı (aşamaya göre, kullanıcı kararı)
+Full: oyun mantığı, kayıt / skor formülü, HUD ve menü, güçlerin oynanış kodu, testler. Kapalı: güç görselleri / efektler / ikonlar / eşya modelleri ve konsept tasarım.

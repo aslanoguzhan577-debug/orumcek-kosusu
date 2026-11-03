@@ -67,6 +67,7 @@
     <!-- HUD (oyun sırasında) -->
     <div id="hud" class="hud" hidden>
       <div class="hud-top">
+        <div class="pill mult" id="h-mult" hidden>x1</div>
         <div class="pill score"><span class="lbl">SKOR</span><b id="h-score">0</b></div>
         <div class="pill coin"><i class="coin-ico"></i><b id="h-coins">0</b></div>
         <button id="h-pause" class="round-btn" type="button" tabindex="-1" aria-label="Duraklat"><i class="pause-ico"></i></button>
@@ -129,6 +130,10 @@
             <button id="b-skin" class="btn small blue" type="button">KARAKTER</button>
             <button id="b-market" class="btn small ghost" type="button">MARKET</button>
           </div>
+        </div>
+        <div class="card mission-card">
+          <div class="ms-title" id="m-ms-title">GÖREVLER · SET 1 · x1</div>
+          <div class="ms-list" id="m-ms-list"></div>
         </div>
       </div>
     </section>

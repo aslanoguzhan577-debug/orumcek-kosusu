@@ -286,6 +286,16 @@
 #ui .pill.score .lbl { color: var(--red-d); font-size: 13px; }
 #ui .pill.coin { background: #fff; transform: rotate(1.5deg); align-self: flex-start; margin-top: 2px; }
 #ui .pill.coin b { font-size: 26px; min-width: 24px; text-align: right; }
+#ui .pill.mult {
+  align-self: flex-start; margin-top: 2px;
+  background: var(--blue); color: #fff;
+  font-family: var(--font-h); font-weight: 400; font-size: 26px; letter-spacing: .05em; line-height: 1;
+  padding: 8px 10px 6px; transform: rotate(2deg);
+  font-variant-numeric: tabular-nums;
+}
+#ui .pill.mult.gold { background: var(--yellow); color: var(--ink); box-shadow: 3px 3px 0 var(--ink), 0 0 18px rgba(255, 210, 58, .95); }
+#ui .pill.mult.pop { animation: ui-mult-pop .26s ease-out; }
+@keyframes ui-mult-pop { 40% { transform: rotate(2deg) scale(1.35); } }
 #ui .round-btn {
   width: 52px; height: 52px; flex: none;
   border-radius: 50%;
@@ -819,4 +829,41 @@
 }
 @media (prefers-reduced-motion: reduce) {
   #ui .repulsor-btn { animation: none; }
+}
+
+/* ---------- görevler ve skor çarpanı (PLAN.md 10) ---------- */
+#ui .mission-card { gap: 8px; padding: 12px 14px; }
+#ui .ms-title { font-family: var(--font-h); font-weight: 400; font-size: 21px; letter-spacing: .06em; color: var(--blue); text-align: center; line-height: 1; }
+#ui .ms-list { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+#ui .ms-row { display: flex; align-items: center; gap: 8px; }
+#ui .ms-txt { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 800; color: var(--navy); line-height: 1.1; }
+#ui .ms-bar { flex: none; width: 64px; height: 12px; background: #fff; border: 2px solid var(--ink); border-radius: 6px; overflow: hidden; }
+#ui .ms-bar i { display: block; width: 100%; height: 100%; transform-origin: left center; background: linear-gradient(180deg, #ffe27a, #ffb800); }
+#ui .ms-n { flex: none; min-width: 56px; text-align: right; font-size: 13px; font-weight: 800; color: var(--navy); font-variant-numeric: tabular-nums; }
+#ui .ms-row.done .ms-txt { color: var(--red-d); }
+#ui .ms-row.done .ms-n { font-family: var(--font-h); font-size: 20px; color: var(--red); }
+#ui .ms-row.done .ms-bar i { background: linear-gradient(180deg, #7bf39a, #17c14a); }
+
+/* koşu içi bildirimler: görev bitti / yeni çarpan */
+#ui .ms-toast, #ui .ms-banner {
+  position: absolute; left: 50%; pointer-events: none; text-align: center;
+  border: 3px solid var(--ink); border-radius: 12px; box-shadow: 3px 3px 0 var(--ink);
+}
+#ui .ms-toast {
+  top: 78px; padding: 6px 14px 5px;
+  background: var(--cream); color: var(--navy); font-size: 16px; font-weight: 800;
+  animation: ms-toast 1.9s ease-out;
+}
+#ui .ms-banner {
+  top: 34%; padding: 10px 24px 8px;
+  background: var(--yellow); color: var(--ink);
+  font-family: var(--font-h); font-size: clamp(30px, 9vw, 54px); letter-spacing: .05em; line-height: 1;
+  -webkit-text-stroke: 6px var(--ink); paint-order: stroke fill;
+  animation: ms-banner 1.9s ease-out;
+}
+@keyframes ms-toast { from { opacity: 0; transform: translate(-50%, 10px); } 12%, 80% { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -8px); } }
+@keyframes ms-banner { 0% { opacity: 0; transform: translate(-50%, 0) scale(.5) rotate(-8deg); } 18%, 76% { opacity: 1; transform: translate(-50%, 0) scale(1) rotate(-2deg); } to { opacity: 0; transform: translate(-50%, 0) scale(1.12) rotate(-2deg); } }
+@media (prefers-reduced-motion: reduce) {
+  #ui .pill.mult.pop { animation: none; }
+  #ui .ms-toast, #ui .ms-banner { animation-duration: .3s; }
 }

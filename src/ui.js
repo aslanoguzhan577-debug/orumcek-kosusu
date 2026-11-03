@@ -1,10 +1,10 @@
 // ui.js (G12) — menu, HUD, pause menu, game-over screen, local scores, sharing.
 //
 // Hooks into the game only through the public API:
-//   reads   game.state (mode, score, coins, distance, webCharges, ironCount, ironTime,
-//                       senseTime, magnetTime: seconds left, undefined = 0)
+//   reads   game.state (mode, score, coins, distance, multiplier, webCharges, ironCount, ironTime,
+//                       senseTime, magnetTime: seconds left, undefined = 0) and game.mult.factor
 //   calls   game.start() / pause() / resume() / restart()
-//   listens events: start, pause, resume, gameover
+//   listens events: start, pause, resume, gameover, missionDone, missionSet
 // It sets game.tapToStart = false (the G1 tap-anywhere placeholder is off).
 // Markup lives in index.html (#ui), styling in ui.css. All DOM is built once; the frame
 // loop only touches an element when its value changed.
@@ -14,6 +14,7 @@
 
 import { game } from './game.js';
 import { events } from './events.js';
+import { missions, missionText } from './missions.js';
 import { setMuted, isMuted } from './audio.js';
 import { drawPowerIcon } from './pickup-art.js';
 import { HEART_SVG_ICON } from './powerups/skillHelloKitty.js';
@@ -49,7 +50,7 @@ function loadScores() {
 const $ = (id) => document.getElementById(id);
 const el = {
   hud: $('hud'),
-  score: $('h-score'), coins: $('h-coins'), pause: $('h-pause'),
+  score: $('h-score'), coins: $('h-coins'), mult: $('h-mult'), pause: $('h-pause'),
   web: $('h-web'),
   webLbl: $('h-web-lbl') || ($('h-web') ? $('h-web').querySelector('.lbl') : null),
   webSlots: $('h-web-slots') || ($('h-web') ? $('h-web').querySelector('.slots') : null),
@@ -60,6 +61,7 @@ const el = {
   ironIco: $('h-iron') ? $('h-iron').querySelector('.iron-ico') : null,
   menu: $('scr-menu'), market: $('scr-market'), mkCoins: $('mk-coins'), mkList: $('mk-list'), skin: $('scr-skin'), skinBtn: $('b-skin'), skinOk: $('b-skin-close'), mkBtn: $('b-market'), mkClose: $('b-market-close'), help: $('scr-help'), pauseScr: $('scr-pause'), over: $('scr-over'), overMarket: $('b-over-market'),
   nameBox: $('m-namebox'), name: $('m-name'), best: $('m-best'), bestName: $('m-bestname'),
+  msTitle: $('m-ms-title'), msList: $('m-ms-list'),
   play: $('b-play'), helpBtn: $('b-help'), helpOk: $('b-help-ok'),
   resume: $('b-resume'), restart: $('b-restart'), pauseMenu: $('b-pause-menu'),
   again: $('b-again'), share: $('b-share'), overMenu: $('b-over-menu'),
@@ -93,7 +95,7 @@ const timers = ['sense', 'magnet'].map((kind) => {
   if (cv) drawPowerIcon(cv, kind);
   return { box: box || document.createElement('div'), fill: (box && box.querySelector('.fill')) || document.createElement('div'), max: 1, prev: 0, show: null, q: -1, low: null };
 });
-const cache = { score: -1, coins: -1, web: -1, ironN: -1, ironShow: null, ironBar: null, barScale: -1, low: null, hint: null, repulsorShow: null, repulsorText: '', heroSkin: null };
+const cache = { score: -1, coins: -1, mult: -1, multGold: null, web: -1, ironN: -1, ironShow: null, ironBar: null, barScale: -1, low: null, hint: null, repulsorShow: null, repulsorText: '', heroSkin: null };
 
 game.tapToStart = false;
 
@@ -339,7 +341,44 @@ function refreshMenu() {
   const top = scores[0];
   el.best.textContent = top ? fmt(top.s) : '0';
   el.bestName.textContent = top && top.n ? top.n : '';
+  paintMissions();
 }
+
+// Görev kartı: "Görevler · Set N · xM" + üç görev satırı (metin, ilerleme çubuğu, tik).
+function paintMissions() {
+  el.msTitle.textContent = `GÖREVLER · SET ${missions.set} · x${game.mult.base}`;
+  el.msList.textContent = '';
+  for (const it of missions.items) {
+    const row = document.createElement('div');
+    row.className = 'ms-row' + (it.done ? ' done' : '');
+    const txt = document.createElement('span');
+    txt.className = 'ms-txt';
+    txt.textContent = missionText(it.id, it.goal);
+    const bar = document.createElement('span');
+    bar.className = 'ms-bar';
+    const fill = document.createElement('i');
+    fill.style.transform = `scaleX(${Math.min(1, it.progress / it.goal)})`;
+    bar.appendChild(fill);
+    const n = document.createElement('b');
+    n.className = 'ms-n';
+    n.textContent = it.done ? '✔' : `${fmt(Math.floor(it.progress))}/${fmt(it.goal)}`;
+    row.appendChild(txt);
+    row.appendChild(bar);
+    row.appendChild(n);
+    el.msList.appendChild(row);
+  }
+}
+
+// Koşu içi bildirimler: kısa görev satırı, büyük çarpan afişi.
+function hudFlash(text, cls) {
+  const node = document.createElement('div');
+  node.className = cls;
+  node.textContent = text;
+  el.hud.appendChild(node);
+  setTimeout(() => node.remove(), 1900); // matches the ms-toast / ms-banner animation
+}
+events.addEventListener('missionDone', (e) => hudFlash('✔ ' + e.detail.text, 'ms-toast'));
+events.addEventListener('missionSet', (e) => hudFlash('ÇARPAN x' + e.detail.multiplier + '!', 'ms-banner'));
 
 // ---------- actions ----------
 function startRun() {
@@ -563,8 +602,8 @@ window.addEventListener('pagehide', () => {
 
 // ---------- HUD ----------
 function resetHudCache() {
-  cache.score = cache.coins = cache.web = cache.ironN = cache.barScale = -1;
-  cache.ironShow = cache.ironBar = cache.low = cache.hint = null;
+  cache.score = cache.coins = cache.mult = cache.web = cache.ironN = cache.barScale = -1;
+  cache.ironShow = cache.ironBar = cache.low = cache.hint = cache.multGold = null;
   prevIronTime = 0;
   for (const g of timers) { g.max = 1; g.prev = 0; g.show = null; g.q = -1; g.low = null; }
 }
@@ -588,6 +627,19 @@ function updateHud() {
   const st = game.state;
   if (st.score !== cache.score) { cache.score = st.score; el.score.textContent = fmt(st.score); }
   if (st.coins !== cache.coins) { cache.coins = st.coins; el.coins.textContent = fmt(st.coins); }
+
+  // Çarpan rozeti: x1 iken gizli, değişince zıplar, 2x çarpan açıkken altın parlar
+  const mult = Math.round(st.multiplier || 1);
+  if (mult !== cache.mult) {
+    cache.mult = mult;
+    el.mult.hidden = mult <= 1;
+    el.mult.textContent = 'x' + mult;
+    el.mult.classList.remove('pop');
+    void el.mult.offsetWidth; // restart the pop animation
+    el.mult.classList.add('pop');
+  }
+  const gold = game.mult.factor === 2;
+  if (gold !== cache.multGold) { cache.multGold = gold; el.mult.classList.toggle('gold', gold); }
 
   const skin = game.skin || 'spider';
   const HERO_SKINS = ['hulk', 'cap', 'miles', 'kitty', 'batman', 'raimi', 'ironman', 'panther'];

@@ -17,6 +17,7 @@ const state = {
   coins: 0,
   distance: 0,      // metres run this round
   speed: 0,         // current m/s
+  multiplier: 1,    // (mult.base + mult.run + mult.temp) * mult.factor, every running frame
   webCharges: 0,    // G9
   ironCount: 0,     // G10 (persistent inventory; NOT reset per run)
   ironTime: 0,      // G10 seconds left
@@ -26,8 +27,16 @@ const state = {
   intro: false,     // true while the start-of-run clip plays (intro.js)
 };
 
+// Score multiplier (PLAN.md 10): missions.js owns base (1 + finished mission sets, max 30);
+// the power-ups own run (Flaş Fotoğraf), temp (Örümcek İzi) and factor 2 (Bugle Manşeti).
+const mult = { base: 1, run: 0, temp: 0, factor: 1 };
+
+// The distance score accumulates here already multiplied; coin score never multiplies.
+let scoreAcc = 0;
+
 export const game = {
   state,
+  mult,
 
   obstacles: null,  // G2 obstacle system (main.js)
   chaser: null,     // G8 Venom (main.js)
@@ -164,6 +173,7 @@ export const game = {
       return;
     }
     const running = state.mode === 'running';
+    const dist0 = state.distance;
 
     if (running && !this.halted) {
       state.time += dt;
@@ -192,7 +202,10 @@ export const game = {
 
     if (running) {
       for (const s of this.systems) if (s.update) s.update(dt);
-      state.score = Math.floor(state.distance * CONFIG.scorePerMeter) + state.coins * CONFIG.coinScore;
+      // every metre gained this frame (a power-up's distance jump included) is paid at the multiplier
+      state.multiplier = (mult.base + mult.run + mult.temp) * mult.factor;
+      scoreAcc += (state.distance - dist0) * CONFIG.scorePerMeter * state.multiplier;
+      state.score = Math.floor(scoreAcc) + state.coins * CONFIG.coinScore;
     }
   },
 
@@ -200,6 +213,11 @@ export const game = {
     state.score = 0;
     state.coins = 0;
     state.distance = 0;
+    scoreAcc = 0;
+    mult.run = 0;
+    mult.temp = 0;
+    mult.factor = 1;
+    state.multiplier = mult.base; // base is permanent (missions.js)
     state.time = 0;
     state.speed = CONFIG.startSpeed;
     this.naturalSpeed = CONFIG.startSpeed;

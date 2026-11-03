@@ -40,6 +40,7 @@ import { warmUp } from './warmup.js';
 import { createXray } from './xray.js';
 import './audio.js';
 import './shop.js';
+import './missions.js';
 import './ui.js';
 
 // ---------- renderer / scene ----------
