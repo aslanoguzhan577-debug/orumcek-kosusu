@@ -20,10 +20,24 @@ import { CONFIG } from '${CONFIG_URL}';
 export const laneX = (lane) => (lane - (CONFIG.laneCount - 1) / 2) * CONFIG.laneWidth;
 `);
 const CURVE = data('export const curve = { bank: 0 };');
-// pickup-art.js is pure THREE + canvas: node only needs the factory swing.js registers.
+// pickup-art.js is pure THREE + canvas: node only needs the factories the power-ups register.
 const PICKUP_ART = data(`
-const item = () => ({ root: { position: { set() {} }, scale: { setScalar() {} }, rotation: { set() {} } }, update() {} });
+const vec = () => ({ x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } });
+const node = () => ({ position: vec(), rotation: vec(), scale: { setScalar() {} }, visible: true });
+const item = () => ({ root: node(), update() {} });
 export const createSwingPickup = item;
+export const createDecoyPickup = item;
+export const createWallPickup = item;
+export const createTracerPickup = item;
+export const createDecoyDummy = () => ({ root: node(), lean: { rotation: vec() }, update() {} });
+export const createTracerDrone = () => ({ root: node(), update() {} });
+export const createWallPanel = () => ({ root: node(), scrolled: 0, scroll(dz) { this.scrolled += dz; } });
+export const createTracerRibbon = (n) => ({
+  root: node(), max: n, segs: [], shown: 0,
+  seg(i, x0, z0, x1, z1, w) { this.segs.push({ i, x0, z0, x1, z1, w }); },
+  show(c) { this.shown = c; },
+  update() {},
+});
 `);
 
 export async function resolve(spec, ctx, next) {

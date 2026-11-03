@@ -1,17 +1,20 @@
 // pickup-art.js — art for the power-up pickups. No game logic.
 //
 //   import { createWebPickup, createIronPickup, createSensePickup, createMagnetPickup,
-//            createBuglePickup, createSpringPickup, createSwingPickup } from './pickup-art.js';
+//            createBuglePickup, createSpringPickup, createSwingPickup, createDecoyPickup,
+//            createWallPickup, createTracerPickup } from './pickup-art.js';
 //   const p = createWebPickup();   // { root, update(dt) }
 //   scene.add(p.root); p.root.position.set(x, y, z);  // y = surface the item hovers over
 //   every frame: p.update(dt);
 //
 // Sense = Funko head + yellow spider-sense squiggles, Magnet = red horseshoe magnet with silver
 // tips and a spider badge, Bugle = folded Daily Bugle front page, Spring = web-strand coil with
-// red soles, Swing = web strand over a steel beam with a gold spider swinging under it; same
-// interface. drawPowerIcon(canvas, 'sense' | 'magnet' | 'bugle' | 'spring' | 'swing' |
-// 'ironSpider' | 'heroSpecial' | 'web') paints the matching 2D HUD / market icon; the market-only
-// Flaş Fotoğraf has no pickup, its icon is the press camera.
+// red soles, Swing = web strand over a steel beam with a gold spider swinging under it, Decoy =
+// a web cocoon doll with a mask face, Wall = a brick slab a gold spider climbs, Tracer = the
+// little red-gold spider-drone over a glowing web strip; same interface.
+// drawPowerIcon(canvas, 'sense' | 'magnet' | 'bugle' | 'spring' | 'swing' | 'decoy' | 'wall' |
+// 'tracer' | 'ironSpider' | 'heroSpecial' | 'web') paints the matching 2D HUD / market icon; the
+// market-only Flaş Fotoğraf has no pickup, its icon is the press camera.
 // All are about 1 m tall including the float: the lowest point hovers ~0.1 m above the
 // origin (bottom centre), the highest reaches ~1.0 m. They spin and bob by themselves;
 // every instance starts at a random phase, so pooled copies do not move in sync.
@@ -826,6 +829,12 @@ export function drawPowerIcon(canvas, kind) {
     drawSwing2D(g, S);
   } else if (kind === 'flash') {
     drawFlash2D(g, S);
+  } else if (kind === 'decoy') {
+    drawDecoy2D(g, S);
+  } else if (kind === 'wall') {
+    drawWall2D(g, S);
+  } else if (kind === 'tracer') {
+    drawTracer2D(g, S);
   } else {
     drawMagnet2D(g, S);
   }
@@ -1260,4 +1269,772 @@ export function createSwingPickup() {
   };
   update(0);
   return { root, update };
+}
+
+// ================= Ağ Kuklası, Duvar Koşusu, Örümcek İzi =================
+// Decoy = a web-wrapped Spider-Man doll (the pickup is the same cocoon, small); Wall = a brick
+// slab with a spider climbing it (in the world: a comic facade panel that scrolls past); Tracer =
+// the little red-gold spider-drone (in the world: the drone itself + the glowing web ribbon it
+// paints on the rails). Same pickup interface as above: { root, update(dt) }, ~1 m tall, spinning
+// and bobbing by itself.
+//
+//   createDecoyDummy()    -> { root, update(dt), lean }  the 1.5 m doll left standing on the track
+//   createTracerDrone()   -> { root, update(dt) }        the drone, ~0.6 m wide, legs pedalling
+//   createWallPanel(side) -> { root, scroll(dz) }        one long facade strip, |x| = 3.65
+//   createTracerRibbon(n) -> { root, seg(i, x0, z0, x1, z1, w), show(n), update(dt) }
+//
+// The ribbon is ONE InstancedMesh of flat quads: the power-up hands over the two ends of every
+// segment, so no THREE matrix maths leaves this file (and the node tests never see them).
+
+// ---------- shared drawing ----------
+// a Spider-Man mask face in a circle of radius R: red vinyl, dark web print, big white lenses
+function drawMaskFace(g, cx, cy, R) {
+  g.save();
+  g.beginPath();
+  g.arc(cx, cy, R, 0, Math.PI * 2);
+  g.clip();
+  g.fillStyle = PAGE_RED;
+  g.fillRect(cx - R, cy - R, R * 2, R * 2);
+  const nx = cx, ny = cy + R * 0.55;                 // the web radiates from the chin
+  g.strokeStyle = 'rgba(28,8,18,.8)';
+  g.lineWidth = R * 0.055;
+  for (let i = -5; i <= 5; i++) {
+    const a = -Math.PI / 2 + i * 0.32;
+    g.beginPath();
+    g.moveTo(nx, ny);
+    g.lineTo(nx + Math.cos(a) * R * 2.4, ny + Math.sin(a) * R * 2.4);
+    g.stroke();
+  }
+  for (const k of [0.3, 0.55, 0.82, 1.1]) {
+    g.beginPath();
+    for (let i = -5; i <= 5; i++) {
+      const a0 = -Math.PI / 2 + i * 0.32, a1 = -Math.PI / 2 + (i + 1) * 0.32;
+      const x0 = nx + Math.cos(a0) * R * k, y0 = ny + Math.sin(a0) * R * k;
+      const x1 = nx + Math.cos(a1) * R * k, y1 = ny + Math.sin(a1) * R * k;
+      const am = (a0 + a1) / 2, sag = k * 0.9;
+      if (i === -5) g.moveTo(x0, y0);
+      g.quadraticCurveTo(nx + Math.cos(am) * R * sag, ny + Math.sin(am) * R * sag, x1, y1);
+    }
+    g.stroke();
+  }
+  g.restore();
+  drawFaceLenses(g, cx, cy + R * 0.06, R * 0.78, 0.1);
+  g.beginPath();
+  g.arc(cx, cy, R * 0.97, 0, Math.PI * 2);
+  g.lineWidth = R * 0.16;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+}
+
+// brick courses + one window: the wall's texture, for the pickup slab and the big panel alike
+function drawBricks(g, S, { window = true } = {}) {
+  g.fillStyle = '#b8563f';
+  g.fillRect(0, 0, S, S);
+  const rows = 8, bh = S / rows;
+  for (let r = 0; r < rows; r++) {
+    const off = (r & 1) ? S / 8 : 0;
+    for (let c = -1; c < 8; c++) {
+      const x = off + (c * S) / 8, y = r * bh;
+      g.fillStyle = r % 3 === 0 ? '#c9634a' : '#bb5a41';
+      g.fillRect(x + S * 0.006, y + S * 0.006, S / 8 - S * 0.012, bh - S * 0.012);
+    }
+  }
+  g.strokeStyle = 'rgba(20,16,22,.85)';
+  g.lineWidth = S * 0.012;
+  for (let r = 0; r <= rows; r++) {
+    g.beginPath(); g.moveTo(0, r * bh); g.lineTo(S, r * bh); g.stroke();
+    const off = (r & 1) ? S / 8 : 0;
+    for (let c = 0; c <= 8; c++) {
+      const x = off + (c * S) / 8;
+      g.beginPath(); g.moveTo(x, r * bh); g.lineTo(x, r * bh + bh); g.stroke();
+    }
+  }
+  let grad = g.createLinearGradient(0, S * 0.62, 0, S);        // grime toward the bottom
+  grad.addColorStop(0, 'rgba(20,16,22,0)');
+  grad.addColorStop(1, 'rgba(20,16,22,.45)');
+  g.fillStyle = grad;
+  g.fillRect(0, S * 0.62, S, S * 0.38);
+  g.fillStyle = 'rgba(255,235,190,.16)';                       // sunlit top edge
+  g.fillRect(0, 0, S, S * 0.16);
+  if (!window) return;
+  const wx = S * 0.2, wy = S * 0.14, ww = S * 0.42, wh = S * 0.42;
+  g.fillStyle = PAGE_INK;
+  g.fillRect(wx - S * 0.02, wy - S * 0.02, ww + S * 0.04, wh + S * 0.04);
+  grad = g.createLinearGradient(wx, wy, wx + ww, wy + wh);
+  grad.addColorStop(0, '#9fd8ff');
+  grad.addColorStop(0.5, '#3f74b8');
+  grad.addColorStop(1, '#1d3a6e');
+  g.fillStyle = grad;
+  g.fillRect(wx, wy, ww, wh);
+  g.fillStyle = 'rgba(255,255,255,.5)';                        // glass reflection
+  g.beginPath();
+  g.moveTo(wx, wy + wh * 0.55);
+  g.lineTo(wx + ww * 0.55, wy);
+  g.lineTo(wx + ww * 0.8, wy);
+  g.lineTo(wx, wy + wh * 0.85);
+  g.closePath();
+  g.fill();
+  g.fillStyle = PAGE_INK;                                      // mullion
+  g.fillRect(wx, wy + wh * 0.46, ww, S * 0.025);
+  g.fillStyle = '#e6e2d6';                                     // sill
+  g.fillRect(wx - S * 0.04, wy + wh + S * 0.02, ww + S * 0.08, S * 0.05);
+}
+
+// the glowing web strip: ink edges, white core, cyan light, chevrons running forward
+function drawRibbonTile(g, S) {
+  g.clearRect(0, 0, S, S);
+  const x0 = S * 0.1, x1 = S * 0.9;
+  g.fillStyle = '#121a2e';
+  g.fillRect(x0 - S * 0.05, 0, x1 - x0 + S * 0.1, S);   // ink bed: reads on any colour
+  const grad = g.createLinearGradient(x0, 0, x1, 0);
+  grad.addColorStop(0, '#7fd0ff');
+  grad.addColorStop(0.28, '#ffffff');
+  grad.addColorStop(0.72, '#ffffff');
+  grad.addColorStop(1, '#7fd0ff');
+  g.fillStyle = grad;
+  g.fillRect(x0, 0, x1 - x0, S);
+  g.strokeStyle = 'rgba(120,200,255,.85)';
+  g.lineWidth = S * 0.02;
+  for (let i = 0; i < 5; i++) {                          // web cross-threads
+    const y = (i + 0.5) * S / 5;
+    g.beginPath();
+    g.moveTo(x0, y);
+    g.quadraticCurveTo(S / 2, y + S * 0.05, x1, y);
+    g.stroke();
+  }
+  g.fillStyle = 'rgba(255,205,60,.9)';
+  for (let i = 0; i < 3; i++) {                          // chevrons: the way to run
+    const y = (i + 0.5) * S / 3;
+    g.beginPath();
+    g.moveTo(S * 0.5, y + S * 0.13);
+    g.lineTo(S * 0.28, y - S * 0.09);
+    g.lineTo(S * 0.38, y - S * 0.09);
+    g.lineTo(S * 0.5, y + S * 0.02);
+    g.lineTo(S * 0.62, y - S * 0.09);
+    g.lineTo(S * 0.72, y - S * 0.09);
+    g.closePath();
+    g.fill();
+  }
+  g.strokeStyle = 'rgba(255,255,255,.95)';
+  g.lineWidth = S * 0.05;
+  g.beginPath();
+  g.moveTo(x0 + S * 0.03, 0); g.lineTo(x0 + S * 0.03, S);
+  g.moveTo(x1 - S * 0.03, 0); g.lineTo(x1 - S * 0.03, S);
+  g.stroke();
+}
+
+// ---------- 2D HUD / market icons ----------
+
+// the web cocoon doll with the mask face, Venom's bite arrowed away from him
+function drawDecoy2D(g, S) {
+  const cx = S / 2, cy = S * 0.5;
+  g.save();
+  g.translate(cx, cy);
+  g.rotate(0.05);
+  g.translate(-cx, -cy);
+  burstShape(g, cx, cy, S * 0.48, S * 0.34, 12, 0.1);
+  g.fillStyle = '#e4f4ff';
+  g.fill();
+  g.lineWidth = S * 0.026;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+  g.save();
+  burstShape(g, cx, cy, S * 0.48, S * 0.34, 12, 0.1);
+  g.clip();
+  g.fillStyle = 'rgba(110,180,225,.5)';
+  for (let iy = 0; iy < 12; iy++) {
+    for (let ix = 0; ix < 12; ix++) {
+      g.beginPath();
+      g.arc(ix * S / 11, iy * S / 11, S * 0.012 * (0.5 + 0.5 * Math.sin(ix * 1.9 + iy * 2.3)), 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  g.restore();
+
+  const rw = S * 0.24, rh = S * 0.33, ry = cy + S * 0.04;
+  g.beginPath();
+  g.ellipse(cx, ry, rw, rh, 0, 0, Math.PI * 2);
+  g.fillStyle = '#f7fbff';
+  g.fill();
+  g.lineWidth = S * 0.055;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+  g.lineWidth = S * 0.03;
+  g.strokeStyle = 'rgba(150,190,220,.95)';
+  for (const k of [-0.42, 0.08, 0.5]) {
+    g.beginPath();
+    g.ellipse(cx, ry + rh * k, rw * (1 - Math.abs(k) * 0.35), rh * 0.13, k * 0.5, 0, Math.PI * 2);
+    g.stroke();
+  }
+  drawMaskFace(g, cx, ry - rh * 0.34, S * 0.15);
+
+  g.setLineDash([S * 0.06, S * 0.045]);                  // and Venom fooled: a loop leading away
+  g.strokeStyle = '#111111';
+  g.lineWidth = S * 0.055;
+  g.beginPath();
+  g.moveTo(cx - rw * 0.8, ry + rh * 0.9);
+  g.quadraticCurveTo(cx - S * 0.36, cy + S * 0.36, cx - S * 0.42, cy - S * 0.02);
+  g.stroke();
+  g.strokeStyle = '#ffd400';
+  g.lineWidth = S * 0.024;
+  g.stroke();
+  g.setLineDash([]);
+  g.fillStyle = PAGE_INK;
+  g.beginPath();
+  g.moveTo(cx - S * 0.42, cy - S * 0.16);
+  g.lineTo(cx - S * 0.35, cy - S * 0.02);
+  g.lineTo(cx - S * 0.49, cy - S * 0.02);
+  g.closePath();
+  g.fill();
+  g.restore();
+}
+
+// a brick facade with a spider climbing it and white up-chevrons
+function drawWall2D(g, S) {
+  const cx = S / 2;
+  burstShape(g, cx, S * 0.5, S * 0.49, S * 0.35, 11, 0.42);
+  g.fillStyle = '#ffe9c8';
+  g.fill();
+  g.lineWidth = S * 0.026;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+
+  const wx = S * 0.24, ww = S * 0.52, wy = S * 0.09, wh = S * 0.82;
+  g.save();
+  roundedBox(g, wx, wy, ww, wh, S * 0.05);
+  g.clip();
+  g.save();
+  g.translate(wx, wy);
+  g.scale(ww / S, wh / S);
+  drawBricks(g, S);
+  g.restore();
+  g.restore();
+  roundedBox(g, wx, wy, ww, wh, S * 0.05);
+  g.lineWidth = S * 0.05;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+  g.fillStyle = 'rgba(255,255,255,.22)';                 // vinyl shine down the lit edge
+  g.fillRect(wx + ww * 0.06, wy + wh * 0.04, ww * 0.1, wh * 0.92);
+
+  g.save();                                             // the spider, head up the wall
+  g.translate(wx + ww * 0.62, wy + wh * 0.66);
+  g.rotate(-0.28);
+  const ss = S * 0.42;
+  g.translate(-ss / 2, -ss / 2);
+  drawSpider(g, ss, '#ffdc40');
+  g.restore();
+
+  g.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {                          // speed chevrons going up
+    const y = S * (0.72 - i * 0.17), a = 0.9 - i * 0.22;
+    g.strokeStyle = `rgba(17,17,17,${a})`;
+    g.lineWidth = S * 0.075;
+    g.beginPath();
+    g.moveTo(wx - S * 0.12, y);
+    g.lineTo(wx - S * 0.03, y - S * 0.09);
+    g.lineTo(wx - S * 0.12, y - S * 0.18);
+    g.stroke();
+    g.strokeStyle = `rgba(255,255,255,${a})`;
+    g.lineWidth = S * 0.038;
+    g.stroke();
+  }
+}
+
+// seen from above: the drone at the head of a glowing web ribbon over the rails
+function drawTracer2D(g, S) {
+  roundedBox(g, S * 0.04, S * 0.04, S * 0.92, S * 0.92, S * 0.12);
+  g.fillStyle = '#16233c';
+  g.fill();
+  g.lineWidth = S * 0.05;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+  g.save();
+  roundedBox(g, S * 0.04, S * 0.04, S * 0.92, S * 0.92, S * 0.12);
+  g.clip();
+
+  for (const lx of [S * 0.3, S * 0.5, S * 0.7]) {        // the three rails
+    g.strokeStyle = 'rgba(160,190,225,.45)';
+    g.lineWidth = S * 0.09;
+    g.beginPath(); g.moveTo(lx, 0); g.lineTo(lx, S); g.stroke();
+    g.strokeStyle = 'rgba(17,17,17,.7)';
+    g.lineWidth = S * 0.016;
+    g.beginPath(); g.moveTo(lx - S * 0.045, 0); g.lineTo(lx - S * 0.045, S); g.stroke();
+    g.beginPath(); g.moveTo(lx + S * 0.045, 0); g.lineTo(lx + S * 0.045, S); g.stroke();
+  }
+  for (let i = 0; i < 7; i++) {                          // sleepers
+    const y = S * (0.06 + i * 0.15);
+    g.strokeStyle = 'rgba(120,90,60,.7)';
+    g.lineWidth = S * 0.05;
+    g.beginPath(); g.moveTo(S * 0.14, y); g.lineTo(S * 0.86, y); g.stroke();
+  }
+
+  const lane = (i) => S * (0.5 + [0, -0.2, 0.2, 0, 0.2][i]);
+  const path = () => {
+    g.beginPath();
+    g.moveTo(lane(0), S * 1.06);
+    g.lineTo(lane(1), S * 0.8);
+    g.lineTo(lane(2), S * 0.54);
+    g.lineTo(lane(3), S * 0.28);
+    g.lineTo(lane(4), S * 0.14);
+  };
+  strokeInked(g, '#ffffff', S * 0.2, S * 0.13, path);     // the glowing trace
+  g.strokeStyle = 'rgba(127,208,255,.9)';
+  g.lineWidth = S * 0.05;
+  path();
+  g.stroke();
+
+  const dx = lane(4), dy = S * 0.14, R = S * 0.115;       // the drone at its head
+  g.lineCap = 'round';
+  for (const sx of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      const oy = (i - 1) * R * 0.7;
+      g.strokeStyle = PAGE_INK;
+      g.lineWidth = S * 0.035;
+      g.beginPath();
+      g.moveTo(dx + sx * R * 0.5, dy + oy * 0.4);
+      g.lineTo(dx + sx * R * 1.9, dy + oy - R * 0.3);
+      g.stroke();
+      g.strokeStyle = '#ffdc40';
+      g.lineWidth = S * 0.018;
+      g.stroke();
+    }
+  }
+  g.beginPath();
+  g.arc(dx, dy, R, 0, Math.PI * 2);
+  g.fillStyle = '#d0192b';
+  g.fill();
+  g.lineWidth = S * 0.05;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+  drawMaskFace(g, dx, dy, R * 0.8);
+  g.restore();
+}
+
+// ---------- 3D: shared resources ----------
+const DK = { R: 0.3, hh: 0.44, sq: 0.92 };      // decoy cocoon: half width, half height, depth
+const DK_CY = 0.1 + DK.hh;                       // its centre: the lowest point hovers at 0.1 m
+const DR = { R: 0.2 };                           // tracer drone: body radius
+const WALL = { x: 3.65, y0: 0.5, h: 13, len: 100, tile: 4 }; // the facade strip (m)
+
+// a Funko-ish egg / lump: a round-cubed sphere, scaled and smoothed
+function eggGeo(R, hh, sq, seg = 18) {
+  const geo = new THREE.SphereGeometry(R, seg, Math.max(8, Math.round(seg * 0.7)));
+  const p = geo.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    roundCube(v, 3);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.scale(1, hh / R, sq);
+  return smoothNormals(geo);
+}
+
+// the same sticker on a body's front and back
+function twoSidedDisc(r, z, y, dz = 0.008) {
+  const a = new THREE.CircleGeometry(r, 22).translate(0, y, z + dz);
+  const b = new THREE.CircleGeometry(r, 22).rotateY(Math.PI).translate(0, y, -(z + dz));
+  const geo = mergeGeometries([a, b]);
+  a.dispose(); b.dispose();
+  return geo;
+}
+
+function buildCocoonBands(R, hh, sq) {
+  const parts = [];
+  for (const [k, tilt] of [[0.9, 0.16], [0.55, -0.22], [0.1, 0.1], [-0.4, 0.2]]) {
+    const r = R * (1.04 - Math.abs(k) * 0.4);
+    parts.push(new THREE.TorusGeometry(r, 0.028, 5, 16)
+      .rotateX(Math.PI / 2 + tilt).rotateZ(tilt * 0.7)
+      .scale(1, 1, sq).translate(0, DK_CY + hh * k, 0));
+  }
+  const geo = mergeGeometries(parts);
+  for (const g of parts) g.dispose();
+  return geo;
+}
+
+// the doll's vinyl body: head, torso, splayed arms and legs in one geometry, red mask head
+function buildDummyBody() {
+  const W = 0xf7fbff, Rd = 0xd0192b;
+  const parts = [];
+  const lump = (w, h, d, x, y, z, rot) => {
+    const g = new THREE.BoxGeometry(w, h, d);
+    if (rot) g.rotateZ(rot);
+    g.translate(x, y, z);
+    return g;
+  };
+  parts.push(lump(0.42, 0.5, 0.3, 0, 0.94, 0));                 // torso
+  parts.push(lump(0.36, 0.34, 0.26, 0, 1.36, 0));               // head (the mask)
+  parts.push(lump(0.13, 0.46, 0.13, -0.26, 0.98, 0.02, 0.45));  // arms out, a scarecrow
+  parts.push(lump(0.13, 0.46, 0.13, 0.26, 0.98, -0.02, -0.45));
+  parts.push(lump(0.15, 0.68, 0.16, -0.11, 0.35, 0));
+  parts.push(lump(0.15, 0.68, 0.16, 0.11, 0.35, 0.04));
+  const geo = mergeGeometries(parts);
+  for (const g of parts) g.dispose();
+  const per = geo.attributes.position.count / parts.length;
+  addColors(geo, (i) => (i >= per && i < per * 2 ? Rd : W));    // part 1 is the head
+  return geo;
+}
+
+function buildDroneBody() {
+  const body = eggGeo(DR.R, DR.R * 0.86, 1.1, 16);
+  const n0 = body.attributes.position.count;
+  const belly = new THREE.SphereGeometry(DR.R * 0.72, 14, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2)
+    .translate(0, -DR.R * 0.05, 0);
+  const geo = mergeGeometries([body, belly]);
+  addColors(geo, (i) => (i < n0 ? 0xd0192b : 0xffc83a));
+  body.dispose(); belly.dispose();
+  return geo;
+}
+
+// four bent legs on one side, joined at the shoulder: one geometry, animated as two groups
+function buildDroneLegs(side) {
+  const parts = [];
+  for (let i = 0; i < 4; i++) {
+    const dz = (i - 1.5) * DR.R * 0.44;
+    const knee = DR.R * 1.5, drop = -DR.R * (0.45 + 0.3 * Math.abs(i - 1.5));
+    const upper = new THREE.CylinderGeometry(0.022, 0.018, knee, 5, 1)
+      .rotateZ(side * Math.PI * 0.34).translate(side * knee * 0.42, 0.02, dz);
+    const lower = new THREE.CylinderGeometry(0.018, 0.012, knee * 0.85, 5, 1)
+      .rotateZ(-side * Math.PI * 0.3).translate(side * knee * 0.9, drop, dz);
+    parts.push(upper, lower);
+  }
+  const geo = mergeGeometries(parts);
+  for (const g of parts) g.dispose();
+  return geo;
+}
+
+let shared5 = null;
+function buildShared5() {
+  if (!shared) shared = buildShared();
+  const maskTex = canvasTexture(256, (g, S) => drawMaskFace(g, S / 2, S / 2, S * 0.46));
+  const brickTex = canvasTexture(256, (g, S) => drawBricks(g, S));
+  const ribbonTex = canvasTexture(128, drawRibbonTile);
+  ribbonTex.wrapS = ribbonTex.wrapT = THREE.RepeatWrapping;
+
+  const d = {};
+  d.bodyGeo = eggGeo(DK.R, DK.hh, DK.sq);
+  d.bodyGeo.translate(0, DK_CY, 0);
+  d.bodyMat = toonMaterial(0xffffff, {
+    shade: 'soft', emissive: 0x1b2f4d,
+    rim: { color: 0xbfe6ff, threshold: 0.75, strength: 0.45, soft: 0.2 },
+    gloss: { color: 0xffffff, strength: 0.5, threshold: 0.94, soft: 0.03 },
+  });
+  d.bandGeo = buildCocoonBands(DK.R, DK.hh, DK.sq);
+  d.bandMat = toonMaterial(0xeaf2ff, { shade: 'soft', emissive: 0x2a4a72 });
+  d.faceGeo = twoSidedDisc(DK.R * 0.6, DK.R * 0.98, DK_CY + DK.hh * 0.32);
+  d.faceMat = new THREE.MeshBasicMaterial({ map: maskTex, transparent: true, depthWrite: false, toneMapped: false });
+  d.glowMat = new THREE.SpriteMaterial({
+    map: shared.web.glowMat.map, color: 0xdff4ff, transparent: true, opacity: 0.8, depthWrite: false,
+  });
+
+  const w = {};
+  w.slabGeo = new THREE.BoxGeometry(0.66, 0.86, 0.2).translate(0, 0.53, 0);
+  w.slabMat = toonMaterial(0xffffff, {
+    map: brickTex, shade: 'soft', emissive: 0x2a1c18,
+    gloss: { color: 0xffffff, strength: 0.35, threshold: 0.95, soft: 0.04 },
+  });
+  w.spiderGeo = twoSidedDisc(0.26, 0.1, 0.5);
+  w.spiderMat = new THREE.MeshBasicMaterial({
+    map: canvasTexture(128, (g, S) => { g.translate(S * 0.06, S * 0.06); drawSpider(g, S * 0.88, '#ffdc40'); }),
+    transparent: true, depthWrite: false, toneMapped: false,
+  });
+  w.strandGeo = new THREE.CylinderGeometry(0.026, 0.026, 1.05, 5, 1).rotateZ(0.42).translate(0.1, 0.56, 0.13);
+  w.strandMat = toonMaterial(0xf7fbff, { shade: 'soft', emissive: 0x24507a });
+  w.glowMat = new THREE.SpriteMaterial({
+    map: shared.web.glowMat.map, color: 0xffd9a0, transparent: true, opacity: 0.8, depthWrite: false,
+  });
+
+  const t = {};
+  t.bodyGeo = buildDroneBody();
+  t.bodyMat = toonMaterial(0xffffff, {
+    vertexColors: true, shade: 'soft', emissive: 0x3a0a10,
+    gloss: { color: 0xffffff, strength: 0.55, threshold: 0.93, soft: 0.03 },
+  });
+  t.legGeoL = buildDroneLegs(-1);
+  t.legGeoR = buildDroneLegs(1);
+  t.legMat = toonMaterial(0xffc83a, { shade: 'soft', emissive: 0x4a3000 });
+  t.faceGeo = new THREE.CircleGeometry(DR.R * 0.6, 18).translate(0, 0.01, DR.R * 1.04);
+  t.faceMat = d.faceMat;
+  t.spoolGeo = new THREE.TorusGeometry(0.085, 0.03, 6, 12).rotateY(Math.PI / 2).translate(-0.02, -0.05, -DR.R * 0.95);
+  t.nozzleGeo = new THREE.CylinderGeometry(0.035, 0.06, 0.12, 8, 1).rotateX(-Math.PI / 2).translate(0, -0.04, -DR.R * 1.1);
+  t.ribbonGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  t.ribbonMat = new THREE.MeshBasicMaterial({
+    map: ribbonTex, transparent: true, depthWrite: false, toneMapped: false,
+    side: THREE.DoubleSide, opacity: 0.92,
+  });
+  t.glowMat = new THREE.SpriteMaterial({
+    map: shared.web.glowMat.map, color: 0x9fe8ff, transparent: true, opacity: 0.85, depthWrite: false,
+  });
+
+  const p = {};
+  p.geo = new THREE.PlaneGeometry(WALL.len, WALL.h, Math.round(WALL.len / 3), 3).rotateY(-Math.PI / 2);
+  p.brickTex = brickTex;
+  p.dummyBody = buildDummyBody();
+  p.dummyFace = twoSidedDisc(0.16, 0.13, 1.36);
+  p.dummyBands = (() => {
+    const parts = [];
+    for (const [y, r, tilt] of [[1.16, 0.25, 0.2], [0.88, 0.27, -0.25], [0.6, 0.17, 0.18], [0.32, 0.15, -0.2]]) {
+      parts.push(new THREE.TorusGeometry(r, 0.032, 5, 14).rotateX(Math.PI / 2 + tilt).translate(0, y, 0));
+    }
+    const geo = mergeGeometries(parts);
+    for (const g of parts) g.dispose();
+    return geo;
+  })();
+  p.dummyBase = new THREE.CircleGeometry(0.42, 18).rotateX(-Math.PI / 2).translate(0, 0.02, 0);
+  return { d, w, t, p };
+}
+
+// ---------- pickups ----------
+
+export function createDecoyPickup() {
+  if (!shared5) shared5 = buildShared5();
+  const s = shared5.d;
+  const root = new THREE.Group();
+  root.name = 'decoy-pickup';
+  const spin = new THREE.Group();
+  const body = new THREE.Mesh(s.bodyGeo, s.bodyMat);
+  addOutline(body, OUTLINE, INK);
+  const bands = new THREE.Mesh(s.bandGeo, s.bandMat);
+  const face = new THREE.Mesh(s.faceGeo, s.faceMat);
+  face.renderOrder = 1;
+  spin.add(body, bands, face);
+  root.add(spin);
+  const glow = new THREE.Sprite(s.glowMat);
+  glow.renderOrder = 2;
+  glow.position.z = -0.35;
+  root.add(glow);
+
+  const baseY = 0.06;
+  let t = Math.random() * 20;
+  const update = (dt) => {
+    t += dt;
+    spin.rotation.y += dt * 1.35;
+    spin.rotation.z = Math.sin(t * 1.9) * 0.09;         // the doll wobbles on its web
+    const bob = Math.sin(t * 2.4) * 0.05;
+    spin.position.y = baseY + bob;
+    glow.position.y = DK_CY + baseY + bob;
+    glow.scale.setScalar(1.9 * (1 + 0.1 * Math.sin(t * 4.6)));
+  };
+  update(0);
+  return { root, update };
+}
+
+export function createWallPickup() {
+  if (!shared5) shared5 = buildShared5();
+  const s = shared5.w;
+  const root = new THREE.Group();
+  root.name = 'wall-pickup';
+  const spin = new THREE.Group();
+  const slab = new THREE.Mesh(s.slabGeo, s.slabMat);
+  addOutline(slab, OUTLINE, INK);
+  const spider = new THREE.Mesh(s.spiderGeo, s.spiderMat);
+  spider.renderOrder = 1;
+  const strand = new THREE.Mesh(s.strandGeo, s.strandMat);
+  spin.add(slab, spider, strand);
+  root.add(spin);
+  const glow = new THREE.Sprite(s.glowMat);
+  glow.renderOrder = 2;
+  glow.position.z = -0.35;
+  root.add(glow);
+
+  const baseY = 0.06;
+  let t = Math.random() * 20;
+  const update = (dt) => {
+    t += dt;
+    spin.rotation.y += dt * 1.5;
+    spin.rotation.x = Math.sin(t * 1.7) * 0.12;
+    const bob = Math.sin(t * 2.5) * 0.055;
+    spin.position.y = baseY + bob;
+    glow.position.y = 0.5 + baseY + bob;
+    glow.scale.setScalar(1.9 * (1 + 0.1 * Math.sin(t * 4.1)));
+  };
+  update(0);
+  return { root, update };
+}
+
+export function createTracerPickup() {
+  if (!shared5) shared5 = buildShared5();
+  const s = shared5.t;
+  const root = new THREE.Group();
+  root.name = 'tracer-pickup';
+  const spin = new THREE.Group();
+  const pod = droneParts(s);
+  pod.position.y = 0.62;
+  const strip = new THREE.Mesh(s.ribbonGeo, s.ribbonMat);
+  strip.scale.set(1.5, 1, 1.5);
+  strip.position.y = 0.1;
+  strip.renderOrder = 1;
+  spin.add(pod, strip);
+  root.add(spin);
+  const glow = new THREE.Sprite(s.glowMat);
+  glow.renderOrder = 3;
+  glow.position.set(0, 0.62, -0.3);
+  root.add(glow);
+
+  let t = Math.random() * 20;
+  const [legsL, legsR] = pod.userData.legs;
+  const spool = pod.userData.spool;
+  const update = (dt) => {
+    t += dt;
+    spin.rotation.y += dt * 1.1;
+    const bob = Math.sin(t * 3.1) * 0.05;
+    spin.position.y = 0.04 + bob;
+    pod.rotation.z = Math.sin(t * 2.2) * 0.08;
+    legsL.rotation.z = Math.sin(t * 9) * 0.22;
+    legsR.rotation.z = -legsL.rotation.z;
+    spool.rotation.y = t * 4;
+    strip.scale.x = 1.5 * (1 + 0.06 * Math.sin(t * 5));
+    glow.position.y = 0.62 + bob;
+    glow.scale.setScalar(1.7 * (1 + 0.12 * Math.sin(t * 4.4)));
+  };
+  update(0);
+  return { root, update };
+}
+
+// the drone's parts in one group: body, mask face, web spool, nozzle, two leg groups
+function droneParts(s) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(s.bodyGeo, s.bodyMat);
+  addOutline(body, OUTLINE, INK);
+  const face = new THREE.Mesh(s.faceGeo, s.faceMat);
+  face.renderOrder = 1;
+  const spool = new THREE.Mesh(s.spoolGeo, s.legMat);
+  const nozzle = new THREE.Mesh(s.nozzleGeo, s.legMat);
+  const legsL = new THREE.Mesh(s.legGeoL, s.legMat);
+  const legsR = new THREE.Mesh(s.legGeoR, s.legMat);
+  g.add(body, face, spool, nozzle, legsL, legsR);
+  g.userData.legs = [legsL, legsR];
+  g.userData.spool = spool;
+  return g;
+}
+
+// ---------- world props ----------
+
+// The doll Venom takes for Spider-Man: a 1.5 m web cocoon with the mask face, arms stuck out,
+// standing on a puddle of web. update() only sways it; powerups/decoy.js tips lean over when used.
+export function createDecoyDummy() {
+  if (!shared5) shared5 = buildShared5();
+  const { d, p } = shared5;
+  const root = new THREE.Group();
+  root.name = 'decoy-dummy';
+  const lean = new THREE.Group();                        // sways and topples around its base
+  const body = new THREE.Mesh(p.dummyBody, d.bodyMat);
+  addOutline(body, 0.05, INK);
+  const bands = new THREE.Mesh(p.dummyBands, d.bandMat);
+  const face = new THREE.Mesh(p.dummyFace, d.faceMat);
+  face.renderOrder = 1;
+  const base = new THREE.Mesh(p.dummyBase, d.bandMat);
+  lean.add(body, bands, face, base);
+  root.add(lean);
+  const glow = new THREE.Sprite(d.glowMat);
+  glow.renderOrder = 2;
+  glow.position.set(0, 0.9, -0.4);
+  glow.scale.setScalar(2.2);
+  root.add(glow);
+
+  let t = Math.random() * 10;
+  const update = (dt) => {
+    t += dt;
+    lean.rotation.z = Math.sin(t * 1.3) * 0.05;
+    lean.rotation.x = Math.sin(t * 0.9 + 1) * 0.03;
+  };
+  update(0);
+  return { root, update, lean };
+}
+
+// The drone that flies ahead of the player: the pickup's body with pedalling legs and a glow
+// under the web nozzle. powerups/tracer.js moves root, update() only animates it.
+export function createTracerDrone() {
+  if (!shared5) shared5 = buildShared5();
+  const s = shared5.t;
+  const root = new THREE.Group();
+  root.name = 'tracer-drone';
+  const hover = new THREE.Group();
+  const pod = droneParts(s);
+  hover.add(pod);
+  root.add(hover);
+  const glow = new THREE.Sprite(s.glowMat);
+  glow.renderOrder = 2;
+  glow.scale.setScalar(1.5);
+  hover.add(glow);
+
+  let t = Math.random() * 10;
+  const [legsL, legsR] = pod.userData.legs;
+  const spool = pod.userData.spool;
+  const update = (dt) => {
+    t += dt;
+    hover.position.y = Math.sin(t * 4.2) * 0.06;
+    hover.rotation.z = Math.sin(t * 2.6) * 0.09;
+    legsL.rotation.z = Math.sin(t * 13) * 0.3;
+    legsR.rotation.z = -legsL.rotation.z;
+    spool.rotation.y = t * 5;
+    glow.scale.setScalar(1.3 + 0.18 * Math.sin(t * 6));
+  };
+  update(0);
+  return { root, update };
+}
+
+// One long comic facade beside the track. It never moves: the brick texture's U scrolls, so the
+// wall rushes past while the hero runs on it. side: -1 left, +1 right.
+export function createWallPanel(side) {
+  if (!shared5) shared5 = buildShared5();
+  const p = shared5.p;
+  const map = p.brickTex.clone();
+  map.needsUpdate = true;
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.repeat.set(WALL.len / WALL.tile, WALL.h / WALL.tile);
+  const root = new THREE.Group();
+  root.name = 'wall-panel';
+  root.position.set(side * WALL.x, WALL.y0 + WALL.h / 2, -WALL.len / 2 + 9);
+  root.scale.x = side;                                   // mirrored for the left side
+  const mesh = new THREE.Mesh(p.geo, new THREE.MeshBasicMaterial({
+    map, side: THREE.DoubleSide, toneMapped: false,
+  }));
+  root.add(mesh);
+  root.visible = false;
+  let off = 0;
+  return {
+    root,
+    scroll(dz) {
+      off -= dz / WALL.tile;                             // the bricks rush past toward the camera
+      map.offset.x = off;
+    },
+  };
+}
+
+// The glowing web strip: n flat quads, one per ribbon segment, in a single InstancedMesh.
+// seg() lays the segment between two track points, w metres across; show(n) draws the first n.
+export function createTracerRibbon(n) {
+  if (!shared5) shared5 = buildShared5();
+  const s = shared5.t;
+  const mesh = new THREE.InstancedMesh(s.ribbonGeo, s.ribbonMat, n);
+  mesh.name = 'tracer-ribbon';
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 3;
+  mesh.count = 0;
+  const map = s.ribbonMat.map;
+  map.repeat.set(1, 1);
+  const _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
+  const _m = new THREE.Matrix4();
+  let t = 0;
+  return {
+    root: mesh,
+    seg(i, x0, z0, x1, z1, w) {
+      const dx = x1 - x0, dz = z1 - z0;
+      const len = Math.hypot(dx, dz) || 1e-4;
+      _x.set((dz / len) * w, 0, (-dx / len) * w);
+      _y.set(0, 1, 0);
+      _z.set(-dx, 0, -dz);
+      _m.makeBasis(_x, _y, _z).setPosition((x0 + x1) / 2, 0.14, (z0 + z1) / 2);
+      mesh.setMatrixAt(i, _m);
+    },
+    show(count) {
+      mesh.count = Math.max(0, Math.min(n, count));
+      mesh.instanceMatrix.needsUpdate = true;
+    },
+    update(dt) {
+      t += dt;
+      map.offset.y = -t * 0.55;                          // the trace flows forward
+      s.ribbonMat.opacity = 0.86 + 0.1 * Math.sin(t * 5.5);
+    },
+  };
 }

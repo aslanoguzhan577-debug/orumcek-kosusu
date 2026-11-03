@@ -569,6 +569,9 @@
 #ui .pgauge.magnet { transform: rotate(1deg); }
 #ui .pgauge.spring { transform: rotate(1deg); }
 #ui .pgauge.swing { transform: rotate(-1deg); }
+#ui .pgauge.decoy { transform: rotate(1deg); }
+#ui .pgauge.wall { transform: rotate(-1deg); }
+#ui .pgauge.tracer { transform: rotate(1deg); }
 #ui .pgauge canvas { width: 38px; height: 38px; flex: none; display: block; }
 #ui .pgauge .track {
   width: 84px; height: 16px;
@@ -588,6 +591,9 @@
 #ui .pgauge.bugle .fill { background: linear-gradient(180deg, #fff2c2, #ff9900 55%, #d3610a); }
 #ui .pgauge.spring .fill { background: linear-gradient(180deg, #cfe9ff, #0088ff 55%, #0a4f96); }
 #ui .pgauge.swing .fill { background: linear-gradient(180deg, #ffffff, #bfe6ff 55%, #2b4fa8); }
+#ui .pgauge.decoy .fill { background: linear-gradient(180deg, #ffffff, #dfe8f5 55%, #7d8ba3); }
+#ui .pgauge.wall .fill { background: linear-gradient(180deg, #ffd9a8, #d9603a 55%, #8c2f18); }
+#ui .pgauge.tracer .fill { background: linear-gradient(180deg, #e8fffb, #16e0c6 55%, #0a7686); }
 #ui .pgauge.low canvas, #ui .pgauge.low .fill { animation: ui-blink .45s infinite; }
 
 /* ---------- landscape / short screens ---------- */

@@ -448,4 +448,329 @@ eq(graceAsk.length, graceBefore, 'the quiet end asks for no grace');
 eq(swingLog[swingLog.length - 1], 'reset', 'announced without a landing');
 game.halted = false;
 
+// ---------- yeni güçler: sahte dünya ----------
+const { laneX } = await import('../src/world.js');   // stub'da da aynı formül
+const fakeScene = { added: [], add(...o) { this.added.push(...o); } };
+const mkObs = () => {
+  const asked = [];
+  return {
+    asked, coins: [], _coinPool: [], hooks: {}, registered: null,
+    registerPickup(kind, hooks) { this.registered = { kind, hooks }; },
+    generator: { extras: [], addExtra(fn) { this.extras.push(fn); } },
+    grace(s) { asked.push(s); },
+  };
+};
+// blok başına tam bir rastgele sayı + itilen toplar
+const probe = (extra, log, name) => {
+  let rolls = 0;
+  const block = (A, lane, free, B = A + 100) => ({
+    rng: () => { rolls++; return 0.05; }, A, B, route: lane, pickups: 0, routeFree: free,
+    farFromPickup: () => true, push: (o) => log.push(o),
+  });
+  return { rolls: () => rolls, block };
+};
+
+// ---------- Ağ Kuklası (powerups/decoy.js): ilk tökezleme Venom'u yaklaştırmez ----------
+const { DecoyPowerup } = await import('../src/powerups/decoy.js');
+const DG = CONFIG.decoy;
+let toldVenom = 0;
+const dcObs = mkObs();
+dcObs.hooks.onSideStumble = () => { toldVenom++; return true; };  // the chaser installed its own first
+const decoyLog = [];
+events.addEventListener('decoyOn', () => decoyLog.push('on'));
+events.addEventListener('decoyLure', () => decoyLog.push('lure'));
+events.addEventListener('decoyUse', () => decoyLog.push('use'));
+events.addEventListener('decoyOff', (e) => decoyLog.push(e.detail.reset ? 'reset' : 'off'));
+
+game.restart();
+game.state.intro = false;
+game.state.speed = CONFIG.startSpeed;
+fakeChaser.isNear = true;
+const decoy = game.addSystem(new DecoyPowerup({ player: pl, obstacles: dcObs, chaser: fakeChaser, scene: fakeScene }));
+eq(dcObs.registered.kind, 'decoy', 'the decoy registers its pickup');
+eq(dcObs.generator.extras.length, 1, 'and one pattern extra');
+ok(dcObs.registered.hooks.create(), 'its pickup model comes from pickup-art');
+const dp = [], dprobe = probe(dcObs.generator.extras[0], dp);
+dcObs.generator.extras[0](dprobe.block(100, 1, [90, 130]));
+eq(dprobe.rolls(), 1, 'the decoy extra draws exactly one random number per block');
+eq(dp[0].kind, 'decoy', 'a free stretch of the route lane gets a decoy');
+eq(dp[0].lane, 1, 'in the route lane');
+dcObs.generator.extras[0](dprobe.block(120, 1, [110, 150]));
+eq(dp.length, 1, 'the minimum gap keeps the next one away');
+eq(dprobe.rolls(), 2, 'and the declined block still drew its one number');
+
+venomDrops = 0;
+decoyLog.length = 0;
+pl.reset();
+decoy.start();
+eq(game.state.decoyTime, DG.duration, 'collecting fills the countdown');
+eq(decoy.spare, 1, 'exactly one stumble is forgiven');
+eq(decoy.dummy.root.visible, true, 'the doll is left on the track');
+eq(venomDrops, 1, 'Venom turns to it and falls back');
+eq(decoyLog.join(','), 'on,lure', 'decoyOn and decoyLure announced');
+
+game.state.decoyTime = 5;
+dcObs.hooks.onSideStumble({});
+eq(toldVenom, 0, 'the forgiven stumble never reaches the chaser');
+eq(decoy.spare, 0, 'one stumble only');
+eq(game.state.decoyTime, 0, 'the power is spent with it');
+eq(decoyLog.join(','), 'on,lure,use,off', 'the forgiven stumble announces decoyUse + decoyOff');
+dcObs.hooks.onSideStumble({});
+eq(toldVenom, 1, 'the next stumble is the chaser\'s own business again');
+let fell = 0;
+while (decoy.dummy.root.visible && fell < 200) { decoy.beforePlayer(DT); fell++; }
+ok(decoy.dummy.lean.rotation.x < -0.5, `the used doll topples over (${decoy.dummy.lean.rotation.x.toFixed(2)})`);
+eq(decoy.dummy.root.visible, false, 'and goes out of sight');
+
+pl.reset();
+decoy.start();
+const zStart = decoy.dummy.root.position.z;
+for (let i = 0; i < 30; i++) decoy.beforePlayer(DT);
+ok(decoy.dummy.root.position.z > zStart, 'the doll is left behind: it scrolls toward the camera');
+ok(decoy.dummy.root.position.z <= DG.behind, 'and is hidden as soon as it is far enough back');
+decoy.reset();
+
+fakeChaser.isNear = false;
+decoyLog.length = 0;
+decoy.start();
+ok(!decoyLog.includes('lure'), 'nothing is counted as a bait when Venom was already far');
+decoyLog.length = 0;
+const dropsBefore = venomDrops;
+decoy.start();
+eq(venomDrops, dropsBefore, 'and he is not told to fall back again');
+game.restart();
+eq(game.state.decoyTime, 0, 'a run start clears the decoy');
+eq(decoy.active, false, 'and the power');
+eq(decoy.spare, 0, 'the forgiven stumble does not survive the run');
+eq(decoyLog[decoyLog.length - 1], 'reset', 'decoyOff {reset} announced');
+
+// ---------- Duvar Koşusu (powerups/wall.js): şeridin dışındaki duvarda koşar, çarpmaz ----------
+const { WallPowerup } = await import('../src/powerups/wall.js');
+const WG = CONFIG.wall;
+const wlObs = mkObs();
+wlObs._coinPool = [{ tag: 'reused' }];
+const dollies = [];
+const wallLog = [];
+events.addEventListener('wallOn', (e) => wallLog.push(['on', e.detail.side]));
+events.addEventListener('wallOff', (e) => wallLog.push(e.detail.reset ? 'reset' : 'off'));
+const rig = { setDolly(back, follow) { dollies.push([back, follow]); } };
+
+game.restart();
+game.state.intro = false;
+game.state.speed = CONFIG.startSpeed;
+const wall = game.addSystem(new WallPowerup({ player: pl, obstacles: wlObs, chaser: fakeChaser, scene: fakeScene, cameraRig: rig }));
+eq(wlObs.registered.kind, 'wall', 'the wall registers its pickup');
+eq(wlObs.generator.extras.length, 1, 'and one pattern extra');
+ok(wlObs.registered.hooks.create(), 'its pickup model comes from pickup-art');
+const wp = [], wprobe = probe(wlObs.generator.extras[0], wp);
+wlObs.generator.extras[0](wprobe.block(700, 0, [690, 730]));
+eq(wprobe.rolls(), 1, 'the wall extra draws exactly one random number per block');
+eq(wp[0].kind, 'wall', 'and pushes a wall pickup');
+
+pl.reset();
+pl.verticalLocked = true;                        // another flight owns the height
+wall.start();
+eq(wall.active, false, 'no wall run while another flight is up');
+eq(game.state.wallTime, 0, 'and nothing is queued for later');
+pl.verticalLocked = false;
+
+pl.x = 1.0;                                      // right half of the track
+wall.start();
+eq(wall.active, true, 'collecting starts the run');
+eq(wall.side, 1, 'he takes the near facade');
+eq(pl.lane, CONFIG.laneCount - 1, 'and commits to its outer lane');
+eq(pl.verticalLocked, true, 'up / down are the wall\'s now');
+eq(game.state.wallTime, WG.duration, 'the countdown is filled');
+eq(game.state.wallMetres, 0, 'the metre counter starts at 0');
+eq(dollies[dollies.length - 1][0], WG.camBack, 'the camera pulls back so he stays in frame');
+eq(wallLog[0][0], 'on', 'wallOn announced');
+eq(wallLog[0][1], 1, 'with the side he chose');
+
+let wf = 0, minH = Infinity, maxH = 0, roll = 0;
+while (wall.active) {
+  pl.floorY = wf === 5 ? CONFIG.obstacles.wagon.height : 0;   // a wagon roof passes under him
+  wall.beforePlayer(DT);
+  pl.update(DT, true);
+  wall.update(DT);
+  wf++;
+  if (wall.lift > 0.99) { minH = Math.min(minH, pl.y); maxH = Math.max(maxH, pl.y); roll = pl.root.rotation.z; }
+}
+ok(Math.abs(wf * DT - WG.duration) <= DT * 2, `the countdown ends the wall run (${wf} frames)`);
+ok(minH > CONFIG.obstacles.wagon.height, `he runs above every train roof (${minH.toFixed(2)} m)`);
+ok(Math.abs(maxH - WG.height) < 0.05, 'a roof under him does not lift him higher');
+ok(Math.abs(Math.abs(roll) - Math.PI / 2) < 0.05, 'his body is rolled a quarter turn onto the wall');
+ok(wlObs.asked.slice(0, wf).every((g) => g > 0), 'every wall frame asks for collision grace');
+eq(wlObs.asked.length, wf + 1, 'once per frame, plus the landing');
+eq(wlObs.asked[wlObs.asked.length - 1], 1.5, 'the landing gets the usual 1.5 s');
+ok(game.state.wallMetres > (WG.duration - WG.liftTime) * CONFIG.startSpeed * 0.9, 'the metres on the wall are counted');
+ok(wlObs.coins.length > 3, 'a coin row runs along the wall');
+ok(wlObs.coins.every((c) => c.x === WG.x), 'on the wall itself, not in a lane');
+ok(wlObs.coins.every((c) => c.y > CONFIG.obstacles.wagon.height), 'at his height, above the deck');
+ok(wlObs.coins.some((c) => c.tag === 'reused'), 'with pooled coin objects');
+ok(wall.panels[1].scrolled > 0, 'the facade rushes past under his hands');
+eq(wallLog[wallLog.length - 1], 'off', 'wallOff announced');
+eq(pl.verticalLocked, false, 'the jump is his again');
+eq(pl.lane, CONFIG.laneCount - 1, 'he lands back in that outer lane');
+ok(Math.abs(pl.x - laneX(CONFIG.laneCount - 1)) < 0.05, 'standing in it');
+ok(pl.grounded, 'grounded on the deck');
+
+wall.start();
+pl.handleAction('left');                          // a press toward the inside
+wall.beforePlayer(DT);
+eq(game.state.wallTime, WG.landingTime, 'it ends the wall run at once');
+while (wall.active) { wall.beforePlayer(DT); wall.update(DT); }   // he lands
+wall.start();                                     // a fresh run: what does NOT end it
+pl.handleAction('right');                         // outward: the lane he already owns
+wall.beforePlayer(DT);
+ok(game.state.wallTime > WG.landingTime, 'an outward press keeps it going');
+pl.handleAction('up');
+wall.beforePlayer(DT);
+ok(game.state.wallTime > WG.landingTime, 'and so does a jump press');
+wallLog.length = 0;
+const wAsk = wlObs.asked.length;
+game.restart();
+eq(game.state.wallTime, 0, 'a run start clears the wall');
+eq(wall.active, false, 'and the run');
+eq(pl.verticalLocked, false, 'and the height lock');
+eq(game.state.wallMetres, 0, 'and the metre counter');
+eq(wallLog[wallLog.length - 1], 'reset', 'announced as a reset, without a landing');
+eq(wlObs.asked.length, wAsk, 'the reset asks for no landing grace');
+wallLog.length = 0;
+wall.start();
+game.halted = true;                               // the catch froze the world
+wall.update(DT);
+eq(wall.active, false, 'a catch ends the wall run');
+eq(game.state.wallTime, 0, 'and its countdown');
+eq(pl.verticalLocked, false, 'and gives the height back');
+eq(wlObs.asked.length, wAsk, 'the quiet end asks for no grace');
+game.halted = false;
+
+// ---------- Örümcek İzi (powerups/tracer.js): insansız şeridi izler, şerit ödüllendirir ----------
+const { TracerPowerup } = await import('../src/powerups/tracer.js');
+const TG = CONFIG.tracer;
+const trObs = mkObs();
+const tracer = game.addSystem(new TracerPowerup({ player: pl, obstacles: trObs, scene: fakeScene }));
+eq(trObs.registered.kind, 'tracer', 'the tracer registers its pickup');
+eq(trObs.generator.extras.length, 1, 'and one pattern extra');
+ok(trObs.registered.hooks.create(), 'its pickup model comes from pickup-art');
+
+const tp = [], tprobe = probe(trObs.generator.extras[0], tp);
+for (let i = 0; i < 6; i++) trObs.generator.extras[0](tprobe.block(i * 100, i % 2, null));
+eq(tprobe.rolls(), 6, 'the tracer extra draws exactly one random number per block');
+eq(tracer._segs.length, 6, 'and records the route of every block');
+eq(tracer._laneAt(50), 0, 'the first block routes lane 0');
+eq(tracer._laneAt(150), 1, 'the next one already goes the other way');
+eq(tracer._laneAt(900), 1, 'past what was recorded: the last known lane');
+trObs.generator.extras[0](tprobe.block(600, 0, [610, 660]));
+eq(tp.length, 1, 'a free stretch of the route lane gets a tracer');
+eq(tp[0].kind + ',' + tp[0].lane, 'tracer,0', 'of this kind, in the route lane');
+trObs.generator.extras[0](tprobe.block(700, 1, [690, 740]));
+eq(tp.length, 1, 'the minimum gap keeps the next block empty');
+eq(tprobe.rolls(), 8, 'and the declined block still drew its one number');
+trObs.generator.extras[0](tprobe.block(1300, 2, [1310, 1360]));
+eq(tp.length, 2, 'far enough on, the route lane gets another');
+eq(tracer._laneAt(1350), 2, 'and the strip knows that block');
+
+const steps = [];
+events.addEventListener('tracerStep', (e) => steps.push(e.detail.temp));
+events.addEventListener('tracerLost', () => steps.push('lost'));
+const trLog = [];
+events.addEventListener('tracerOn', () => trLog.push('on'));
+events.addEventListener('tracerOff', (e) => trLog.push(e.detail.reset ? 'reset' : 'off'));
+
+game.restart();
+game.state.intro = false;
+game.state.speed = CONFIG.startSpeed;
+game.state.distance = 50;
+pl.x = laneX(2);
+tracer._segs.length = 0;
+tracer._lastA = -Infinity;
+tracer._lastPickupD = -Infinity;
+trObs.generator.extras[0](tprobe.block(0, 2, null, 200));
+trObs.generator.extras[0](tprobe.block(200, 0, null, 400));
+tracer.start();
+eq(game.state.tracerTime, TG.duration, 'collecting fills the countdown');
+eq(trLog[trLog.length - 1], 'on', 'tracerOn announced');
+tracer.update(DT);
+eq(tracer.drone.root.visible, true, 'the drone flies');
+eq(tracer.drone.root.position.y, TG.height, 'the drone hovers at its height');
+eq(tracer.drone.root.position.z, -TG.ahead, 'ahead of him');
+eq(tracer.drone.root.position.x, laneX(2), 'in the lane the route takes there');
+ok(tracer.ribbon.shown > 1, 'and paints the strip on it');
+game.state.tracerTime = TG.duration;
+for (let i = 0; i < Math.round(TG.stepTime / DT) + 2; i++) { tracer.update(DT); game.state.distance += game.state.speed * DT; }
+eq(game.mult.temp, 1, 'five seconds on the strip = temp +1');
+eq(steps[steps.length - 1], 1, 'and it is announced');
+game.state.multiplier = 0;
+game.update(DT);                          // the real score line: (base + run + temp) * factor
+eq(game.state.multiplier, game.mult.base + game.mult.run + game.mult.temp, 'temp pays the score multiplier');
+game.state.distance = 190;
+tracer.ribbon.segs.length = 0;
+tracer.update(DT);
+ok(tracer.ribbon.segs.some((s) => s.x0 !== s.x1), 'the strip crosses over to the new route lane');
+game.state.distance = 50;
+pl.x = laneX(2) + (TG.ribbonWidth + CONFIG.playerWidth) / 2 - 0.05;
+tracer.update(DT);
+eq(game.mult.temp, 1, 'the strip is as wide as it reads');
+pl.x = laneX(0);
+for (let i = 0; i < 3; i++) tracer.update(DT);
+eq(game.mult.temp, 0, 'stepping off the strip zeroes the bonus');
+eq(steps[steps.length - 1], 'lost', 'and says so');
+const lostN = steps.length;
+tracer.update(DT);
+eq(steps.length, lostN, 'only once, not every frame');
+pl.x = laneX(2);
+game.state.tracerTime = TG.duration;
+for (let i = 0; i < Math.round(TG.stepTime / DT) - 3; i++) tracer.update(DT);
+eq(game.mult.temp, 0, 'the timer starts over: no early +1');
+for (let i = 0; i < 5; i++) tracer.update(DT);
+eq(game.mult.temp, 1, 'and pays a full stepTime later');
+game.mult.temp = TG.maxTemp;
+game.state.tracerTime = TG.duration;
+const capN = steps.length;
+for (let i = 0; i < Math.round(TG.stepTime / DT) + 2; i++) tracer.update(DT);
+eq(game.mult.temp, TG.maxTemp, 'the bonus stops at the cap');
+eq(steps.length, capN, 'a capped step is not counted as earned');
+while (tracer.active) tracer.update(DT);
+eq(game.state.tracerTime, 0, 'the countdown ends the trace');
+eq(game.mult.temp, 0, 'and takes the bonus with it');
+eq(tracer.ribbon.shown, 0, 'the strip is gone');
+eq(tracer.drone.root.visible, false, 'and the drone flies off');
+eq(trLog[trLog.length - 1], 'off', 'tracerOff announced');
+tracer.start();
+game.restart();
+eq(game.state.tracerTime, 0, 'a run start clears the tracer');
+eq(tracer.active, false, 'and the trace');
+eq(trLog[trLog.length - 1], 'reset', 'announced as a reset');
+tracer.start();
+game.halted = true;
+tracer.update(DT);
+eq(tracer.active, false, 'a catch ends the trace');
+eq(game.mult.temp, 0, 'and its bonus');
+game.halted = false;
+
+// ---------- yeni görev kabloları ----------
+eq(ms.missionText('decoy', 3), '3 kez Venom\'u kuklayla kandır', 'decoy mission text');
+eq(ms.missionText('wall', 30), 'Duvarda 30 m koş', 'wall mission text');
+ok(ms.MISSION_POOL.find((d) => d.id === 'wall').onerun, 'the wall metres are per run');
+ms.missions.set = 9;
+ms.missions.level = 8;
+ms.missions.items = [
+  { id: 'decoy', goal: 2, progress: 0, done: false },
+  { id: 'wall', goal: 30, progress: 0, done: false },
+  { id: 'tracer', goal: 2, progress: 0, done: false },
+];
+emit('decoyLure');
+eq(ms.missions.items[0].progress, 1, 'a real bait counts into the decoy mission');
+emit('tracerStep', { temp: 1 });
+eq(ms.missions.items[2].progress, 1, 'a strip step counts into the tracer mission');
+game.state.wallMetres = 35;
+sys.update();
+eq(ms.missions.items[1].done, true, 'the metres run on a wall are measured');
+emit('decoyLure');
+emit('tracerStep', { temp: 2 });
+eq(ms.missions.set, 10, 'all three done = the next set');
+eq(game.mult.base, ms.missions.level + 1, 'and the permanent multiplier again');
+
 console.log(`OK ${checks} checks`);
+

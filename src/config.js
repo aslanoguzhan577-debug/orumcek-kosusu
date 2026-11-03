@@ -320,6 +320,50 @@ export const CONFIG = {
     coinStop: 1,           // and stops this many seconds before the end
   },
 
+  // --- Ağ Kuklası (powerups/decoy.js): a web dummy left on the track; Venom takes the bait ---
+  decoy: {
+    duration: 20,          // seconds the first side stumble is forgiven (one stumble only)
+    pickupChance: 0.1,     // the later extras only get the blocks the earlier ones passed on
+    pickupMinGap: 600,
+    pickupY: 0.15,
+    pickupScale: 1.3,
+    behind: 20,            // the dummy is out of sight (and out of play) this far behind
+  },
+
+  // --- Duvar Koşusu (powerups/wall.js): 6 s running sideways on the wall beside the track ---
+  wall: {
+    duration: 6,           // seconds
+    height: 3.2,           // m: his feet above the deck; above every train roof (2.88)
+    x: 3.5,                // m: |x| of his feet; the comic wall face rises out of the trackside
+                           // wall at 3.65, so his soles nearly touch it
+    liftTime: 0.35,        // s to hop up to the wall ...
+    landingTime: 0.5,      // ... and to drop back onto the deck at the end (1.5 s grace after)
+    camBack: 2.4,          // m the camera pulls back: his feet stay inside a tall portrait frame
+    pickupChance: 0.1,
+    pickupMinGap: 600,
+    pickupY: 0.15,
+    pickupScale: 1.3,
+    coinAhead: 22,         // the wall coin row is laid this far ahead
+    coinStop: 0.8,         // and stops this many seconds before the end
+  },
+
+  // --- Örümcek İzi (powerups/tracer.js): a drone traces the open lane; staying on it pays ---
+  tracer: {
+    duration: 10,          // seconds the drone flies
+    stepTime: 3,           // s on the traced lane per +1 of game.mult.temp (x3 at 9 s of the 10) ...
+    maxTemp: 3,            // ... up to this
+    ahead: 6,              // m the drone flies in front of the player
+    height: 2.5,           // m above the deck
+    leadTime: 3,           // s of track ahead the ribbon is already traced
+    ribbonSpacing: 3,      // m between the ribbon's stamps ...
+    ribbonTail: 8,         // ... and how far behind the player the strip is still drawn (m)
+    ribbonWidth: 1.5,      // m across
+    pickupChance: 0.1,
+    pickupMinGap: 600,
+    pickupY: 0.15,
+    pickupScale: 1.3,
+  },
+
   // --- Start-of-run intro clip (intro.js). Seconds unless noted; z is metres behind the
   //     player's start spot (the world stands still during the clip). ---
   intro: {

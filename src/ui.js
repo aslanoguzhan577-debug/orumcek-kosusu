@@ -91,7 +91,7 @@ let overAt = Infinity;     // time (ms) from which the game-over card may show
 let lastResult = null;     // { name, score, coins, distance, record, entry }
 let ironMax = 1;
 let prevIronTime = 0;
-const timers = ['sense', 'magnet', 'bugle', 'spring', 'swing'].map((kind) => {
+const timers = ['sense', 'magnet', 'bugle', 'spring', 'swing', 'decoy', 'wall', 'tracer'].map((kind) => {
   const box = $('h-' + kind);
   const cv = box && box.querySelector('canvas');
   if (cv) drawPowerIcon(cv, kind);
@@ -818,6 +818,9 @@ function updateHud() {
   updateTimer(timers[2], st.bugleTime || 0);
   updateTimer(timers[3], st.springTime || 0);
   updateTimer(timers[4], st.swingTime || 0);
+  updateTimer(timers[5], st.decoyTime || 0);
+  updateTimer(timers[6], st.wallTime || 0);
+  updateTimer(timers[7], st.tracerTime || 0);
 
   // Repulsor boost button (Iron Man fly skill)
   if (el.repulsor && game.repulsor) {

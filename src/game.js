@@ -26,6 +26,10 @@ const state = {
   bugleTime: 0,     // Bugle Manşeti seconds left (powerups/bugle.js): > 0 = factor 2
   springTime: 0,    // Örümcek Yayı seconds left (powerups/spring.js): > 0 = higher jumps
   swingTime: 0,     // Ağ Salınışı seconds left (powerups/swing.js): > 0 = swinging above the track
+  decoyTime: 0,     // Ağ Kuklası seconds left (powerups/decoy.js): > 0 = one stumble is forgiven
+  wallTime: 0,      // Duvar Koşusu seconds left (powerups/wall.js): > 0 = running on the wall
+  wallMetres: 0,    // metres run on a wall this round (missions.js measures it)
+  tracerTime: 0,    // Örümcek İzi seconds left (powerups/tracer.js): > 0 = the drone traces the lane
   time: 0,         // seconds of running this round (extra, not in contract)
   intro: false,     // true while the start-of-run clip plays (intro.js)
 };
@@ -238,6 +242,7 @@ export const game = {
     state.ironTime = 0;
     state.bugleTime = 0;
     state.springTime = 0;
+    state.wallMetres = 0;
     // state.ironCount is persistent inventory (G10 loads/saves it) — left alone.
     this.world.reset();
     this.player.reset();

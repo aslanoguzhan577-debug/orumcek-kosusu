@@ -1041,6 +1041,31 @@ function spiderPose(state, P, { t, st, phase }) {
       P.kneeL = -0.5 + 0.08 * Math.sin(t * 3.5);
       break;
     }
+    case 'wall': { // Duvar Koşusu: the system rolls him 90 degrees onto the facade, so his local
+      // x axis runs up the wall — hands and feet pump along it in antiphase (a climb that reads the
+      // same on either side), knees tucked, chest turned out to the track.
+      const w = Math.sin(phase * 1.5), q = Math.cos(phase * 1.5);
+      P.pelvisY = 0.02;
+      P.pelvisRX = 0.1 * q;                          // shoulders push off the wall, hips drop in
+      P.pelvisRZ = -0.12;
+      P.spineRZ = -0.18;                             // chest faced out over the lanes
+      P.headRY = -0.22 - 0.1 * w;                    // a glance along the wall
+      P.headRZ = 0.2 * w;
+      P.armLZ = 1.15 * w;                            // one hand reaches up the facade while the
+      P.armRZ = -1.15 * w;                           // other drives down past it
+      P.armLX = 0.35 * q;
+      P.armRX = -0.35 * q;
+      P.elbowL = 1.2 - 0.45 * w;                     // fingers hook the brickwork
+      P.elbowR = 1.2 + 0.45 * w;
+      P.legLZ = 0.75 * w;                            // feet churn up and down the wall
+      P.legRZ = -0.75 * w;
+      P.legLX = -0.25 * q;
+      P.legRX = 0.25 * q;
+      P.kneeL = -1.0 - 0.35 * w;
+      P.kneeR = -1.0 + 0.35 * w;
+      P.squash = 0.98 + 0.03 * q;
+      break;
+    }
     case 'stumble': { // tripping forward, arms windmilling, head wobbling
       const k = Math.max(0.35, 1 - st * 0.8);
       P.pelvisY = 0.03 * Math.abs(c);

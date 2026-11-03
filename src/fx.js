@@ -261,6 +261,7 @@ const WORDS = {
   venom: { t: 'VENOM BLAST!', burst: '#ffcc00', fill: '#ff3300' },
   gong:  { t: 'GONG!',  burst: '#38d5ff', fill: '#0e3a9c' },
   manset: { t: 'x2 MANŞET!', paper: true, fill: '#12161f' },
+  plus1: { t: '+1', burst: '#16e0c6', fill: '#ffffff' },
 };
 // Flaş Fotoğraf'ın üç kademesi (game.mult.run = 5 / 6 / 7): "xN" diyafon sticker'ı
 for (let b = 5; b <= 7; b++) WORDS['x' + b] = { t: 'x' + b, shutter: true, fill: '#e0262c' };
@@ -864,15 +865,21 @@ export function initFx(game) {
     const pl = player();
     const iron = d.type === 'iron';
     const sense = d.type === 'sense', magnet = d.type === 'magnet';
-    const ringCol = iron ? 0xffd23a : sense ? 0xffe14a : magnet ? 0xe0262c : 0x9fd8ff;
+    const decoy = d.type === 'decoy', wall = d.type === 'wall', tracer = d.type === 'tracer';
+    const ringCol = iron ? 0xffd23a : sense ? 0xffe14a : magnet ? 0xe0262c
+      : decoy ? 0xf2f6ff : wall ? 0xd9603a : tracer ? 0x16e0c6 : 0x9fd8ff;
     const ring2 = magnet ? 0xd8dde6 : 0xffffff;
     const sparks = iron ? [0xffd23a, 0xe0262c, 0xffffff] : sense ? [0xffe14a, 0xffffff, 0xffc83a]
-      : magnet ? [0xe0262c, 0xd8dde6, 0xffffff] : [0xffffff, 0x4aa8ff, 0x9fd8ff];
+      : magnet ? [0xe0262c, 0xd8dde6, 0xffffff] : decoy ? [0xffffff, 0xdfe8f5, 0xe0262c]
+      : wall ? [0xffd9a8, 0xd9603a, 0xffffff] : tracer ? [0x16e0c6, 0xeafaff, 0xffd23a]
+      : [0xffffff, 0x4aa8ff, 0x9fd8ff];
     const y = pl.y + 0.9;
     glow.spawn(pl.x, y, 0.2, 0, 0, 0, 0.45, 0.6, 3.4, SHAPE.ring, ringCol, 0.95, 0, 0, true);
     glow.spawn(pl.x, y, 0.2, 0, 0, 0, 0.3, 0.3, 2.2, SHAPE.ring, ring2, 0.7, 0, 0, true, 0.07);
     sparkBurst(glow, pl.x, y, 0.2, 10, sparks, 4, 0.4, 0.5);
     if (sense) for (let i = 0; i < 4; i++) squiggle(0.6, 1.0, 0.7, 0.4, 1, 1.6, y);
+    if (wall) puffBurst(pl.x, y - 0.4, 0.2, Math.round(6 * rm), 0xd9603a, 2.6, 1.6, 0.3, 0.7, 0.4);
+    if (tracer) for (let i = 0; i < 3; i++) squiggle(0.5, 0.9, 0.55, 0.45, 0.9, 1.2, y);
   });
 
   on('web', (d) => {
@@ -1111,6 +1118,7 @@ export function initFx(game) {
   // Süre game.state.swingTime'tan okunur (bayrak yok): sistem onu her karede zaten güncelliyor.
   const SG = CONFIG.swing;
   let swingTrailAcc = 0, swingSparkAcc = 0, lastThwipMs = -1e9;
+  let wallDustAcc = 0, wallLineAcc = 0, tracerGlintAcc = 0, decoyShineAcc = 0;
   const handPos = (side) => {
     const off = CONFIG.web.handOffset;        // the same point web.js starts its line from
     const pl = player();
@@ -1171,6 +1179,124 @@ export function initFx(game) {
     if (!reduceMotion) for (const dx of [-0.5, 0.5]) streak(pl.x + dx, fy + 0.25, 0.3, 0, 6, 1.4, 0.25, 0.6, true);
     flash('cyan', 0.28, 240);
     shake(0.04, 0.14);
+  });
+
+  // ----- Ağ Kuklası: beyaz koza, Venom'un dili; Duvar Koşusu: tuğla tozu, hız çizgileri; -----
+  // ----- Örümcek İzi: siber yeşil ağ şeridi, "+1" sticker'ı -----
+  const DK = CONFIG.decoy, WL = CONFIG.wall, TR = CONFIG.tracer;
+  const SILK = 0xf7fbff, SILK_EDGE = 0xdfe8f5, BRICK = [0xffd9a8, 0xd9603a, 0x8c2f18];
+  const TRAIL = [0x16e0c6, 0xeafaff, 0xffd23a];
+  const venomPos = () => {
+    const c = game.chaser && game.chaser.root;
+    return { x: num(c && c.position.x, 0), y: num(c && c.position.y, 0), z: num(c && c.position.z, CONFIG.chaser.farGap) };
+  };
+  // a doll-sized cocoon of silk: two flat rings, a puff and the throwing streaks
+  function cocoon(x, y, z, s) {
+    glow.spawn(x, y + 0.7 * s, z, 0, 0, 0, 0.42, 0.55 * s, 2.6 * s, SHAPE.ring, SILK, 0.95, 0, 0, true);
+    glow.spawn(x, y + 0.7 * s, z, 0, 0, 0, 0.28, 0.35 * s, 1.7 * s, SHAPE.ring, SILK_EDGE, 0.7, 0, 0, true, 0.06);
+    puffBurst(x, y + 0.5 * s, z, Math.round(7 * rm), SILK_EDGE, 2.2 * s, 1.3, 0.35, 0.85, 0.45);
+  }
+
+  on('decoyOn', (d) => {
+    const p = posOf(d, 0.9);
+    cocoon(p.x, floorY() + 0.1, p.z, 1.3);
+    sticker('thwip', { x: p.x, y: p.y + 1.5, z: p.z }, { width: 0.2, life: 0.7, tilt: (p.x > 0 ? -1 : 1) * 0.2 });
+    flash('white', 0.22, 200);
+    shake(0.05, 0.16);
+  });
+
+  // Venom is told where the dinner is: a lasso of silk out of the doll, his ink lurching after it
+  on('decoyLure', (d) => {
+    const p = posOf(d, 0.9), v = venomPos();
+    const dz = v.z - p.z, dy = v.y + 1.4 - (p.y + 1.1);
+    for (let i = 0; i < 6; i++) {
+      const k = 0.15 + (i / 6) * 0.85;
+      const w = normal.spawn(p.x, p.y + 1.1 + dy * k, p.z + dz * k, 0, 0, 0,
+        0.34, 1.5 - i * 0.16, (1.5 - i * 0.16) * 0.75, SHAPE.streak, SILK, 0.85, 0, 0, true, i * 0.03);
+      normal.rot[w] = Math.PI / 2 + rnd(-0.22, 0.22);   // horizontal: the silk flies back at him
+      normal.spin[w] = 0;
+    }
+    puffBurst(v.x, v.y + 1.5, v.z - 0.4, Math.round(6 * rm), 0x1b1622, 2.4, 1.2, 0.5, 1.2, 0.4);
+    sparkBurst(glow, v.x, v.y + 1.6, v.z - 0.4, Math.round(6 * rm), [SILK, SILK_EDGE, 0xe0262c], 4.5, 0.4, 0.4);
+    impactFrame({ bg: 0xefe6ef, dot: 0x1b1622, line: INK, frames: 2, ms: 90 });
+    shake(0.09, 0.2);
+  });
+
+  // the forgiven stumble: the doll has taken the hit, its silk bursts off and it topples
+  on('decoyUse', (d) => {
+    const p = posOf(d, 0.9);
+    cocoon(p.x, floorY() + 0.4, p.z, 1);
+    chunks(p.x, p.y + 0.9, p.z, 7, 3.2, 2.4, 1.4);
+    showText('pat', p.x, p.y + 1.7, p.z, 0.26, 0.62, true);
+    flash('white', 0.2, 180);
+    shake(0.06, 0.18);
+  });
+
+  on('wallOn', (d) => {
+    const pl = player(), fy = floorY();
+    const side = d.side < 0 ? -1 : 1;
+    impactFrame({ bg: 0xffe9d2, dot: 0xd9603a, line: INK, frames: 3, ms: 110 });
+    flash('white', 0.26, 200);
+    groundRing({ x: pl.x, y: fy + 0.05, z: 0.1 }, { r0: 0.3, r1: 3.6, width: 0.42, color: 0xffffff, edge: 0xffd9a8, life: 0.5, scroll: true });
+    puffBurst(pl.x, fy + 0.12, 0.25, Math.round(9 * rm), dustCol, 3.2, 1.5, 0.45, 1.0, 0.45);
+    chunks(side * WL.x, fy + 1.2, 0, 6, 1.2, 2.2, 0.8);
+    showText('hop', pl.x + side * 1.3, fy + 1.3, 0, 0.22, 0.55, true);
+    if (!reduceMotion) for (let i = 0; i < 3; i++) streak(pl.x + side * rnd(0.3, 1.1), fy + rnd(0.4, 2.4), rnd(-0.4, 0.4), -8, 0, 2.2, 0.24, 0.55, false);
+    sparkBurst(glow, pl.x, pl.y + 1, 0.1, Math.round(10 * rm), BRICK, 5.5, 0.36, 0.45);
+    shake(0.1, 0.22);
+  });
+
+  // the landing: dust on the deck, a few bricks still falling
+  on('wallOff', (d) => {
+    wallDustAcc = wallLineAcc = 0;
+    if (d.reset) return;
+    const pl = player(), fy = floorY();
+    puffBurst(pl.x, fy + 0.1, 0.25, Math.round(9 * rm), dustCol, 3.4, 1.4, 0.45, 1.0, 0.45);
+    groundRing({ x: pl.x, y: fy + 0.05, z: 0.15 }, { r0: 0.3, r1: 3.2, width: 0.4, color: 0xffffff, edge: 0xffd9a8, life: 0.48, scroll: true });
+    chunks(pl.x, fy + 0.5, 0.1, 5, 2.4, 1.6, 0.9);
+    if (!reduceMotion) for (const dx of [-0.5, 0.5]) streak(pl.x + dx, fy + 0.25, 0.3, 0, 6, 1.3, 0.24, 0.55, true);
+    flash('white', 0.2, 170);
+    shake(0.05, 0.16);
+  });
+
+  on('tracerOn', (d) => {
+    const pl = player();
+    impactFrame({ bg: 0xeafffb, dot: 0x9ef7e6, line: INK, frames: 2, ms: 100 });
+    flash('cyan', 0.32, 240);
+    const h = { x: pl.x, y: pl.y + 1.2, z: 0 };
+    webShot(h, h.x, TR.height, -(TR.ahead + 5), 5, 1.2, 0.3, 0.75);
+    glow.spawn(pl.x, pl.y + 0.9, 0.2, 0, 0, 0, 0.4, 0.55, 3.2, SHAPE.ring, 0x16e0c6, 0.9, 0, 0, true);
+    sparkBurst(glow, pl.x, pl.y + 1.1, 0.2, Math.round(12 * rm), TRAIL, 5.5, 0.42, 0.48);
+    showText('fiss', pl.x + 0.6, pl.y + 1.7, 0, 0.26, 0.6, true);
+  });
+
+  // every 5 s on the strip: the "+1" pops out of the trace and climbs
+  on('tracerStep', (d) => {
+    const p = posOf(d, 1.7);
+    showText('plus1', p.x, p.y, p.z, 0.2, 0.85, true, false, true);
+    for (let i = 0; i < 5; i++) {
+      glow.spawn(p.x + rnd(-0.25, 0.25), floorY() + 0.15 + i * 0.34, rnd(-0.15, 0.2),
+        0, rnd(2.4, 4), rnd(0.4, 1.6), rnd(0.34, 0.5), 0.3, 0.02, SHAPE.star, TRAIL[i % 3], 1, 0, 2, true, 0, rnd(-6, 6));
+    }
+    sparkBurst(glow, p.x, p.y + 0.3, p.z, Math.round(8 * rm), TRAIL, 4.5, 0.36, 0.42);
+  });
+
+  on('tracerLost', (d) => {
+    const p = posOf(d, 1.7);
+    puffBurst(p.x, p.y - 0.5, p.z, Math.round(6 * rm), 0x8d8f98, 2.4, 1.2, 0.3, 0.7, 0.4);
+    for (let i = 0; i < 4; i++) {
+      normal.spawn(p.x + rnd(-0.4, 0.4), p.y - 0.2, p.z, rnd(-1, 1), -rnd(1.5, 3), rnd(-0.5, 0.5),
+        rnd(0.3, 0.5), 0.16, 0.04, SHAPE.square, 0x8d8f98, 0.8, 0, 0, true, 0, rnd(-7, 7));
+    }
+    shake(0.04, 0.12);
+  });
+
+  on('tracerOff', (d) => {
+    tracerGlintAcc = 0;
+    if (d.reset) return;
+    const pl = player(), x = game.tracer ? game.tracer.onX : pl.x;
+    glow.spawn(x, floorY() + 0.2, 0.1, 0, 0, 0, 0.4, 0.4, 2.4, SHAPE.ring, 0x16e0c6, 0.7, 0, 0, true);
+    if (!reduceMotion) for (let i = 0; i < 3; i++) streak(x + rnd(-0.6, 0.6), floorY() + 0.15, -rnd(0, 5), 0, 7, 1.6, 0.26, 0.4, true);
   });
 
   let venomOn = false;
@@ -1265,6 +1391,7 @@ export function initFx(game) {
     introSpeedUntil = 0;
     introVenomUntil = 0;
     slideAcc = 0;
+    wallDustAcc = wallLineAcc = tracerGlintAcc = decoyShineAcc = 0;
     splashOff();
   }
   on('start', clearAll);
@@ -1367,6 +1494,49 @@ export function initFx(game) {
           glow.spawn(pl.x + rnd(-0.5, 0.5), pl.y + rnd(0.1, 1.6), rnd(-0.2, 0.3),
             rnd(-0.8, 0.8), rnd(0, 1.2), rnd(1.5, 4), rnd(0.3, 0.5), 0.28, 0.02, SHAPE.star,
             [0xffffff, 0xbfe6ff, 0xffd23a][(Math.random() * 3) | 0], 0.9, 0, 1.2, true, 0, rnd(-6, 6));
+        }
+      }
+      if (st.decoyTime > 0 && game.decoy && game.decoy.spare > 0) { // affedilmiş bir tökezleme bekliyor
+        decoyShineAcc -= dt;
+        while (decoyShineAcc <= 0) {
+          decoyShineAcc += 0.4;
+          glow.spawn(pl.x + rnd(-0.55, 0.55), pl.y + rnd(0.5, 1.7), rnd(-0.25, 0.3),
+            rnd(-0.4, 0.4), rnd(0.3, 1), rnd(0.6, 1.8), rnd(0.35, 0.55), 0.22, 0.02, SHAPE.star,
+            Math.random() < 0.25 ? 0xe0262c : SILK, 0.85, 0, 1, true, 0, rnd(-6, 6));
+        }
+      }
+      if (st.wallTime > 0) { // duvar: ayaklarının dibinde tuğla tozu ve çatlak parçaları
+        const side = game.wall && game.wall.active ? game.wall.side : (pl.x >= 0 ? 1 : -1);
+        const wx = side * WL.x;
+        wallDustAcc -= dt;
+        while (wallDustAcc <= 0) {
+          wallDustAcc += 0.035;
+          normal.spawn(wx - side * rnd(0.02, 0.3), pl.y + rnd(0.02, 0.5), rnd(-0.15, 0.35),
+            rnd(-0.5, 0.5), -rnd(1.2, 3.4), rnd(1.5, 4.5), rnd(0.3, 0.5), 0.3, 0.7, SHAPE.puff,
+            dustCol, 0.8, -0.3, 1.6, true);
+          if (Math.random() < 0.5) {
+            normal.spawn(wx - side * rnd(0.05, 0.35), pl.y + rnd(0.1, 1.1), rnd(-0.1, 0.4),
+              rnd(-0.8, 0.8), -rnd(1, 3), rnd(2, 5), rnd(0.3, 0.55), 0.14, 0.05, SHAPE.square,
+              BRICK[(Math.random() * BRICK.length) | 0], 1, 14, 0.7, true, 0, rnd(-12, 12));
+          }
+        }
+        if (!reduceMotion) { // ve tuğlalar ondan uzağa kayar
+          wallLineAcc -= dt;
+          while (wallLineAcc <= 0) {
+            wallLineAcc += 0.05;
+            streak(wx - side * rnd(0.15, 0.55), pl.y + rnd(-1.2, 2.6), rnd(-1.5, 1.5),
+              0, st.speed * 0.5, 2.6, 0.22, 0.5, true);
+          }
+        }
+      }
+      if (st.tracerTime > 0) { // şeritten yükselen parıltı: iz onun üstünde kaldığını gösterir
+        tracerGlintAcc -= dt;
+        while (tracerGlintAcc <= 0) {
+          tracerGlintAcc += 0.09;
+          const tx = (game.tracer ? game.tracer.onX : pl.x) + rnd(-TR.ribbonWidth / 2, TR.ribbonWidth / 2);
+          glow.spawn(tx, floorY() + 0.12, rnd(-0.2, 0.2), rnd(-0.3, 0.3), rnd(1.2, 2.6), rnd(-0.4, 0.8),
+            rnd(0.25, 0.45), 0.2, 0.02, SHAPE.star, TRAIL[(Math.random() * TRAIL.length) | 0],
+            0.9, 0, 1, true, 0, rnd(-6, 6));
         }
       }
     }

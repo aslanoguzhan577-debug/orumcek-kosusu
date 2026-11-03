@@ -30,6 +30,9 @@ export const MISSION_POOL = [
   { id: 'powerup',   text: '{n} güç topla',                      base: 4,    growth: 2 },
   { id: 'magnet',    text: '{n} mıknatıs topla',                 base: 2,    growth: 1 },
   { id: 'bugle',     text: '{n} Bugle Manşeti topla',            base: 2,    growth: 1 },
+  { id: 'decoy',     text: '{n} kez Venom\'u kuklayla kandır',    base: 1,    growth: 1 },
+  { id: 'wall',      text: 'Duvarda {n} m koş',                  base: 20,   growth: 10, onerun: true },
+  { id: 'tracer',    text: 'Örümcek İzi ile {n} kez çarpan kazan', base: 1,   growth: 1 },
   { id: 'sense',     text: 'Örümcek hissiyle {n} kez kaç',        base: 4,    growth: 3 },
   { id: 'iron',      text: 'Iron Spider ile {n} kez kurtul',      base: 3,    growth: 2 },
   { id: 'special',   text: '{n} kez kahraman yeteneği kullan',    base: 3,    growth: 2 },
@@ -162,6 +165,8 @@ const COUNTED = {
   lane: ['lane'],
   web: ['web'],
   swingOn: ['swing'],
+  decoyLure: ['decoy'],               // only a real bait (Venom was near) counts
+  tracerStep: ['tracer'],
   senseDodge: ['sense'],
   ironSave: ['iron'],
   specialOn: ['special'],
@@ -183,6 +188,7 @@ const MEASURED = {
   scoreRun: (st) => st.score,
   noStumble: (st) => st.distance - stumbleAt,
   noCoins: (st) => (st.coins > 0 ? 0 : st.score),
+  wall: (st) => st.wallMetres,          // metres spent on a wall this run (powerups/wall.js)
 };
 
 events.addEventListener('stumble', () => { stumbleAt = game.state.distance; });
