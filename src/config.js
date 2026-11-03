@@ -282,6 +282,25 @@ export const CONFIG = {
     chest: 0.9,            // target height above the feet
   },
 
+  // --- Bugle Manşeti (powerups/bugle.js): the Daily Bugle front page, x2 score multiplier ---
+  bugle: {
+    duration: 10,          // seconds of factor = 2
+    pickupChance: 0.15,    // like the magnet: ~1 per 1600 m
+    pickupMinGap: 400,
+    pickupY: 0.15,
+    pickupScale: 1.3,
+  },
+
+  // --- Örümcek Yayı (powerups/spring.js): web-spring shoes, a much higher jump ---
+  spring: {
+    duration: 10,          // seconds
+    jumpScale: 2.2,        // a normal jump reaches this times the usual apex
+    pickupChance: 0.15,
+    pickupMinGap: 400,
+    pickupY: 0.15,
+    pickupScale: 1.3,
+  },
+
   // --- Start-of-run intro clip (intro.js). Seconds unless noted; z is metres behind the
   //     player's start spot (the world stands still during the clip). ---
   intro: {

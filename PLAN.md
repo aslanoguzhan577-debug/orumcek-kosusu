@@ -208,4 +208,4 @@ Zaten olanlar: Mıknatıs (Coin Magnet), Iron Spider (Kaykay), Iron Man jeti (H�
 - **Örümcek İzi (`tracer`, yerden):** 10 sn küçük bir drone önde uçar, her zaman açık olan güvenli şeride parlayan ağ izi çizer. İz üzerinde her 5 sn kalınca temp +1 (en fazla +3), izden çıkınca temp 0.
 
 ### Ponytail ayarı (aşamaya göre, kullanıcı kararı)
-Full: oyun mantığı, kayıt / skor formülü, HUD ve menü, güçlerin oynanış kodu, testler. Kapalı: güç görselleri / efektler / ikonlar / eşya modelleri ve konsept tasarım.
+Full: oyun mantığı, kayıt / skor formülü, HUD ve menü, güçlerin oynanış kodu, testler. Ponytail kapalı (sadelik kuralı uygulanmaz, gösterişli yapılır; efektler YAPILIR): güç görselleri / efektler / ikonlar / eşya modelleri ve konsept tasarım.

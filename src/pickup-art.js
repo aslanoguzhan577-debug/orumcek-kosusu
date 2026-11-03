@@ -1,13 +1,16 @@
-// pickup-art.js — art for the two power-up pickups. No game logic.
+// pickup-art.js — art for the power-up pickups. No game logic.
 //
-//   import { createWebPickup, createIronPickup, createSensePickup, createMagnetPickup } from './pickup-art.js';
+//   import { createWebPickup, createIronPickup, createSensePickup, createMagnetPickup,
+//            createBuglePickup, createSpringPickup } from './pickup-art.js';
 //   const p = createWebPickup();   // { root, update(dt) }
 //   scene.add(p.root); p.root.position.set(x, y, z);  // y = surface the item hovers over
 //   every frame: p.update(dt);
 //
 // Sense = Funko head + yellow spider-sense squiggles, Magnet = red horseshoe magnet with silver
-// tips and a spider badge; same interface, 5 draw calls each. drawPowerIcon(canvas, 'sense' |
-// 'magnet') paints the matching 2D HUD icon.
+// tips and a spider badge, Bugle = folded Daily Bugle front page, Spring = web-strand coil with
+// red soles; same interface. drawPowerIcon(canvas, 'sense' | 'magnet' | 'bugle' | 'spring' |
+// 'ironSpider' | 'heroSpecial' | 'web') paints the matching 2D HUD / market icon; the market-only
+// Flaş Fotoğraf has no pickup, its icon is the press camera.
 // All are about 1 m tall including the float: the lowest point hovers ~0.1 m above the
 // origin (bottom centre), the highest reaches ~1.0 m. They spin and bob by themselves;
 // every instance starts at a random phase, so pooled copies do not move in sync.
@@ -475,6 +478,264 @@ function drawWebIcon2D(g, S) {
   drawWeb(g, S * 0.85);
 }
 
+// ================= Bugle Manşeti, Örümcek Yayı, Flaş Fotoğraf =================
+// One painter draws the Daily Bugle's page: at 512 px it is mapped onto the pickup, at 38-96 px
+// it is the HUD / market icon — so the icon is always what runs down the track.
+
+const PAGE_INK = '#14141c';
+const PAGE_PAPER = '#f7f1de';
+const PAGE_RED = '#d0192b';
+const PAGE_BLUE = '#1d3a8a';
+const PAGE_FONT = "'Bangers', Impact, 'Arial Black', sans-serif";
+
+function lcg(seed) {
+  let s = seed;
+  return () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+}
+
+// letter by letter: canvas letter-spacing is not everywhere yet
+function spacedText(g, text, cx, cy, sp) {
+  const chars = Array.from(text);
+  let w = -sp;
+  for (const ch of chars) w += g.measureText(ch).width + sp;
+  let x = cx - w / 2;
+  for (const ch of chars) { g.fillText(ch, x, cy); x += g.measureText(ch).width + sp; }
+}
+
+function burstShape(g, cx, cy, r1, r2, n, rot = 0) {
+  g.beginPath();
+  for (let i = 0; i < n * 2; i++) {
+    const a = rot + (i / (n * 2)) * Math.PI * 2;
+    const r = i % 2 === 0 ? r1 : r2;
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+    if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  }
+  g.closePath();
+}
+
+function roundedBox(g, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  g.beginPath();
+  g.moveTo(x + rr, y);
+  g.arcTo(x + w, y, x + w, y + h, rr);
+  g.arcTo(x + w, y + h, x, y + h, rr);
+  g.arcTo(x, y + h, x, y, rr);
+  g.arcTo(x, y, x + w, y, rr);
+  g.closePath();
+}
+
+// a press photo: halftone dots over ink, bigger (lighter) at the top
+function halftoneBlock(g, x, y, w, h, hex) {
+  g.fillStyle = PAGE_INK;
+  g.fillRect(x, y, w, h);
+  const step = w / 11;
+  g.fillStyle = hex;
+  for (let iy = 0; iy * step < h; iy++) {
+    for (let ix = 0; ix * step < w; ix++) {
+      const t = (iy * step) / h;
+      const r = step * 0.52 * (1.02 - t) * (0.72 + 0.28 * Math.sin(ix * 2.7 + iy * 1.4));
+      if (r < 0.8) continue;
+      g.beginPath();
+      g.arc(x + ix * step + step * 0.5, y + iy * step + step * 0.5, r, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  g.strokeStyle = PAGE_INK;
+  g.lineWidth = h * 0.03;
+  g.strokeRect(x, y, w, h);
+}
+
+// filler copy: rows of ink dashes of uneven length
+function newsLines(g, x, y, w, n, gap, hex) {
+  g.strokeStyle = hex;
+  g.lineWidth = gap * 0.32;
+  g.lineCap = 'butt';
+  for (let i = 0; i < n; i++) {
+    const ww = w * (0.62 + 0.38 * Math.abs(Math.sin(i * 2.3 + x * 0.05)));
+    g.beginPath();
+    g.moveTo(x, y + i * gap);
+    g.lineTo(x + ww, y + i * gap);
+    g.stroke();
+  }
+}
+
+function drawBuglePage(g, S, back) {
+  const rand = lcg(back ? 4211 : 1301);
+  const m = S * 0.055;
+  g.fillStyle = PAGE_PAPER;
+  g.fillRect(0, 0, S, S);
+  g.fillStyle = 'rgba(80,66,38,.11)';
+  for (let i = 0; i < 320; i++) g.fillRect(rand() * S, rand() * S, S * 0.005, S * 0.005);
+
+  g.fillStyle = PAGE_INK;                                    // nameplate rules
+  g.fillRect(m, S * 0.05, S - m * 2, S * 0.008);
+  g.fillRect(m, S * 0.2, S - m * 2, S * 0.018);
+
+  g.textBaseline = 'alphabetic';
+  g.font = `900 ${Math.round(S * 0.16)}px ${PAGE_FONT}`;     // masthead
+  g.fillStyle = 'rgba(208,25,43,.5)';
+  spacedText(g, back ? 'MANŞET' : 'BUGLE', S / 2 + S * 0.008, S * 0.186 + S * 0.008, S * 0.014);
+  g.fillStyle = PAGE_INK;
+  spacedText(g, back ? 'MANŞET' : 'BUGLE', S / 2, S * 0.186, S * 0.014);
+  g.font = `700 ${Math.round(S * 0.033)}px ${PAGE_FONT}`;
+  g.fillStyle = 'rgba(20,20,28,.7)';
+  spacedText(g, back ? 'SKOR KÂĞIDI' : 'GÜNLÜK · İLK BASKI', S / 2, S * 0.238, S * 0.022);
+
+  g.fillStyle = PAGE_RED;                                    // flash band
+  g.fillRect(m, S * 0.255, S - m * 2, S * 0.05);
+  g.font = `700 ${Math.round(S * 0.037)}px ${PAGE_FONT}`;
+  g.fillStyle = PAGE_PAPER;
+  spacedText(g, back ? 'ŞEHRİ KURTARDI' : 'ÇARPAN İKİYE KATLADI', S / 2, S * 0.293, S * 0.02);
+
+  const hx = S * 0.375, hy = S * 0.435;                      // the headline
+  g.save();
+  g.translate(hx, hy);
+  g.rotate(-0.06);
+  burstShape(g, 0, 0, S * 0.25, S * 0.152, 11, 0.2);
+  g.fillStyle = '#ffd23a';
+  g.fill();
+  g.lineWidth = S * 0.014;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+  g.font = `900 ${Math.round(S * 0.3)}px ${PAGE_FONT}`;
+  g.fillStyle = PAGE_RED;
+  spacedText(g, 'x2', S * 0.016, S * 0.086 + S * 0.016, S * 0.004);
+  g.fillStyle = PAGE_INK;
+  spacedText(g, 'x2', 0, S * 0.086, S * 0.004);
+  g.restore();
+
+  const py = S * 0.615, ph = S * 0.31, pw = S * 0.4;         // photo + columns
+  halftoneBlock(g, m, py, pw, ph, '#e9e3cf');
+  g.save();
+  g.translate(m + pw * 0.5 - ph * 0.31, py + ph * 0.5 - ph * 0.31);
+  drawSpider(g, ph * 0.62, PAGE_PAPER);
+  g.restore();
+  g.font = `700 ${Math.round(S * 0.042)}px ${PAGE_FONT}`;
+  g.fillStyle = PAGE_BLUE;
+  g.fillText(back ? 'KAHRAMAN' : 'AĞ İZİNDE', m + pw + S * 0.045, py + S * 0.012);
+  newsLines(g, m + pw + S * 0.045, py + S * 0.055, S - m * 2 - pw - S * 0.05, 4, S * 0.05, 'rgba(20,20,28,.5)');
+  newsLines(g, m, py + ph + S * 0.03, S - m * 2, 1, S * 0.04, 'rgba(20,20,28,.35)');
+
+  g.beginPath();                                             // folded corner
+  g.moveTo(S - S * 0.17, 0);
+  g.lineTo(S, 0);
+  g.lineTo(S, S * 0.17);
+  g.closePath();
+  g.fillStyle = 'rgba(80,66,38,.3)';
+  g.fill();
+  g.beginPath();
+  g.moveTo(S - S * 0.17, 0);
+  g.lineTo(S, S * 0.17);
+  g.lineTo(S - S * 0.06, S * 0.2);
+  g.closePath();
+  g.fillStyle = '#e4dabf';
+  g.fill();
+  g.lineWidth = S * 0.011;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+
+  const crease = g.createLinearGradient(0, S * 0.55, 0, S * 0.61);   // the fold it went through
+  crease.addColorStop(0, 'rgba(80,66,38,0)');
+  crease.addColorStop(0.5, 'rgba(80,66,38,.2)');
+  crease.addColorStop(1, 'rgba(80,66,38,0)');
+  g.fillStyle = crease;
+  g.fillRect(0, S * 0.55, S, S * 0.06);
+
+  g.lineWidth = S * 0.03;                                      // the sheet's ink frame
+  g.strokeStyle = PAGE_INK;
+  g.strokeRect(S * 0.015, S * 0.015, S * 0.97, S * 0.97);
+}
+
+// HUD / market icon: the front page, tilted like a sticker
+function drawBugle2D(g, S) {
+  const s = S * 0.9;
+  g.save();
+  g.translate(S / 2, S / 2);
+  g.rotate(-0.1);
+  g.translate(-s / 2, -s / 2);
+  drawBuglePage(g, s, false);
+  g.restore();
+}
+
+// HUD / market icon: the web coil with its red soles and a gold spider badge
+function drawSpring2D(g, S) {
+  const cx = S / 2, rx = S * 0.235, top = S * 0.24, bot = S * 0.7, turns = 3.6;
+  const coil = () => {
+    g.beginPath();
+    const n = 96;
+    for (let i = 0; i <= n; i++) {
+      const u = i / n, a = u * turns * Math.PI * 2;
+      const x = cx + Math.cos(a) * rx;
+      const y = top + (bot - top) * u + Math.sin(a) * S * 0.055;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+  };
+  strokeInked(g, '#f7fbff', S * 0.15, S * 0.09, coil);
+  g.strokeStyle = 'rgba(120,190,255,.8)';
+  g.lineWidth = S * 0.028;
+  coil();
+  g.stroke();
+  for (const cy of [top - S * 0.03, bot + S * 0.03]) {
+    g.beginPath(); g.ellipse(cx, cy, S * 0.31, S * 0.115, 0, 0, Math.PI * 2);
+    g.fillStyle = PAGE_INK; g.fill();
+    g.beginPath(); g.ellipse(cx, cy, S * 0.28, S * 0.09, 0, 0, Math.PI * 2);
+    g.fillStyle = '#d8232a'; g.fill();
+    g.beginPath(); g.ellipse(cx - S * 0.05, cy - S * 0.026, S * 0.15, S * 0.024, 0, 0, Math.PI * 2);
+    g.fillStyle = 'rgba(255,255,255,.42)'; g.fill();
+  }
+  const bs = S * 0.4;
+  g.save();
+  g.translate(cx - bs / 2, (top + bot) / 2 - bs / 2);
+  drawSpider(g, bs, '#ffdc40');
+  g.restore();
+  g.lineCap = 'round';
+  for (const [k, a] of [[1, 0.85], [0.7, 0.45]]) {           // launch arcs under the shoe
+    g.strokeStyle = `rgba(120,190,255,${a})`;
+    g.lineWidth = S * 0.034;
+    g.beginPath();
+    g.moveTo(cx - S * 0.3 * k, S * 0.88);
+    g.quadraticCurveTo(cx, S * 0.96, cx + S * 0.3 * k, S * 0.88);
+    g.stroke();
+  }
+}
+
+// HUD / market icon: the press camera inside its flash burst
+function drawFlash2D(g, S) {
+  const cx = S / 2, cy = S * 0.58;
+  burstShape(g, cx, cy - S * 0.06, S * 0.48, S * 0.3, 8, 0.39);
+  g.fillStyle = '#fff3ae';
+  g.fill();
+  g.lineWidth = S * 0.022;
+  g.strokeStyle = PAGE_INK;
+  g.stroke();
+  g.fillStyle = PAGE_INK;                                    // viewfinder bump
+  g.fillRect(cx - S * 0.2, cy - S * 0.3, S * 0.16, S * 0.09);
+  roundedBox(g, cx - S * 0.35, cy - S * 0.24, S * 0.7, S * 0.44, S * 0.08);
+  g.fillStyle = '#e8ecf6';
+  g.fill();
+  g.lineWidth = S * 0.045;
+  g.stroke();
+  g.fillStyle = PAGE_RED;                                    // the red grip stripe
+  g.fillRect(cx + S * 0.18, cy - S * 0.2, S * 0.12, S * 0.1);
+  g.beginPath();                                             // lens
+  g.arc(cx - S * 0.04, cy, S * 0.155, 0, Math.PI * 2);
+  g.fillStyle = PAGE_INK;
+  g.fill();
+  g.beginPath();
+  g.arc(cx - S * 0.04, cy, S * 0.115, 0, Math.PI * 2);
+  g.fillStyle = PAGE_BLUE;
+  g.fill();
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = S * 0.022;
+  g.beginPath();
+  g.arc(cx - S * 0.04, cy, S * 0.09, Math.PI * 1.15, Math.PI * 1.75);
+  g.stroke();
+  g.fillStyle = PAGE_INK;                                    // shutter button
+  g.beginPath(); g.arc(cx + S * 0.24, cy - S * 0.27, S * 0.045, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#ffd23a';
+  g.beginPath(); g.arc(cx + S * 0.24, cy - S * 0.285, S * 0.03, 0, Math.PI * 2); g.fill();
+}
+
 export function drawPowerIcon(canvas, kind) {
   const g = canvas.getContext('2d');
   const S = canvas.width;
@@ -488,6 +749,12 @@ export function drawPowerIcon(canvas, kind) {
     drawHeroSpecial2D(g, S);
   } else if (kind === 'web') {
     drawWebIcon2D(g, S);
+  } else if (kind === 'bugle') {
+    drawBugle2D(g, S);
+  } else if (kind === 'spring') {
+    drawSpring2D(g, S);
+  } else if (kind === 'flash') {
+    drawFlash2D(g, S);
   } else {
     drawMagnet2D(g, S);
   }
@@ -676,6 +943,164 @@ export function createMagnetPickup() {
     field.scale.setScalar(0.9 * (1.2 - 0.3 * k));
     field.material.opacity = Math.sin(Math.PI * k);
     glow.scale.setScalar(1.9 * (1 + 0.1 * Math.sin(t * 4.2)));
+  };
+  update(0);
+  return { root, update };
+}
+
+// ================= Bugle Manşeti and Örümcek Yayı (3D) =================
+// The newspaper is one cream slab (the folded stack) with a painted page in front of each face,
+// so it reads from every angle while it spins: 5 draw calls. The spring is a web-strand helix
+// between two red soles with a gold spider badge on it: 6. Geometries, materials and page
+// textures are shared; update() allocates nothing.
+
+const BG = { w: 0.66, h: 0.66, t: 0.085, page: 0.6 };            // folded paper (m)
+const SPR = {
+  r: 0.2, tube: 0.034, turns: 4, coil: 0.5, padR: 0.28, padT: 0.08, flat: 0.72, badge: 0.145,
+};
+const SPR_TOP = SPR.padT * 2 + SPR.coil;                          // base at y = 0
+
+class Helix extends THREE.Curve {
+  getPoint(u, out = new THREE.Vector3()) {
+    const a = u * SPR.turns * Math.PI * 2;
+    return out.set(Math.cos(a) * SPR.r, SPR.padT + u * SPR.coil, Math.sin(a) * SPR.r);
+  }
+}
+
+function buildSpringCoil() {
+  const geo = new THREE.TubeGeometry(new Helix(), 72, SPR.tube, 8, false);
+  return smoothNormals(geo);
+}
+
+function buildSpringPads() {
+  const mk = (y) => new THREE.CylinderGeometry(SPR.padR, SPR.padR * 0.9, SPR.padT, 18, 1).translate(0, y, 0);
+  const parts = [mk(SPR.padT / 2), mk(SPR.padT + SPR.coil + SPR.padT / 2)];
+  const geo = mergeGeometries(parts);
+  for (const g of parts) g.dispose();
+  geo.scale(1, 1, SPR.flat);          // an insole: oval, not a coin
+  return geo;
+}
+
+let shared3 = null;
+function buildShared3() {
+  if (!shared) shared = buildShared();
+  const glowTex = shared.web.glowMat.map;
+
+  const bugle = {};
+  bugle.padGeo = new THREE.BoxGeometry(BG.w, BG.h, BG.t).translate(0, BG.h / 2, 0);
+  bugle.padMat = toonMaterial(0xe7dcc0, {
+    shade: 'soft', emissive: 0x2a2416, gloss: { color: 0xffffff, strength: 0.35, threshold: 0.96, soft: 0.015 },
+  });
+  bugle.pageGeo = new THREE.PlaneGeometry(BG.page, BG.page).translate(0, BG.h / 2, 0);
+  // the two pages, painted at 512 px; redrawn once Bangers is in, like fx.js's comic words
+  const pages = [false, true].map((back) => ({ back, tex: canvasTexture(512, (g, S) => drawBuglePage(g, S, back)) }));
+  if (document.fonts && document.fonts.load) {
+    document.fonts.load("900 160px 'Bangers'", 'BUGLE MANŞET x2').then(() => {
+      for (const p of pages) {
+        const c = p.tex.image;
+        drawBuglePage(c.getContext('2d'), c.width, p.back);
+        p.tex.needsUpdate = true;
+      }
+    }, () => {});
+  }
+  bugle.frontMat = new THREE.MeshBasicMaterial({ map: pages[0].tex, toneMapped: false });
+  bugle.backMat = new THREE.MeshBasicMaterial({ map: pages[1].tex, toneMapped: false });
+  bugle.glowMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xffd23a, transparent: true, opacity: 0.85, depthWrite: false });
+
+  const spr = {};
+  spr.coilGeo = buildSpringCoil();
+  spr.coilMat = toonMaterial(0xf4f9ff, {
+    shade: 'soft', emissive: 0x123a6e, gloss: { color: 0xffffff, strength: 0.6, threshold: 0.93, soft: 0.02 },
+  });
+  spr.padGeo = buildSpringPads();
+  spr.padMat = toonMaterial(0xd8232a, {
+    shade: 'soft', emissive: 0x3a0a0c, gloss: { color: 0xffffff, strength: 0.5, threshold: 0.95, soft: 0.012 },
+  });
+  const bz = SPR.r + 0.01, by = SPR.padT + SPR.coil / 2;
+  const f = new THREE.CircleGeometry(SPR.badge, 18).translate(0, by, bz);
+  const k = new THREE.CircleGeometry(SPR.badge, 18).rotateY(Math.PI).translate(0, by, -bz);
+  spr.badgeGeo = mergeGeometries([f, k]);
+  f.dispose(); k.dispose();
+  spr.badgeMat = new THREE.MeshBasicMaterial({
+    map: canvasTexture(128, (g, S) => {
+      g.fillStyle = PAGE_RED;
+      g.beginPath(); g.arc(S / 2, S / 2, S * 0.46, 0, Math.PI * 2); g.fill();
+      g.lineWidth = S * 0.09;
+      g.strokeStyle = PAGE_INK;
+      g.stroke();
+      g.save();
+      g.translate(S * 0.13, S * 0.13);
+      drawSpider(g, S * 0.74, '#ffdc40');
+      g.restore();
+    }), transparent: true, depthWrite: false, toneMapped: false,
+  });
+  spr.glowMat = new THREE.SpriteMaterial({ map: glowTex, color: 0x9fd8ff, transparent: true, opacity: 0.8, depthWrite: false });
+  return { bugle, spr };
+}
+
+export function createBuglePickup() {
+  if (!shared3) shared3 = buildShared3();
+  const s = shared3.bugle;
+  const root = new THREE.Group();
+  root.name = 'bugle-pickup';
+  const spin = new THREE.Group();   // spins, flutters, bobs
+  const pad = new THREE.Mesh(s.padGeo, s.padMat);
+  addOutline(pad, OUTLINE, INK);
+  const front = new THREE.Mesh(s.pageGeo, s.frontMat);
+  front.position.z = BG.t / 2 + 0.002;
+  const back = new THREE.Mesh(s.pageGeo, s.backMat);
+  back.position.z = -(BG.t / 2 + 0.002);
+  back.rotation.y = Math.PI;
+  spin.add(pad, front, back);
+  const glow = new THREE.Sprite(s.glowMat);
+  glow.renderOrder = 2;
+  glow.position.z = -0.4;           // behind the page: the halo must not wash over the print
+  root.add(spin, glow);
+
+  const baseY = 0.1;
+  let t = Math.random() * 20;
+  const update = (dt) => {
+    t += dt;
+    spin.rotation.y += dt * 1.9;
+    spin.rotation.z = Math.sin(t * 2.2) * 0.08; // a loose page in the wind
+    const bob = Math.sin(t * 2.6) * 0.055;
+    spin.position.y = baseY + bob;
+    glow.position.y = BG.h / 2 + baseY + bob;
+    const pulse = 2.1 * (1 + 0.1 * Math.sin(t * 4.2));
+    glow.scale.set(pulse, pulse, 1);
+  };
+  update(0);
+  return { root, update };
+}
+
+export function createSpringPickup() {
+  if (!shared3) shared3 = buildShared3();
+  const s = shared3.spr;
+  const root = new THREE.Group();
+  root.name = 'spring-pickup';
+  const squash = new THREE.Group(); // its base stays put: this is the spring compressing
+  const coil = new THREE.Mesh(s.coilGeo, s.coilMat);
+  addOutline(coil, OUTLINE, INK);
+  const pads = new THREE.Mesh(s.padGeo, s.padMat);
+  addOutline(pads, OUTLINE, INK);
+  const badge = new THREE.Mesh(s.badgeGeo, s.badgeMat);
+  badge.renderOrder = 1;
+  squash.add(coil, pads, badge);
+  const glow = new THREE.Sprite(s.glowMat);
+  glow.renderOrder = 2;
+  glow.position.z = -0.35;
+  root.add(squash, glow);
+
+  const baseY = 0.1;
+  let t = Math.random() * 20;
+  const update = (dt) => {
+    t += dt;
+    squash.rotation.y += dt * 2.2;
+    squash.scale.y = 1 + 0.16 * Math.sin(t * 3.4);   // press, release, press ...
+    const bob = Math.sin(t * 2.6) * 0.05;
+    squash.position.y = baseY + bob;
+    glow.position.y = SPR_TOP * 0.5 + baseY + bob;
+    glow.scale.setScalar(2.0 * (1 + 0.1 * Math.sin(t * 4.2)));
   };
   update(0);
   return { root, update };

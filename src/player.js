@@ -25,7 +25,7 @@ import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { emit } from './events.js';
 import { laneX } from './world.js';
-import { game } from './game.js';
+import { game, jumpScale } from './game.js';
 import { curve } from './curve.js';
 
 const CENTER_LANE = Math.floor(CONFIG.laneCount / 2);
@@ -109,6 +109,7 @@ export class Player {
       case 'down': this._down(); break;
       case 'double': this.hooks.onDoubleAction(this); break;
       case 'special': if (game.web) game.web.tryActivate(); break;
+      case 'flash': if (game.flash) game.flash.use(); break;
       default: break; // 'tap' does nothing while running
     }
   }
@@ -136,7 +137,7 @@ export class Player {
     return true;
   }
 
-  jump(height = CONFIG.jumpHeight) {
+  jump(height = CONFIG.jumpHeight * jumpScale()) { // Örümcek Yayı raises the default jump only
     if (this.sliding) this._endSlide();
     this.vy = Math.sqrt(2 * CONFIG.gravity * height);
     this.grounded = false;

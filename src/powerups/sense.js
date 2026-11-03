@@ -24,7 +24,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { emit } from '../events.js';
-import { game } from '../game.js';
+import { game, jumpScale } from '../game.js';
 import { laneX } from '../world.js';
 import { createSensePickup } from '../pickup-art.js';
 import { getEffectiveSkillDuration } from '../shop.js';
@@ -105,7 +105,7 @@ function applySim(action, floor) {
   const s = sim;
   if (action === 'jump') {
     if (s.grounded || s.coyote > 0) {
-      s.vy = Math.sqrt(2 * CONFIG.gravity * CONFIG.jumpHeight);
+      s.vy = Math.sqrt(2 * CONFIG.gravity * CONFIG.jumpHeight * jumpScale()); // same jump as player.js
       s.grounded = false;
       s.coyote = 0;
       s.sliding = false;

@@ -14,6 +14,9 @@ import { WebPowerup } from './powerups/web.js';
 import { IronSpiderPowerup } from './powerups/ironspider.js';
 import { SensePowerup } from './powerups/sense.js';
 import { MagnetPowerup } from './powerups/magnet.js';
+import { BuglePowerup } from './powerups/bugle.js';
+import { SpringPowerup } from './powerups/spring.js';
+import { FlashBooster } from './powerups/flash.js';
 import { RepulsorBoost } from './powerups/repulsor.js';
 import { HERO_SPECIAL_TEXTURES } from './powerups/hero-specials.js';
 import { Intro } from './intro.js';
@@ -133,6 +136,15 @@ game.sense = sense;
 const magnet = new MagnetPowerup({ player, obstacles }); // coin magnet
 game.addSystem(magnet);
 game.magnet = magnet;
+const bugle = new BuglePowerup({ obstacles }); // x2 score multiplier
+game.addSystem(bugle);
+game.bugle = bugle;
+const spring = new SpringPowerup({ obstacles }); // super-high jump
+game.addSystem(spring);
+game.spring = spring;
+const flash = new FlashBooster(); // market consumable: start-of-run score boost
+game.addSystem(flash);
+game.flash = flash;
 const repulsor = new RepulsorBoost({ player, scene }); // Iron Man fly boost
 game.addSystem(repulsor);
 game.repulsor = repulsor;

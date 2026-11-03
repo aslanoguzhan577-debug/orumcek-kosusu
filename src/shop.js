@@ -20,6 +20,7 @@ export const CONSUMABLE_ITEMS = {
   ironCore:   { name: 'Iron Spider Kullanım Hakkı', desc: '+1 Zırh Çekirdeği (Space / Çift dokun)', cost: 100, maxCount: (CONFIG && CONFIG.iron && CONFIG.iron.maxCount) || 5 },
   heroCharge: { name: 'Kahraman Şarjı / Ağ',        desc: '+1 Özel Yetenek / Ağ Şarjı [E]',        cost: 75,  maxCount: 1 },
   jetStart:   { name: 'Iron Man Jet Başlangıcı',    desc: 'Koşu başında 2000 m uçuş (ilk 7 sn, HUD butonu)', cost: 400, maxCount: 3 },
+  flashBooster: { name: 'Flaş Fotoğraf', desc: 'Koşu başında çarpana +5 / +6 / +7 (ilk 7 sn, en fazla 3)', cost: 300, maxCount: 9 },
 };
 
 function defaults() {
@@ -28,6 +29,7 @@ function defaults() {
     upgrades: { magnet: 0, spiderSense: 0, ironSpider: 0, heroSpecial: 0 },
     bankedHeroCharge: 0,
     jetStarts: 0,
+    flashBoosters: 0,
   };
 }
 
@@ -41,6 +43,8 @@ function load() {
     if (Number.isFinite(heroCharge) && heroCharge >= 0) d.bankedHeroCharge = Math.floor(heroCharge);
     const jetStarts = Number(saved?.jetStarts);
     if (Number.isInteger(jetStarts) && jetStarts >= 0 && jetStarts <= CONSUMABLE_ITEMS.jetStart.maxCount) d.jetStarts = jetStarts;
+    const flashBoosters = Number(saved?.flashBoosters);
+    if (Number.isInteger(flashBoosters) && flashBoosters >= 0 && flashBoosters <= CONSUMABLE_ITEMS.flashBooster.maxCount) d.flashBoosters = flashBoosters;
     for (const key of Object.keys(SKILL_UPGRADE_CONFIG)) {
       const lv = Number(saved?.upgrades?.[key]);
       if (Number.isInteger(lv) && lv >= 0 && lv <= SKILL_UPGRADE_CONFIG[key].maxLevel) {
@@ -63,6 +67,7 @@ export function getPlayerData() {
     upgrades: { ...data.upgrades },
     bankedHeroCharge: data.bankedHeroCharge || 0,
     jetStarts: data.jetStarts || 0,
+    flashBoosters: data.flashBoosters || 0,
     ironCount: getIronCoreCount(),
   };
 }
@@ -164,6 +169,28 @@ export function buyJetStart() {
 export function useJetStart() {
   if (getJetStartCount() <= 0) return false;
   data.jetStarts = getJetStartCount() - 1;
+  save();
+  return true;
+}
+
+export function getFlashBoosterCount() {
+  return data.flashBoosters || 0;
+}
+
+export function buyFlashBooster() {
+  const item = CONSUMABLE_ITEMS.flashBooster;
+  if (!item || data.totalCoins < item.cost) return false;
+  const max = item.maxCount || 9;
+  if (getFlashBoosterCount() >= max) return false;
+  data.totalCoins -= item.cost;
+  data.flashBoosters = Math.min(max, getFlashBoosterCount() + 1);
+  save();
+  return true;
+}
+
+export function useFlashBooster() {
+  if (getFlashBoosterCount() <= 0) return false;
+  data.flashBoosters = getFlashBoosterCount() - 1;
   save();
   return true;
 }

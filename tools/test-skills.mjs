@@ -17,7 +17,7 @@ const eq = (a, b, msg) => { checks++; assert.equal(a, b, msg); };
 const ok = (c, msg) => { checks++; assert.ok(c, msg); };
 const json = (v) => JSON.stringify(v);
 
-const { game } = await import('../src/game.js');
+const { game, jumpScale } = await import('../src/game.js');
 game.world = { update() {}, reset() {} };
 game.player = { update() {}, reset() {}, handleAction() {} };
 game.intro = null;
@@ -207,5 +207,74 @@ const msOld = await import('../src/missions.js?stale');
 eq(msOld.missions.set, 1, 'a stale save = set 1');
 eq(msOld.missions.level, 0, 'a stale save = level 0');
 eq(json(msOld.missions.items), json(ms.makeSet(1)), 'a stale save = fresh missions');
+
+// ---------- Bugle Manşeti çarpanı ve Örümcek Yayı sıçrayışı (game.js okur) ----------
+game.state.bugleTime = 0;
+game.restart();
+eq(game.mult.factor, 1, 'no bugle = factor 1');
+game.state.bugleTime = CONFIG.bugle.duration;
+game.update(0.1);
+eq(game.mult.factor, 2, 'bugleTime > 0 = factor 2');
+eq(game.state.multiplier, (game.mult.base + game.mult.run + game.mult.temp) * 2, 'the multiplier carries the x2');
+game.state.bugleTime = 0;
+game.update(0.1);
+eq(game.mult.factor, 1, 'when the bugle runs out the x2 is gone');
+game.state.bugleTime = 4;
+game.restart();
+eq(game.state.bugleTime, 0, 'a run start clears the bugle');
+eq(game.mult.factor, 1, 'and no stale x2 survives it');
+
+eq(jumpScale(), 1, 'a normal jump is the normal height');
+game.state.springTime = CONFIG.spring.duration;
+eq(jumpScale(), CONFIG.spring.jumpScale, 'the spring raises the default jump');
+game.state.springTime = 0;
+eq(jumpScale(), 1, 'and drops it back');
+
+// ---------- Flaş Fotoğraf (market sarf: koşu başı çarpan takviyesi) ----------
+store.set('orumcek_kosusu_save', json({ totalCoins: 5000, upgrades: { magnet: 0, spiderSense: 0, ironSpider: 0, heroSpecial: 0 }, bankedHeroCharge: 0, jetStarts: 0, flashBoosters: 0 }));
+const shop = await import('../src/shop.js');
+const { FlashBooster } = await import('../src/powerups/flash.js');
+const boosts = [];
+events.addEventListener('flashBoost', (e) => boosts.push(e.detail.bonus));
+
+game.restart();
+game.state.intro = false;
+game.state.time = 0;
+const fl = new FlashBooster();
+eq(fl.available, false, 'no stock = no boost');
+eq(fl.use(), false, 'and nothing is spent');
+
+ok(shop.buyFlashBooster(), 'the market sells one');
+eq(fl.count, 1, 'the stock is in the save');
+eq(fl.available, true, 'inside the first 7 s of a run it is usable');
+game.state.intro = true;
+eq(fl.available, false, 'not during the intro clip');
+game.state.intro = false;
+game.state.time = 8;
+eq(fl.available, false, 'and not after the window');
+eq(fl.windowLeft, 0, 'the window shows 0');
+game.state.time = 3;
+eq(fl.windowLeft, 4, 'the window counts down');
+
+eq(fl.use(), true, 'one tap spends it');
+eq(boosts.length, 1, 'and announces the boost');
+eq(game.mult.run, 5, 'the first tap = x5');
+eq(fl.count, 0, 'the stock is empty');
+eq(shop.buyFlashBooster(), true, 'buy another');
+eq(shop.buyFlashBooster(), true, 'and another');
+eq(fl.use(), true, 'the second run use works');
+eq(game.mult.run, 6, 'the second tap = x6');
+ok(shop.buyFlashBooster(), 'and a third');
+eq(fl.use(), true, 'the third use works');
+eq(game.mult.run, 7, 'the third tap = x7');
+eq(fl.available, false, 'three is the cap for one run');
+eq(fl.use(), false, 'and a fourth tap spends nothing');
+eq(fl.count, 1, 'so the stock stays where it was');
+game.update(0.1);
+eq(game.state.multiplier, (game.mult.base + 7) * game.mult.factor, 'the run part pays the score');
+fl.reset();
+game.mult.run = 0;
+eq(fl.use(), true, 'a fresh run can spend the spare');
+eq(game.mult.run, 5, 'and it starts at x5 again');
 
 console.log(`OK ${checks} checks`);

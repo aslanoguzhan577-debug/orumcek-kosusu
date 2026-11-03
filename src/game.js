@@ -23,13 +23,20 @@ const state = {
   ironTime: 0,      // G10 seconds left
   senseTime: 0,     // spider-sense seconds left (powerups/sense.js), 0 = off
   magnetTime: 0,    // magnet seconds left (powerups/magnet.js), 0 = off
+  bugleTime: 0,     // Bugle Manşeti seconds left (powerups/bugle.js): > 0 = factor 2
+  springTime: 0,    // Örümcek Yayı seconds left (powerups/spring.js): > 0 = higher jumps
   time: 0,         // seconds of running this round (extra, not in contract)
   intro: false,     // true while the start-of-run clip plays (intro.js)
 };
 
 // Score multiplier (PLAN.md 10): missions.js owns base (1 + finished mission sets, max 30);
 // the power-ups own run (Flaş Fotoğraf), temp (Örümcek İzi) and factor 2 (Bugle Manşeti).
+// factor is read off state.bugleTime instead of being written by the bugle: zeroing that
+// at a run start can then never leave a stale x2 behind.
 const mult = { base: 1, run: 0, temp: 0, factor: 1 };
+
+// How much higher a normal jump goes while the Örümcek Yayı is on (player.js / sense.js).
+export const jumpScale = () => (state.springTime > 0 ? CONFIG.spring.jumpScale : 1);
 
 // The distance score accumulates here already multiplied; coin score never multiplies.
 let scoreAcc = 0;
@@ -203,6 +210,7 @@ export const game = {
     if (running) {
       for (const s of this.systems) if (s.update) s.update(dt);
       // every metre gained this frame (a power-up's distance jump included) is paid at the multiplier
+      mult.factor = state.bugleTime > 0 ? 2 : 1;
       state.multiplier = (mult.base + mult.run + mult.temp) * mult.factor;
       scoreAcc += (state.distance - dist0) * CONFIG.scorePerMeter * state.multiplier;
       state.score = Math.floor(scoreAcc) + state.coins * CONFIG.coinScore;
@@ -227,6 +235,8 @@ export const game = {
     this.fadeRate = 0;
     this.hitStopT = 0;
     state.ironTime = 0;
+    state.bugleTime = 0;
+    state.springTime = 0;
     // state.ironCount is persistent inventory (G10 loads/saves it) — left alone.
     this.world.reset();
     this.player.reset();

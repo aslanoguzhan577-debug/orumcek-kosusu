@@ -28,6 +28,7 @@ export const MISSION_POOL = [
   { id: 'web',       text: '{n} kez ağ at',                      base: 10,   growth: 5 },
   { id: 'powerup',   text: '{n} güç topla',                      base: 4,    growth: 2 },
   { id: 'magnet',    text: '{n} mıknatıs topla',                 base: 2,    growth: 1 },
+  { id: 'bugle',     text: '{n} Bugle Manşeti topla',            base: 2,    growth: 1 },
   { id: 'sense',     text: 'Örümcek hissiyle {n} kez kaç',        base: 4,    growth: 3 },
   { id: 'iron',      text: 'Iron Spider ile {n} kez kurtul',      base: 3,    growth: 2 },
   { id: 'special',   text: '{n} kez kahraman yeteneği kullan',    base: 3,    growth: 2 },
@@ -164,10 +165,11 @@ const COUNTED = {
 };
 for (const name in COUNTED) events.addEventListener(name, () => bump(COUNTED[name], 1));
 
-// Every pickup is a power-up; the magnet one is also the magnet mission.
+// Every pickup is a power-up; the magnet and the bugle ones are also their own mission.
 events.addEventListener('pickup', (e) => {
   const ids = ['powerup'];
-  if (e.detail && e.detail.type === 'magnet') ids.push('magnet');
+  const type = e.detail && e.detail.type;
+  if (type === 'magnet' || type === 'bugle') ids.push(type);
   bump(ids, 1);
 });
 

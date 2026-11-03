@@ -58,6 +58,7 @@
         <symbol id="i-web" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 2.5V21.5M2.5 12H21.5M5.3 5.3L18.7 18.7M18.7 5.3L5.3 18.7"/><circle cx="12" cy="12" r="3.6"/><circle cx="12" cy="12" r="7.4"/></g></symbol>
         <symbol id="i-spider" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 9L4 4.5M9.5 11L3 11M9.5 13L4 17M10.5 15L7 21M14.5 9L20 4.5M14.5 11L21 11M14.5 13L20 17M13.5 15L17 21"/></g><ellipse cx="12" cy="9" rx="2.4" ry="2.2" fill="currentColor"/><ellipse cx="12" cy="14.6" rx="3.2" ry="4" fill="currentColor"/></symbol>
         <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 3L21 13H15.5V21H8.5V13H3Z" fill="currentColor" stroke="#0d0d14" stroke-width="2" stroke-linejoin="round"/></symbol>
+        <symbol id="i-camera" viewBox="0 0 24 24"><rect x="8.8" y="3.6" width="6.4" height="3" rx="1.1" fill="currentColor" stroke="#0d0d14" stroke-width="1.6"/><rect x="2.4" y="6.2" width="19.2" height="14" rx="3.2" fill="currentColor" stroke="#0d0d14" stroke-width="1.9"/><circle cx="12" cy="13.2" r="4.5" fill="#fdf7e6" stroke="#0d0d14" stroke-width="1.7"/><circle cx="12" cy="13.2" r="1.9" fill="#0d0d14"/><circle cx="10.3" cy="11.5" r="0.9" fill="#ffffff"/><circle cx="18.4" cy="9.3" r="1" fill="#fdf7e6" stroke="#0d0d14" stroke-width="0.9"/></symbol>
       </defs>
     </svg>
 
@@ -92,7 +93,7 @@
         <span class="lbl" id="h-ironbar-lbl">IRON SPIDER</span>
         <div class="track"><div class="fill" id="h-ironfill"></div></div>
       </div>
-      <!-- Örümcek hissi / Mıknatıs süre göstergeleri (ikonlar src/ui.js içinde çizilir) -->
+      <!-- Süre göstergeleri (ikonlar src/ui.js içinde çizilir) -->
       <div class="hud-timers">
         <div class="pgauge sense" id="h-sense" role="img" aria-label="Örümcek hissi" hidden>
           <canvas width="96" height="96" aria-hidden="true"></canvas>
@@ -102,12 +103,26 @@
           <canvas width="96" height="96" aria-hidden="true"></canvas>
           <div class="track"><div class="fill"></div></div>
         </div>
+        <div class="pgauge bugle" id="h-bugle" role="img" aria-label="Bugle Manşeti" hidden>
+          <canvas width="96" height="96" aria-hidden="true"></canvas>
+          <div class="track"><div class="fill"></div></div>
+        </div>
+        <div class="pgauge spring" id="h-spring" role="img" aria-label="Örümcek Yayı" hidden>
+          <canvas width="96" height="96" aria-hidden="true"></canvas>
+          <div class="track"><div class="fill"></div></div>
+        </div>
       </div>
       <!-- Iron Man Repulsor Boost butonu (sol alt) -->
       <button id="h-repulsor" class="repulsor-btn" type="button" tabindex="-1" hidden>
         <img class="repulsor-img" src="ironman-icon.png" alt="Iron Man" width="44" height="44">
         <span class="repulsor-txt">IRON MAN</span>
         <span class="repulsor-timer" id="h-repulsor-timer"></span>
+      </button>
+      <!-- Flaş Fotoğraf butonu (sol alt, repulsorün üstü; C tuşu ile aynı iş) -->
+      <button id="h-flash" class="flash-btn" type="button" tabindex="-1" hidden aria-label="Flaş Fotoğraf">
+        <i class="flash-ico"><svg><use href="#i-camera"/></svg></i>
+        <span class="flash-txt">FLAŞ</span>
+        <span class="flash-timer" id="h-flash-timer"></span>
       </button>
     </div>
 

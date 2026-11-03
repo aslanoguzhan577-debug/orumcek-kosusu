@@ -2,9 +2,10 @@
 //
 // Hooks into the game only through the public API:
 //   reads   game.state (mode, score, coins, distance, multiplier, webCharges, ironCount, ironTime,
-//                       senseTime, magnetTime: seconds left, undefined = 0) and game.mult.factor
-//   calls   game.start() / pause() / resume() / restart()
-//   listens events: start, pause, resume, gameover, missionDone, missionSet
+//                       senseTime, magnetTime, bugleTime, springTime: seconds left, undefined = 0)
+//           and game.mult.factor
+//   calls   game.start() / pause() / resume() / restart(), game.flash.use()
+//   listens events: start, pause, resume, gameover, missionDone, missionSet, flashBoost
 // It sets game.tapToStart = false (the G1 tap-anywhere placeholder is off).
 // Markup lives in index.html (#ui), styling in ui.css. All DOM is built once; the frame
 // loop only touches an element when its value changed.
@@ -68,6 +69,7 @@ const el = {
   oScore: $('o-score'), oCoins: $('o-coins'), oDist: $('o-dist'), oBest: $('o-best'),
   oRecord: $('o-record'), oList: $('o-list'),
   repulsor: $('h-repulsor'), repulsorTimer: $('h-repulsor-timer'),
+  flash: $('h-flash'), flashTimer: $('h-flash-timer'),
 };
 if (!el.hud || !el.menu) {
   console.warn('[ui] #ui markup missing from index.html');
@@ -89,13 +91,13 @@ let overAt = Infinity;     // time (ms) from which the game-over card may show
 let lastResult = null;     // { name, score, coins, distance, record, entry }
 let ironMax = 1;
 let prevIronTime = 0;
-const timers = ['sense', 'magnet'].map((kind) => {
+const timers = ['sense', 'magnet', 'bugle', 'spring'].map((kind) => {
   const box = $('h-' + kind);
   const cv = box && box.querySelector('canvas');
   if (cv) drawPowerIcon(cv, kind);
   return { box: box || document.createElement('div'), fill: (box && box.querySelector('.fill')) || document.createElement('div'), max: 1, prev: 0, show: null, q: -1, low: null };
 });
-const cache = { score: -1, coins: -1, mult: -1, multGold: null, web: -1, ironN: -1, ironShow: null, ironBar: null, barScale: -1, low: null, hint: null, repulsorShow: null, repulsorText: '', heroSkin: null };
+const cache = { score: -1, coins: -1, mult: -1, multGold: null, web: -1, ironN: -1, ironShow: null, ironBar: null, barScale: -1, low: null, hint: null, repulsorShow: null, repulsorText: '', flashShow: null, flashText: '', heroSkin: null };
 
 game.tapToStart = false;
 
@@ -287,6 +289,45 @@ function paintMarket() {
     el.mkList.appendChild(row);
   }
 
+  // D) Flaş Fotoğraf Satın Alma (+1 koşu başı çarpan takviyesi)
+  {
+    const item = shop.CONSUMABLE_ITEMS.flashBooster;
+    const count = shop.getFlashBoosterCount();
+    const max = item.maxCount || 9;
+    const isFull = count >= max;
+    const cost = item.cost;
+
+    const row = document.createElement('div');
+    row.className = 'mk-item consumable flash-booster';
+    const cv = document.createElement('canvas'); cv.width = cv.height = 96;
+    drawPowerIcon(cv, 'flash');
+
+    const info = document.createElement('div'); info.className = 'mk-info';
+    const nm = document.createElement('b'); nm.textContent = item.name;
+    const du = document.createElement('small');
+    du.innerHTML = `Mevcut: <strong style="color:var(--yellow);">${count} / ${max}</strong> · ${item.desc}`;
+    info.append(nm, du);
+
+    const buy = document.createElement('button');
+    buy.type = 'button';
+    buy.className = 'btn small mk-buy' + (isFull ? '' : ' gold');
+    if (isFull) {
+      buy.textContent = 'MAKS';
+      buy.disabled = true;
+    } else {
+      buy.disabled = wallet < cost;
+      buy.append(document.createTextNode(fmt(cost) + ' '), Object.assign(document.createElement('i'), { className: 'coin-ico' }));
+      buy.addEventListener('click', () => {
+        if (shop.buyFlashBooster()) {
+          paintMarket();
+          if (game.state.mode === 'running') updateHud();
+        }
+      });
+    }
+    row.append(cv, info, buy);
+    el.mkList.appendChild(row);
+  }
+
   // 2. SÜRE YÜKSELTMELERİ (DURATION UPGRADES)
   const secUpgrades = document.createElement('div');
   secUpgrades.className = 'mk-section-title';
@@ -379,6 +420,7 @@ function hudFlash(text, cls) {
 }
 events.addEventListener('missionDone', (e) => hudFlash('✔ ' + e.detail.text, 'ms-toast'));
 events.addEventListener('missionSet', (e) => hudFlash('ÇARPAN x' + e.detail.multiplier + '!', 'ms-banner'));
+events.addEventListener('flashBoost', (e) => hudFlash('FLAŞ · x' + e.detail.bonus + '!', 'ms-banner'));
 
 // ---------- actions ----------
 function startRun() {
@@ -467,6 +509,9 @@ onButton(el.web, () => {
 onButton(el.repulsor, () => {
   if (game.repulsor && game.repulsor.available) game.repulsor.activate();
 });
+onButton(el.flash, () => {
+  if (game.flash) game.flash.use();
+});
 onButton(el.iron, () => {
   if (game.iron && game.state.mode === 'running') game.iron.activate();
 });
@@ -474,7 +519,7 @@ onButton(el.iron, () => {
 // ---------- keyboard ----------
 // Runs before input.js (capture). Outside a run, game keys must not leak into the game
 // (e.g. P / Esc would resume a game that is hidden behind the menu overlay).
-const GAME_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyA', 'KeyD', 'KeyW', 'KeyS', 'Space', 'Enter', 'KeyP', 'Escape', 'KeyQ', 'KeyE', 'KeyF']);
+const GAME_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyA', 'KeyD', 'KeyW', 'KeyS', 'Space', 'Enter', 'KeyP', 'Escape', 'KeyQ', 'KeyE', 'KeyF', 'KeyC']);
 window.addEventListener('keydown', (e) => {
   if (!GAME_KEYS.has(e.code)) return;
   const tag = e.target && e.target.tagName;
@@ -608,7 +653,7 @@ function resetHudCache() {
   for (const g of timers) { g.max = 1; g.prev = 0; g.show = null; g.q = -1; g.low = null; }
 }
 
-// Örümcek hissi / Mıknatıs gauges: value when it switched on = 100 %, blinks in the last 20 %
+// His / mıknatıs / Bugle / yay gauges: value when it switched on = 100 %, blinks in the last 20 %
 function updateTimer(g, t) {
   const active = t > 0;
   if (active && g.prev <= 0) g.max = t;
@@ -767,6 +812,8 @@ function updateHud() {
 
   updateTimer(timers[0], st.senseTime || 0);
   updateTimer(timers[1], st.magnetTime || 0);
+  updateTimer(timers[2], st.bugleTime || 0);
+  updateTimer(timers[3], st.springTime || 0);
 
   // Repulsor boost button (Iron Man fly skill)
   if (el.repulsor && game.repulsor) {
@@ -785,6 +832,25 @@ function updateHud() {
       }
       // Blink when < 3s left
       el.repulsor.classList.toggle('low', wl < 3);
+    }
+  }
+
+  // Flaş Fotoğraf button (start-of-run score boost; the C key does the same)
+  if (el.flash && game.flash) {
+    const fl = game.flash;
+    const wl = fl.windowLeft;
+    const shouldShow = fl.available;
+    if (shouldShow !== cache.flashShow) {
+      cache.flashShow = shouldShow;
+      el.flash.hidden = !shouldShow;
+    }
+    if (shouldShow) {
+      const txt = Math.ceil(wl) + 's ×' + fl.count;
+      if (txt !== cache.flashText) {
+        cache.flashText = txt;
+        el.flashTimer.textContent = txt;
+      }
+      el.flash.classList.toggle('low', wl < 3);
     }
   }
 }
