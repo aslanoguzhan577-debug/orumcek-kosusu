@@ -1,8 +1,8 @@
 // powerups/spring.js — Örümcek Yayı: web-spring shoes (PLAN.md 10). Pickup: kind 'spring',
 // placed by a pattern-generator extra in the middle of the route lane's free stretch, as often
-// as the magnet. Collecting sets game.state.springTime = CONFIG.spring.duration and emits
-// 'springOn'; it counts down only while the run moves, at 0 -> 'springOff'. Restart / menu clear
-// it ('springOff' {reset}).
+// as the magnet. Collecting sets game.state.springTime to the duration shop.js gives the level and
+// emits 'springOn'; it counts down only while the run moves, at 0 -> 'springOff'. Restart / menu
+// clear it ('springOff' {reset}).
 //
 // The higher jump is not done here: game.js exports jumpScale(), which reads this timer, and
 // player.js uses it as the default height of jump() (sense.js' dodges through the same scale).
@@ -13,6 +13,7 @@ import { CONFIG } from '../config.js';
 import { emit } from '../events.js';
 import { game } from '../game.js';
 import { createSpringPickup } from '../pickup-art.js';
+import { getEffectiveSkillDuration } from '../shop.js';
 
 const S = CONFIG.spring;
 
@@ -43,7 +44,7 @@ export class SpringPowerup {
   }
 
   start() {
-    game.state.springTime = S.duration;
+    game.state.springTime = getEffectiveSkillDuration('spring');
     if (this.active) return;
     this.active = true;
     emit('springOn');

@@ -1,9 +1,9 @@
 // powerups/flash.js — Flaş Fotoğraf (PLAN.md 10): a market consumable that raises the RUN part of
 // the score multiplier. In the first 7 seconds of a run the HUD button (or the C key)
-// spends one Flaş Fotoğraf: game.mult.run = 4 + the number spent this run, so the first tap makes
-// it x5, the next x6, the third x7 and no more. Emitting 'flashBoost' {bonus} is all the feedback
-// the rest of the game needs — ui.js owns the button, its HUD banner and the x-badge, shop.js owns
-// the stock (localStorage). game._resetRun zeroes the run part every start.
+// spends one Flaş Fotoğraf: game.mult.run = 4 + the number spent this run, so the first tap adds
+// +5 to the multiplier, the next +6, the third +7 and no more. Emitting 'flashBoost' {bonus} is all
+// the feedback the rest of the game needs — ui.js owns the button, its HUD banner and the x-badge,
+// shop.js owns the stock (localStorage). game._resetRun zeroes the run part every start.
 // No THREE in here: tools/test-skills.mjs drives the whole thing in node.
 
 import { game } from '../game.js';

@@ -14,6 +14,12 @@ export const SKILL_UPGRADE_CONFIG = {
   spiderSense: { name: 'Örümcek Hissi',       baseDuration: 5,  stepDuration: 0.2, baseCost: 50,  costMultiplier: 1.35, maxLevel: 25 },
   ironSpider:  { name: 'Iron Spider Zırhı',   baseDuration: IRON_DURATION, stepDuration: 0.5, baseCost: 100, costMultiplier: 1.4,  maxLevel: 20 },
   heroSpecial: { name: 'Özel Kahraman Gücü',  baseDuration: 6,  stepDuration: 0.5, baseCost: 120, costMultiplier: 1.4,  maxLevel: 20 },
+  bugle:       { name: 'Bugle Manşeti',       baseDuration: CONFIG.bugle.duration,  stepDuration: 0.25, baseCost: 80,  costMultiplier: 1.5,  maxLevel: 12 },
+  spring:      { name: 'Örümcek Yayı',        baseDuration: CONFIG.spring.duration, stepDuration: 0.3,  baseCost: 60,  costMultiplier: 1.35, maxLevel: 20 },
+  swing:       { name: 'Ağ Salınışı',         baseDuration: CONFIG.swing.duration,  stepDuration: 0.25, baseCost: 120, costMultiplier: 1.45, maxLevel: 16 },
+  decoy:       { name: 'Ağ Kuklası',          baseDuration: CONFIG.decoy.duration,  stepDuration: 0.5,  baseCost: 60,  costMultiplier: 1.35, maxLevel: 20 },
+  wall:        { name: 'Duvar Koşusu',        baseDuration: CONFIG.wall.duration,   stepDuration: 0.2,  baseCost: 120, costMultiplier: 1.45, maxLevel: 15 },
+  tracer:      { name: 'Örümcek İzi',         baseDuration: CONFIG.tracer.duration, stepDuration: 0.25, baseCost: 80,  costMultiplier: 1.4,  maxLevel: 20 },
 };
 
 export const CONSUMABLE_ITEMS = {
@@ -26,7 +32,7 @@ export const CONSUMABLE_ITEMS = {
 function defaults() {
   return {
     totalCoins: 250,
-    upgrades: { magnet: 0, spiderSense: 0, ironSpider: 0, heroSpecial: 0 },
+    upgrades: { magnet: 0, spiderSense: 0, ironSpider: 0, heroSpecial: 0, bugle: 0, spring: 0, swing: 0, decoy: 0, wall: 0, tracer: 0 },
     bankedHeroCharge: 0,
     jetStarts: 0,
     flashBoosters: 0,

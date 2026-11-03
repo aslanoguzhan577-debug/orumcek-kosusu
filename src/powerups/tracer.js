@@ -1,10 +1,11 @@
-// powerups/tracer.js — Örümcek İzi (PLAN.md 10): 10 seconds in which a little spider-drone flies
-// ahead and paints a glowing web strip on the open lane; staying on that strip pays.
+// powerups/tracer.js — Örümcek İzi (PLAN.md 10): seconds (CONFIG.tracer.duration at level 0, longer
+// with the market upgrade) in which a little spider-drone flies ahead and paints a glowing web strip
+// on the open lane; staying on that strip pays.
 //
 // Pickup: kind 'tracer', placed by a pattern-generator extra in the middle of the route lane's free
-// stretch. Collecting sets game.state.tracerTime = CONFIG.tracer.duration and emits 'tracerOn'; it
-// counts down only while the run moves, at 0 -> 'tracerOff' (restart / menu send 'tracerOff'
-// {reset}).
+// stretch. Collecting sets game.state.tracerTime to the duration shop.js gives the level and emits
+// 'tracerOn'; it counts down only while the run moves, at 0 -> 'tracerOff' (restart / menu send
+// 'tracerOff' {reset}).
 //
 // Which lane is "the open one" is not guessed: the generator already decided it. Its fairness rule
 // keeps one route lane with at most one passable obstacle per block, and the extra is called once
@@ -27,6 +28,7 @@ import { emit } from '../events.js';
 import { game } from '../game.js';
 import { laneX } from '../world.js';
 import { createTracerPickup, createTracerDrone, createTracerRibbon } from '../pickup-art.js';
+import { getEffectiveSkillDuration } from '../shop.js';
 
 const T = CONFIG.tracer;
 // the longest strip there can be: behind the player, under the drone, and leadTime seconds ahead
@@ -70,11 +72,12 @@ export class TracerPowerup {
 
   start() {
     if (game.halted) return;                    // the catch sequence is playing
+    const dur = getEffectiveSkillDuration('tracer');
     this.active = true;
     this._onTime = 0;
     this.onStrip = true;
-    game.state.tracerTime = T.duration;
-    emit('tracerOn', { duration: T.duration });
+    game.state.tracerTime = dur;
+    emit('tracerOn', { duration: dur });
   }
 
   _stop(reset) {
@@ -116,7 +119,10 @@ export class TracerPowerup {
   update(dt) {
     if (!this.active) return;
     if (game.halted) { this._stop(true); return; }   // the catch froze the world
-    const st = game.state, p = this.player, v = st.speed, d = st.distance;
+    const st = game.state, p = this.player, v = st.speed;
+    // the route book (_segs) is in the generator's metres, so the strip has to be read there too:
+    // an Iron Man jet start jumps state.distance far ahead of the world
+    const d = game.world.distance;
     st.tracerTime = Math.max(0, st.tracerTime - dt);
     if (st.tracerTime <= 0) { this._stop(false); return; }
 

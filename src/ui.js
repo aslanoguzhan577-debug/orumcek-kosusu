@@ -348,8 +348,8 @@ function paintMarket() {
     const du = document.createElement('small');
     // heroSpecial: her kahramanın kendi taban süresi var, yükseltme sadece ek bonus
     du.textContent = key === 'heroSpecial'
-      ? (max ? `+${+(lvl * c.stepDuration).toFixed(1)} sn (en yüksek seviye)` : `+${+(lvl * c.stepDuration).toFixed(1)} sn → +${+((lvl + 1) * c.stepDuration).toFixed(1)} sn (her kahramanın süresine eklenir)`)
-      : (max ? `${+cur.toFixed(1)} sn (en yüksek seviye)` : `${+cur.toFixed(1)} sn → ${+(cur + c.stepDuration).toFixed(1)} sn`);
+      ? (max ? `+${+(lvl * c.stepDuration).toFixed(2)} sn (en yüksek seviye)` : `+${+(lvl * c.stepDuration).toFixed(2)} sn → +${+((lvl + 1) * c.stepDuration).toFixed(2)} sn (her kahramanın süresine eklenir)`)
+      : (max ? `${+cur.toFixed(2)} sn (en yüksek seviye)` : `${+cur.toFixed(2)} sn → ${+(cur + c.stepDuration).toFixed(2)} sn`);
     info.append(nm, du);
     const buy = document.createElement('button'); buy.type = 'button'; buy.className = 'btn small mk-buy';
     if (max) { buy.textContent = 'MAX'; buy.disabled = true; }
@@ -413,13 +413,23 @@ function paintMissions() {
   }
 }
 
-// Koşu içi bildirimler: kısa görev satırı, büyük çarpan afişi.
+// Koşu içi bildirimler: kısa görev satırı, büyük çarpan afişi. Hepsi aynı yere çizildiği için
+// aynı karede ikisi gelirse sıraya girer, ilki bitince ikincisi görünür.
+const flashes = [];
+let flashing = false;
 function hudFlash(text, cls) {
+  flashes.push([text, cls]);
+  if (!flashing) nextFlash();
+}
+function nextFlash() {
+  const next = flashes.shift();
+  if (!next) { flashing = false; return; }
+  flashing = true;
   const node = document.createElement('div');
-  node.className = cls;
-  node.textContent = text;
+  node.className = next[1];
+  node.textContent = next[0];
   el.hud.appendChild(node);
-  setTimeout(() => node.remove(), 1900); // matches the ms-toast / ms-banner animation
+  setTimeout(() => { node.remove(); nextFlash(); }, 1900); // matches the ms-toast / ms-banner animation
 }
 events.addEventListener('missionDone', (e) => hudFlash('✔ ' + e.detail.text, 'ms-toast'));
 events.addEventListener('missionSet', (e) => hudFlash('ÇARPAN x' + e.detail.multiplier + '!', 'ms-banner'));

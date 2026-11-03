@@ -1,17 +1,18 @@
 // powerups/bugle.js — Bugle Manşeti: the Daily Bugle front page, and with it a x2 score
 // multiplier (PLAN.md 10). Pickup: kind 'bugle', placed by a pattern-generator extra in the
 // middle of the route lane's free stretch, as often as the magnet. Collecting sets
-// game.state.bugleTime = CONFIG.bugle.duration and emits 'bugleOn'; game.js reads
+// game.state.bugleTime = the run's duration from shop.js and emits 'bugleOn'; game.js reads
 // mult.factor = 2 off that time, so the score doubles for exactly as long as the gauge runs.
 // The time counts down only while the run moves (not paused / intro / catch); at 0 -> 'bugleOff'.
 // A pickup taken while it already runs only extends the time. Restart / menu emit 'bugleOff'
-// {reset} and clear it. No duration upgrade exists for it, so CONFIG.bugle.duration is the whole
-// story (unlike magnet / sense, which ask shop.js).
+// {reset} and clear it. CONFIG.bugle.duration is the level 0 length; the market upgrade lengthens
+// it, so the duration is asked from shop.js like magnet / sense do.
 
 import { CONFIG } from '../config.js';
 import { emit } from '../events.js';
 import { game } from '../game.js';
 import { createBuglePickup } from '../pickup-art.js';
+import { getEffectiveSkillDuration } from '../shop.js';
 
 const B = CONFIG.bugle;
 
@@ -42,7 +43,7 @@ export class BuglePowerup {
   }
 
   start() {
-    game.state.bugleTime = B.duration;
+    game.state.bugleTime = getEffectiveSkillDuration('bugle');
     if (this.active) return;
     this.active = true;
     emit('bugleOn');

@@ -14,7 +14,8 @@
 //   player.setOverride(name, seconds)  force a model state ('stumble', 'web', 'caught');
 //                            seconds = Infinity keeps it until reset / clearOverride().
 //   player.controlsLocked    true ignores all input (G8 caught).
-//   player.verticalLocked    true ignores "up" / "down" only (powerups/swing.js owns the height).
+//   player.verticalLocked    true ignores "up" / "down" and blocks web.js / hero-specials.js
+//                            (a power-up owns the height: powerups/swing.js, powerups/wall.js).
 //   player.setModel(model)   swap the character model (G6).
 //   player.useModel(model)   switch to another (pre-built) model, keeping the state (G10).
 //                            Both roots stay children; only the active one is visible.

@@ -205,7 +205,7 @@ Zaten olanlar: Mıknatıs (Coin Magnet), Iron Spider (Kaykay), Iron Man jeti (H�
 ### Yeni güçler
 - **Ağ Kuklası (`decoy`, yerden):** Ağdan bir kukla bırakır, Venom ona kanıp en geriye düşer; 20 sn içindeki ilk tökezleme Venom'u yaklaştırmaz.
 - **Duvar Koşusu (`wall`, yerden):** 6 sn yandaki bina cephesine sıçrar ve duvarda koşar; engeller değmez, duvarda altın sırası; bitince en yakın dış şeride iner, 1,5 sn koruma.
-- **Örümcek İzi (`tracer`, yerden):** 10 sn küçük bir drone önde uçar, her zaman açık olan güvenli şeride parlayan ağ izi çizer. İz üzerinde her 5 sn kalınca temp +1 (en fazla +3), izden çıkınca temp 0.
+- **Örümcek İzi (`tracer`, yerden):** 10 sn küçük bir drone önde uçar, her zaman açık olan güvenli şeride parlayan ağ izi çizer. İz üzerinde her 3 sn kalınca temp +1 (en fazla +3), izden çıkınca temp 0.
 
 ### Ponytail ayarı (aşamaya göre, kullanıcı kararı)
 Full: oyun mantığı, kayıt / skor formülü, HUD ve menü, güçlerin oynanış kodu, testler. Ponytail kapalı (sadelik kuralı uygulanmaz, gösterişli yapılır; efektler YAPILIR): güç görselleri / efektler / ikonlar / eşya modelleri ve konsept tasarım.

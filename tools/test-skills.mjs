@@ -4,6 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { CONFIG } from '../src/config.js';
+import { speedAt } from '../src/patterns.js';
 
 const KEY = 'spidey.missions';
 const store = new Map();
@@ -66,7 +67,9 @@ eq(new Set(s5.map((i) => i.id)).size, 3, 'the three are different');
 eq(s5[0].progress, 0, 'missions start at 0');
 eq(s5[0].done, false, 'missions start open');
 const def5 = ms.MISSION_POOL.find((d) => d.id === s5[0].id);
-eq(s5[0].goal, def5.base + def5.growth * 4, 'the amount grows with the set');
+eq(s5[0].goal, ms.goalFor(def5, 5), 'the goal is what the set says for that mission');
+eq(ms.goalFor({ base: 10, growth: 25 }, 5), 110, 'goal = base + growth * (set - 1)');
+eq(ms.goalFor({ base: 2, growth: 1, max: 5 }, 9), 5, 'a capped goal stops at the cap');
 eq(ms.missionText('coins', 50), '50 altın topla', 'Turkish text carries the amount');
 eq(ms.missionText('sense', 7), 'Örümcek hissiyle 7 kez kaç', 'text template');
 ok(ms.MISSION_POOL.every((d) => d.base >= 1 && d.growth >= 1), 'every pool amount is at least 1');
@@ -191,6 +194,28 @@ eq(ms.missions.items[2].done, true, 'a finished mission stays finished');
 emit('gameover', { score: 10, coins: 2, distance: 30 });
 eq(json(JSON.parse(store.get(KEY)).items[1]), json({ id: 'jump', goal: 5, progress: 2, done: false }), 'game over saves');
 
+// ---------- B1: koşu başka nasıl biterse bitsin görev ilerlemesi kaydedilir ----------
+ms.missions.items = [
+  { id: 'jump', goal: 5, progress: 0, done: false },
+  { id: 'coinsRun', goal: 5, progress: 0, done: false },
+  { id: 'lane', goal: 5, progress: 0, done: false },
+];
+game.restart();                        // the run is live
+store.set(KEY, 'sentinel');
+emit('jump'); emit('jump');
+eq(store.get(KEY), 'sentinel', 'plain progress is still not saved on every event');
+game.pause();
+ok(store.get(KEY) !== 'sentinel', 'a pause writes the save');
+eq(JSON.parse(store.get(KEY)).items[0].progress, 2, 'with what the run has done so far');
+emit('jump');
+game.toMenu();
+eq(JSON.parse(store.get(KEY)).items[0].progress, 3, 'quitting to the menu saves it');
+game.restart();
+store.set(KEY, 'sentinel');
+emit('jump');
+game.restart();
+eq(JSON.parse(store.get(KEY)).items[0].progress, 4, 'the next run start saves the run that ended');
+
 // ---------- çarpan tavanı ----------
 const capped = { set: 1, level: 0, items: ms.makeSet(1) };
 let up = null;
@@ -231,7 +256,8 @@ game.state.springTime = 0;
 eq(jumpScale(), 1, 'and drops it back');
 
 // ---------- Flaş Fotoğraf (market sarf: koşu başı çarpan takviyesi) ----------
-store.set('orumcek_kosusu_save', json({ totalCoins: 5000, upgrades: { magnet: 0, spiderSense: 0, ironSpider: 0, heroSpecial: 0 }, bankedHeroCharge: 0, jetStarts: 0, flashBoosters: 0 }));
+// a fat wallet: the market block below buys every six power-up upgrade to its maxLevel
+store.set('orumcek_kosusu_save', json({ totalCoins: 5000000, upgrades: { magnet: 0, spiderSense: 0, ironSpider: 0, heroSpecial: 0 }, bankedHeroCharge: 0, jetStarts: 0, flashBoosters: 0 }));
 const shop = await import('../src/shop.js');
 const { FlashBooster } = await import('../src/powerups/flash.js');
 const boosts = [];
@@ -645,6 +671,27 @@ eq(pl.verticalLocked, false, 'and gives the height back');
 eq(wlObs.asked.length, wAsk, 'the quiet end asks for no grace');
 game.halted = false;
 
+// B5: bir yakalama duvarda yakalarsa yere iner, havada asılı kalmaz
+pl.reset();
+pl.x = 1.0;
+wall.start();
+for (let i = 0; i < 30; i++) { pl.floorY = 0; wall.beforePlayer(DT); pl.update(DT, true); wall.update(DT); }
+ok(wall.height > 1, 'he is up on the wall face');
+ok(pl.y > 1 && pl.x > 3, `floating out there (${pl.x.toFixed(2)}, ${pl.y.toFixed(2)})`);
+game.halted = true;
+wall.update(DT);
+game.halted = false;
+eq(wall.active, false, 'the catch ended the run');
+eq(pl.verticalLocked, false, 'the height is released');
+eq(pl.lane, CONFIG.laneCount - 1, 'back in the outer lane he ran in');
+eq(pl._prevLane, CONFIG.laneCount - 1, 'and the lane history agrees');
+eq(pl._laneT, 1, 'a finished lane change, so nothing keeps sliding');
+ok(Math.abs(pl.x - laneX(CONFIG.laneCount - 1)) < 0.05, `standing in it (${pl.x.toFixed(2)})`);
+eq(pl.floorY, wall.surfaceY, 'the floor is the deck again');
+ok(Math.abs(pl.y - pl.floorY) < 0.05, `on the floor, not floating (${pl.y.toFixed(2)})`);
+eq(pl.vy, 0, 'and not falling');
+ok(pl.grounded, 'grounded');
+
 // ---------- Örümcek İzi (powerups/tracer.js): insansız şeridi izler, şerit ödüllendirir ----------
 const { TracerPowerup } = await import('../src/powerups/tracer.js');
 const TG = CONFIG.tracer;
@@ -681,7 +728,7 @@ events.addEventListener('tracerOff', (e) => trLog.push(e.detail.reset ? 'reset' 
 game.restart();
 game.state.intro = false;
 game.state.speed = CONFIG.startSpeed;
-game.state.distance = 50;
+game.world.distance = 50;
 pl.x = laneX(2);
 tracer._segs.length = 0;
 tracer._lastA = -Infinity;
@@ -698,17 +745,17 @@ eq(tracer.drone.root.position.z, -TG.ahead, 'ahead of him');
 eq(tracer.drone.root.position.x, laneX(2), 'in the lane the route takes there');
 ok(tracer.ribbon.shown > 1, 'and paints the strip on it');
 game.state.tracerTime = TG.duration;
-for (let i = 0; i < Math.round(TG.stepTime / DT) + 2; i++) { tracer.update(DT); game.state.distance += game.state.speed * DT; }
+for (let i = 0; i < Math.round(TG.stepTime / DT) + 2; i++) { tracer.update(DT); game.world.distance += game.state.speed * DT; }
 eq(game.mult.temp, 1, 'five seconds on the strip = temp +1');
 eq(steps[steps.length - 1], 1, 'and it is announced');
 game.state.multiplier = 0;
 game.update(DT);                          // the real score line: (base + run + temp) * factor
 eq(game.state.multiplier, game.mult.base + game.mult.run + game.mult.temp, 'temp pays the score multiplier');
-game.state.distance = 190;
+game.world.distance = 190;
 tracer.ribbon.segs.length = 0;
 tracer.update(DT);
 ok(tracer.ribbon.segs.some((s) => s.x0 !== s.x1), 'the strip crosses over to the new route lane');
-game.state.distance = 50;
+game.world.distance = 50;
 pl.x = laneX(2) + (TG.ribbonWidth + CONFIG.playerWidth) / 2 - 0.05;
 tracer.update(DT);
 eq(game.mult.temp, 1, 'the strip is as wide as it reads');
@@ -749,8 +796,145 @@ eq(tracer.active, false, 'a catch ends the trace');
 eq(game.mult.temp, 0, 'and its bonus');
 game.halted = false;
 
+// B3: bir Iron Man jet başlangıcı state.distance'ı ileri atar; şerit dünyayı takip eder
+game.world.distance = 50;
+game.state.distance = 5000;                    // the jet jumped the run 5 km ahead of the world
+tracer.start();
+tracer.ribbon.segs.length = 0;
+tracer.update(DT);
+eq(tracer.onX, laneX(2), 'the strip is read at the world distance, not the run distance');
+eq(tracer.drone.root.position.x, laneX(2), 'and the drone flies in the lane the route takes there');
+ok(tracer.ribbon.segs.every((s) => s.x0 === laneX(2) && s.x1 === laneX(2)), 'the ribbon is drawn on that lane');
+game.state.distance = game.world.distance;     // the two agree again
+tracer._stop(true);
+
+// ---------- B4: ağ ve kahraman yeteneği Ağ Salınışı / Duvar Koşusu sırasında ateşlenmez ----------
+const { WebPowerup } = await import('../src/powerups/web.js');
+const { HeroSpecials } = await import('../src/powerups/hero-specials.js');
+// the guard is what is under test, not the art: a bare instance with only the fields it reads
+const zip = Object.create(WebPowerup.prototype);
+zip.player = pl;
+zip.heroSpecials = { isHero: () => false, active: false };
+zip.line = { visible: false };
+zip.anchor = { set() {}, clone: () => ({}) };
+zip._handPosition = () => {};
+zip._updateLine = () => {};
+zip.zip = null;
+zip._lastShotT = -Infinity;
+game.restart();
+game.state.intro = false;
+game.state.webCharges = 3;
+pl.reset();
+pl.grounded = false;
+pl.verticalLocked = true;                      // a power-up owns the height
+eq(zip.tryShoot(), false, 'no web zip while a power-up owns the height');
+eq(game.state.webCharges, 3, 'and no charge is spent');
+eq(zip.zip, null, 'no zip starts');
+pl.grounded = true;
+zip.tryActivate();
+eq(pl.vy, 0, 'a press does not jump him either');
+pl.verticalLocked = false;
+pl.grounded = false;
+zip._lastShotT = -Infinity;
+eq(zip.tryShoot(), true, 'positive control: the same shot fires once the flag is off');
+eq(game.state.webCharges, 2, 'and now the charge is spent');
+zip._endZip();
+
+swing.start();                                 // a real Ağ Salınışı takes the height
+eq(pl.verticalLocked, true, 'the swing owns it');
+pl.grounded = false;
+zip._lastShotT = -Infinity;
+eq(zip.tryShoot(), false, 'the zip refuses during a real swing');
+game.restart();                                // ends the swing
+
+const arms = [];
+zip.heroSpecials = { isHero: () => true, active: false, getHeroConfig: (s) => ({ name: s, duration: 6 }), activate: (skin, dur) => { arms.push([skin, dur]); return true; } };
+game.state.webCharges = 1;
+game.skin = 'hulk';
+pl.verticalLocked = true;
+eq(zip.tryActivate(), false, 'no hero special while a power-up owns the height');
+eq(arms.length, 0, 'nothing is armed and no charge is spent');
+eq(game.state.webCharges, 1, 'the charge is still there');
+pl.verticalLocked = false;
+zip.tryActivate();
+eq(arms.length, 1, 'positive control: the same press arms it once the flight is over');
+game.skin = 'spider';
+
+const hsArms = [];
+const hs = Object.create(HeroSpecials.prototype);
+hs.player = pl;
+hs.active = false;
+hs.skills = { kitty: { activate: (d) => { hsArms.push(d); return true; } } };
+pl.verticalLocked = true;
+eq(hs.activate('kitty', 8), false, 'the specials manager refuses too');
+eq(hsArms.length, 0, 'and does not arm the skill');
+pl.verticalLocked = false;
+eq(hs.activate('kitty', 8), true, 'positive control: it runs when the height is free');
+eq(hs.active, true, 'and is now active');
+hs.active = false;
+
+// ---------- market: altı yer gücü de yükseltilebilir (shop.js) ----------
+const UP_KEYS = ['bugle', 'spring', 'swing', 'decoy', 'wall', 'tracer'];
+const upDur = (c, lv) => Math.round((c.baseDuration + lv * c.stepDuration) * 100) / 100;
+for (const k of UP_KEYS) {
+  const c = shop.SKILL_UPGRADE_CONFIG[k];
+  eq(c.baseDuration, CONFIG[k].duration, `${k}: the base duration is the CONFIG value, not a copy`);
+  eq(shop.getEffectiveSkillDuration(k), CONFIG[k].duration, `${k}: level 0 = the CONFIG length`);
+}
+for (const k of UP_KEYS) {
+  const c = shop.SKILL_UPGRADE_CONFIG[k];
+  for (let lv = 1; lv <= c.maxLevel; lv++) {
+    eq(shop.getUpgradeCost(k), Math.floor(c.baseCost * c.costMultiplier ** (lv - 1)), `${k}: level ${lv} costs baseCost * costMultiplier^${lv - 1}`);
+    ok(shop.buyUpgrade(k), `${k}: level ${lv} is for sale`);
+    eq(shop.getEffectiveSkillDuration(k), upDur(c, lv), `${k}: level ${lv} lasts ${upDur(c, lv)} s`);
+  }
+  eq(shop.buyUpgrade(k), false, `${k}: buying stops at maxLevel ${c.maxLevel}`);
+  eq(shop.getPlayerData().upgrades[k], c.maxLevel, `${k}: the level is in the save`);
+  eq(shop.getEffectiveSkillDuration(k), upDur(c, c.maxLevel), `${k}: the last length is the designer's ${upDur(c, c.maxLevel)} s`);
+}
+
+// the started power-up takes the shop duration, the way the magnet does
+const { BuglePowerup } = await import('../src/powerups/bugle.js');
+const { SpringPowerup } = await import('../src/powerups/spring.js');
+const bug = new BuglePowerup({ obstacles: mkObs() });
+bug.start();
+eq(game.state.bugleTime, upDur(shop.SKILL_UPGRADE_CONFIG.bugle, 12), 'the bugle doubles the score for its maxed 13 s');
+const spr = new SpringPowerup({ obstacles: mkObs() });
+spr.start();
+eq(game.state.springTime, upDur(shop.SKILL_UPGRADE_CONFIG.spring, 20), 'the spring jumps for its maxed 16 s');
+bug.update(DT); spr.update(DT);
+game.state.bugleTime = 0; game.state.springTime = 0;
+decoy.start();
+eq(game.state.decoyTime, upDur(shop.SKILL_UPGRADE_CONFIG.decoy, 20), 'the doll forgives for its maxed 30 s');
+decoy.reset();
+tracer.start();
+eq(game.state.tracerTime, upDur(shop.SKILL_UPGRADE_CONFIG.tracer, 20), 'the drone traces for its maxed 15 s');
+tracer._stop(true);
+
+// an upgraded flight still ends with the player back on the floor / in a lane
+pl.reset();
+game.state.speed = CONFIG.startSpeed;
+swing.start();
+eq(st.swingTime, upDur(shop.SKILL_UPGRADE_CONFIG.swing, 16), 'a maxed swing takes 12 s');
+let sf = 0;
+while (swing.active) { pl.floorY = 0; swing.beforePlayer(DT); pl.update(DT, true); swing.update(DT); sf++; }
+ok(Math.abs(sf * DT - upDur(shop.SKILL_UPGRADE_CONFIG.swing, 16)) <= DT * 2, `the upgraded swing runs all of it (${sf} frames)`);
+eq(pl.verticalLocked, false, 'the height is given back');
+ok(pl.grounded && Math.abs(pl.y - pl.floorY) < 0.05, `he lands (${pl.y.toFixed(2)} m)`);
+
+pl.reset();
+pl.x = 1.0;
+wall.start();
+eq(game.state.wallTime, upDur(shop.SKILL_UPGRADE_CONFIG.wall, 15), 'a maxed wall run takes 9 s');
+let wf2 = 0;
+while (wall.active) { pl.floorY = 0; wall.beforePlayer(DT); pl.update(DT, true); wall.update(DT); wf2++; }
+ok(Math.abs(wf2 * DT - upDur(shop.SKILL_UPGRADE_CONFIG.wall, 15)) <= DT * 2, `the upgraded wall run ends on its countdown (${wf2} frames)`);
+eq(pl.lane, CONFIG.laneCount - 1, 'he ends in the outer lane');
+ok(pl.grounded && Math.abs(pl.y - pl.floorY) < 0.05, `and on the floor (${pl.y.toFixed(2)} m)`);
+game.restart();
+
 // ---------- yeni görev kabloları ----------
-eq(ms.missionText('decoy', 3), '3 kez Venom\'u kuklayla kandır', 'decoy mission text');
+eq(ms.missionText('decoy', 3), '3 Ağ Kuklası topla', 'decoy mission text');
 eq(ms.missionText('wall', 30), 'Duvarda 30 m koş', 'wall mission text');
 ok(ms.MISSION_POOL.find((d) => d.id === 'wall').onerun, 'the wall metres are per run');
 ms.missions.set = 9;
@@ -760,17 +944,33 @@ ms.missions.items = [
   { id: 'wall', goal: 30, progress: 0, done: false },
   { id: 'tracer', goal: 2, progress: 0, done: false },
 ];
+emit('decoyOn');
+eq(ms.missions.items[0].progress, 1, 'the decoy pickup itself counts into the decoy mission');
 emit('decoyLure');
-eq(ms.missions.items[0].progress, 1, 'a real bait counts into the decoy mission');
+eq(ms.missions.items[0].progress, 1, 'a bait is not counted as well: the pickup is the goal');
 emit('tracerStep', { temp: 1 });
 eq(ms.missions.items[2].progress, 1, 'a strip step counts into the tracer mission');
 game.state.wallMetres = 35;
 sys.update();
 eq(ms.missions.items[1].done, true, 'the metres run on a wall are measured');
-emit('decoyLure');
+emit('decoyOn');
 emit('tracerStep', { temp: 2 });
 eq(ms.missions.set, 10, 'all three done = the next set');
 eq(game.mult.base, ms.missions.level + 1, 'and the permanent multiplier again');
+
+// ---------- B2: hiçbir görev bir deriye bağlı değil, her hedef erişilebilir ----------
+ok(!ms.MISSION_POOL.some((d) => d.id === 'special'), 'no mission needs a hero special: the default skin has none');
+eq(ms.MISSION_POOL.filter((d) => d.max === 5).map((d) => d.id).sort().join(','), 'bugle,decoy,magnet,swing', 'the rare pickups cap their goal at 5');
+eq(ms.goalFor(ms.MISSION_POOL.find((d) => d.id === 'tracer'), 60), 6, 'the tracer steps cap at 6');
+eq(ms.goalFor(ms.MISSION_POOL.find((d) => d.id === 'wall'), 60), 120, 'the wall metres cap at 120');
+for (let set = 1; set <= 60; set++) {
+  for (const it of ms.makeSet(set)) {
+    const def = ms.MISSION_POOL.find((d) => d.id === it.id);
+    ok(it.goal <= (def.max === undefined ? Infinity : def.max), `set ${set}: ${it.id} goal ${it.goal} stays reachable`);
+  }
+}
+const wallRun = (WG.duration - WG.liftTime - WG.landingTime) * speedAt(3000);
+ok(wallRun >= 120, `a base wall run where the pickup first appears covers ${wallRun.toFixed(0)} m >= the 120 m cap`);
 
 console.log(`OK ${checks} checks`);
 

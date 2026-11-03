@@ -13,6 +13,19 @@ export class Group {
   remove(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); }
 }
 export class Box3 { constructor() { this.min = vec(); this.max = vec(); } }
+export class Vector3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  copy(v) { return this.set(v.x, v.y, v.z); }
+  normalize() { return this; }
+  clone() { return new Vector3(this.x, this.y, this.z); }
+}
+// the maths types are only constructed at module load by the hero-special files; node never runs
+// their update paths, so empty shapes are enough
+export class Quaternion {}
+export class Euler {}
+export class Matrix4 {}
+export class Color {}
 export const MathUtils = { clamp: (v, a, b) => Math.min(b, Math.max(a, v)) };
 `);
 const WORLD = data(`
@@ -26,6 +39,9 @@ const vec = () => ({ x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; th
 const node = () => ({ position: vec(), rotation: vec(), scale: { setScalar() {} }, visible: true });
 const item = () => ({ root: node(), update() {} });
 export const createSwingPickup = item;
+export const createWebPickup = item;
+export const createBuglePickup = item;
+export const createSpringPickup = item;
 export const createDecoyPickup = item;
 export const createWallPickup = item;
 export const createTracerPickup = item;

@@ -101,7 +101,8 @@ export class WebPowerup {
     if (this.heroSpecials.isHero(skin)) {
       if (this.heroSpecials.active) return false;
       if (game.state.webCharges <= 0) return false;
-      if (game.halted || this.player.controlsLocked) return false;
+      // verticalLocked: Ağ Salınışı / Duvar Koşusu owns the height while they run
+      if (game.halted || this.player.controlsLocked || this.player.verticalLocked) return false;
 
       let bonusDur = 0;
       try {
@@ -126,7 +127,8 @@ export class WebPowerup {
       game.state.webCharges--;
       return this.heroSpecials.activate(skin, dur);
     }
-    if (this.player.grounded && game.state.webCharges > 0 && !game.halted && !this.player.controlsLocked) {
+    if (this.player.grounded && game.state.webCharges > 0 && !game.halted
+      && !this.player.controlsLocked && !this.player.verticalLocked) {
       this.player.jump();
     }
     return this.tryShoot();
@@ -151,7 +153,8 @@ export class WebPowerup {
   tryShoot() {
     const p = this.player;
     const st = game.state;
-    if (p.grounded || p.sliding || this.zip || st.webCharges <= 0 || game.halted || p.controlsLocked) return false;
+    if (p.grounded || p.sliding || this.zip || st.webCharges <= 0 || game.halted
+      || p.controlsLocked || p.verticalLocked) return false;
     if (st.time - this._lastShotT < W.cooldown) return false;
     st.webCharges--;
     this._lastShotT = st.time;

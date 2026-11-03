@@ -1,18 +1,18 @@
-// powerups/decoy.js — Ağ Kuklası (PLAN.md 10): 20 seconds in which the first side stumble does
-// not bring Venom nearer.
+// powerups/decoy.js — Ağ Kuklası (PLAN.md 10): seconds (CONFIG.decoy.duration at level 0, longer
+// with the market upgrade) in which the first side stumble does not bring Venom nearer.
 //
 // Pickup: kind 'decoy', placed by a pattern-generator extra in the middle of the route lane's free
 // stretch (the last extras only see the blocks the earlier ones passed on). Collecting sets
-// game.state.decoyTime = CONFIG.decoy.duration and emits 'decoyOn'; it counts down only while the
-// run moves (not paused / intro / catch), at 0 -> 'decoyOff' (restart / menu send 'decoyOff'
-// {reset}).
+// game.state.decoyTime to the duration shop.js gives the level and emits 'decoyOn'; it counts down
+// only while the run moves (not paused / intro / catch), at 0 -> 'decoyOff' (restart / menu send
+// 'decoyOff' {reset}).
 //
 // What the pickup does:
 //   * a web-wrapped Spider-Man doll is left on the track right behind him (one dummy, built at
 //     load; it scrolls back with the world and disappears CONFIG.decoy.behind metres behind);
 //   * if Venom was close, he turns to the doll and falls straight back to CONFIG.chaser.farGap
-//     ('decoyLure' — the mission counts those, so it only counts real baits);
-//   * the first side stumble of the 20 seconds is forgiven. The stumble itself is untouched —
+//     ('decoyLure'; the mission counts the pickup itself — 'decoyOn' — so a bait is never missed);
+//   * the first side stumble of the countdown is forgiven. The stumble itself is untouched —
 //     obstacles.js still bounces him back, plays the animation and emits 'stumble' — only the
 //     chaser is not told about it. That is done by CHAINING obstacles.hooks.onSideStumble (the
 //     chaser installs its own before this system is built), never by replacing it.
@@ -23,6 +23,7 @@ import { CONFIG } from '../config.js';
 import { emit } from '../events.js';
 import { game } from '../game.js';
 import { createDecoyPickup, createDecoyDummy } from '../pickup-art.js';
+import { getEffectiveSkillDuration } from '../shop.js';
 
 const D = CONFIG.decoy;
 const FALL = 0.7;               // s the used-up doll takes to topple over and go out of sight
@@ -70,17 +71,18 @@ export class DecoyPowerup {
 
   start() {
     const p = this.player;
+    const dur = getEffectiveSkillDuration('decoy');
     this.active = true;
     this.spare = 1;
     this._fall = 0;
-    game.state.decoyTime = D.duration;
+    game.state.decoyTime = dur;
     this._z = 2.4;                                   // just behind him, in the lane he stands in
     this.dummy.root.position.set(p.x, p.y, this._z);
     this.dummy.root.visible = true;
     const lured = !!(this.chaser && this.chaser.isNear);
     if (lured) this.chaser._dropBack();
     const pos = { x: p.x, y: p.y, z: this._z };
-    emit('decoyOn', { duration: D.duration, position: pos });
+    emit('decoyOn', { duration: dur, position: pos });
     if (lured) emit('decoyLure', { position: pos });
   }
 
