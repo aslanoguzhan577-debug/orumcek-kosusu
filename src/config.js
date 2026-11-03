@@ -310,7 +310,7 @@ export const CONFIG = {
     arcTime: 0.7,          // seconds per arc (the intro clip's swing cadence)
     takeoffTime: 0.5,      // s to rise to the arc ...
     landingTime: 0.8,      // ... and to get back down at the end (1.5 s grace after)
-    pickupChance: 0.12,    // a little rarer than the magnet: ~1 per 2400 m
+    pickupChance: 0.17,  // last in the extras order, so it only gets the blocks the others passed on: first one at ~3 km
     pickupMinGap: 500,
     pickupY: 0.15,
     pickupScale: 1.3,
@@ -323,7 +323,7 @@ export const CONFIG = {
   // --- Ağ Kuklası (powerups/decoy.js): a web dummy left on the track; Venom takes the bait ---
   decoy: {
     duration: 20,          // seconds the first side stumble is forgiven (one stumble only)
-    pickupChance: 0.1,     // the later extras only get the blocks the earlier ones passed on
+    pickupChance: 0.16,  // last in the extras order, so it only gets the blocks the others passed on: first one at ~3 km
     pickupMinGap: 600,
     pickupY: 0.15,
     pickupScale: 1.3,
@@ -339,7 +339,7 @@ export const CONFIG = {
     liftTime: 0.35,        // s to hop up to the wall ...
     landingTime: 0.5,      // ... and to drop back onto the deck at the end (1.5 s grace after)
     camBack: 2.4,          // m the camera pulls back: his feet stay inside a tall portrait frame
-    pickupChance: 0.1,
+    pickupChance: 0.22,  // last in the extras order, so it only gets the blocks the others passed on: first one at ~3 km
     pickupMinGap: 600,
     pickupY: 0.15,
     pickupScale: 1.3,
@@ -358,7 +358,7 @@ export const CONFIG = {
     ribbonSpacing: 3,      // m between the ribbon's stamps ...
     ribbonTail: 8,         // ... and how far behind the player the strip is still drawn (m)
     ribbonWidth: 1.5,      // m across
-    pickupChance: 0.1,
+    pickupChance: 0.32,  // last in the extras order, so it only gets the blocks the others passed on: first one at ~3 km
     pickupMinGap: 600,
     pickupY: 0.15,
     pickupScale: 1.3,
