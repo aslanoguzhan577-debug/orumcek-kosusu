@@ -146,6 +146,7 @@ export class HelloKittySkill {
     this.elapsed = 0;
     this.timeAlive = 0;
     this.currentFlyOffset = 0;
+    this.surfaceY = 0; // what obstacles.js put under the player before the heart lifted her
     this._lastHitTime = -Infinity;
     this._trail = 0;
     this._puff = 0;
@@ -220,8 +221,12 @@ export class HelloKittySkill {
     } else {
       this.currentFlyOffset = Math.max(0, this.currentFlyOffset - dt * 6.0);
     }
-    const baseFloor = this.player.floorY || 0;
-    this.player.floorY = Math.max(baseFloor + this.currentFlyOffset, this.currentFlyOffset);
+    this.surfaceY = this.player.floorY || 0;
+    // altitude is measured from the street, so a wagon roof does not lift her higher
+    this.player.floorY = Math.max(this.surfaceY, this.currentFlyOffset);
+    // lounging on the heart instead of the run cycle; short timer: it lapses on landing
+    const ov = this.player.override;
+    if (this.currentFlyOffset > 0.4 && (!ov || ov === 'lounge')) this.player.setOverride('lounge', 0.1);
     if (this.player.grounded || this.player.y < this.player.floorY) {
       this.player.y = this.player.floorY;
       this.player.vy = 0;

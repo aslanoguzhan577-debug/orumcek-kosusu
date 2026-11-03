@@ -197,9 +197,9 @@ export class RepulsorBoost {
           this.phase = 'liftoff';
           this.elapsed = 0;
 
-          // Lock player controls, pose into jump
+          // Lock player controls, superhero flight pose
           this.player.controlsLocked = true;
-          this.player.setOverride('jump', Infinity);
+          this.player.setOverride('soar', Infinity);
 
           // Tilt camera up to capture the ascent
           if (game.cameraRig) game.cameraRig.setTilt(true);

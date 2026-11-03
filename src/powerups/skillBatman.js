@@ -137,6 +137,7 @@ export class BatmanSkill {
     this.TAKEOFF_TIME = TAKEOFF_TIME;
     this.LANDING_TIME = LANDING_TIME;
     this.currentFlyOffset = 0;
+    this.surfaceY = 0; // what obstacles.js put under the player before the glide lifted him
     this.elapsed = 0;
     this.timeAlive = 0;
 
@@ -287,7 +288,12 @@ export class BatmanSkill {
       this.currentFlyOffset = Math.max(0, this.currentFlyOffset - dt * 3.5);
     }
     if (this.currentFlyOffset > 0.001) {
-      this.player.floorY += this.currentFlyOffset;
+      this.surfaceY = this.player.floorY;
+      // altitude is measured from the street, so a wagon roof does not lift him higher
+      this.player.floorY = Math.max(this.surfaceY, this.currentFlyOffset);
+      // glide pose instead of the run cycle while high up; short timer: it lapses on landing
+      const ov = this.player.override;
+      if (this.currentFlyOffset > 0.4 && (!ov || ov === 'glide')) this.player.setOverride('glide', 0.1);
       if (this.player.grounded || this.player.y < this.player.floorY) {
         this.player.y = this.player.floorY;
         this.player.vy = 0;

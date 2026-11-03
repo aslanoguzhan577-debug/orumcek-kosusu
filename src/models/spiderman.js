@@ -965,6 +965,82 @@ function spiderPose(state, P, { t, st, phase }) {
       P.legRZ = 0.2;
       break;
     }
+    // flight poses (set by the flying skills as player overrides; poses: Gemini 3.8 Flash)
+    case 'glide': { // Batman: wings spread, legs together; the skill pitches the root forward
+      const w = Math.sin(t * 2.2);
+      P.armLZ = -1.57 + 0.06 * w;
+      P.armRZ = 1.57 - 0.06 * w;
+      P.armLX = -0.2;
+      P.armRX = -0.2;
+      P.elbowL = 0.05;
+      P.elbowR = 0.05;
+      P.legLZ = -0.02;
+      P.legRZ = 0.02;
+      P.kneeL = -0.05;
+      P.kneeR = -0.05;
+      P.headRX = -0.5;
+      P.spineRZ = 0.025 * Math.sin(t * 1.8);
+      break;
+    }
+    case 'lounge': { // Kitty: pin-up on the heart, facing the camera, hand by her chin
+      P.twist = Math.PI;
+      P.pelvisY = -0.05;
+      P.pelvisRZ = 1.2;
+      P.spineRZ = -0.6;
+      P.spineRX = -0.15 + 0.02 * Math.sin(t * 1.6);
+      P.armRZ = 1.05;
+      P.armRX = -0.25;
+      P.elbowR = 1.5;
+      P.armLZ = -0.85;
+      P.armLX = 0.65;
+      P.armLY = 0.4;
+      P.elbowL = 2.0;
+      P.legLZ = -0.04;
+      P.legRZ = 0.04;
+      P.legLX = 0.25;
+      P.legRX = 0.05;
+      P.kneeL = -0.85 + 0.08 * Math.sin(t * 1.8);
+      P.kneeR = -0.15;
+      P.headRZ = 0.3;
+      P.headRX = -0.1;
+      break;
+    }
+    case 'surf': { // Cap: side-on board stance on the shield, carving weave
+      const w = Math.sin(t * 2.244);
+      P.twist = -0.9;
+      P.pelvisY = -0.08;
+      P.pelvisX = 0.04 * w;
+      P.spineRZ = 0.06 * w;
+      P.spineRY = 0.5;
+      P.headRY = 0.45;
+      P.legLZ = -0.35;
+      P.legRZ = 0.35;
+      P.legLX = 0.5;
+      P.legRX = 0.5;
+      P.kneeL = -0.9;
+      P.kneeR = -0.9;
+      P.armLZ = -0.55;
+      P.armLX = 0.6;
+      P.elbowL = 0.35;
+      P.armRZ = 1.2;
+      P.armRX = -0.5;
+      P.elbowR = 0.5;
+      break;
+    }
+    case 'soar': { // superhero flight: fist up, other fist at the hip; the root is pitched flat
+      P.headRX = -0.5;
+      P.armRZ = 0.3;
+      P.armRX = 3.0 + 0.03 * Math.sin(t * 12.566);
+      P.elbowR = 0;
+      P.armLZ = -0.08;
+      P.armLX = -0.05;
+      P.elbowL = 0.15;
+      P.legLZ = -0.02;
+      P.legRZ = 0.02;
+      P.kneeR = -0.05;
+      P.kneeL = -0.5 + 0.08 * Math.sin(t * 3.5);
+      break;
+    }
     case 'stumble': { // tripping forward, arms windmilling, head wobbling
       const k = Math.max(0.35, 1 - st * 0.8);
       P.pelvisY = 0.03 * Math.abs(c);

@@ -187,9 +187,11 @@ renderer.setAnimationLoop((now) => {
 
   // Blob shadow stays on the floor and shrinks / fades while in the air.
   const capHover = (web.heroSpecials && web.heroSpecials.active && web.heroSpecials.mode === 'cap') ? 0.32 : 0;
-  const kittyHover = web.heroSpecials?.skills?.kitty?.currentFlyOffset || 0;
-  const batmanHover = web.heroSpecials?.skills?.batman?.currentFlyOffset || 0;
-  const baseFloor = Math.max(0, player.floorY - capHover - kittyHover - batmanHover);
+  const kitty = web.heroSpecials?.skills?.kitty;
+  const batman = web.heroSpecials?.skills?.batman;
+  const flying = (batman && batman.currentFlyOffset > 0.001) ? batman : (kitty && kitty.currentFlyOffset > 0) ? kitty : null;
+  // a flyer holds one altitude above the street, so its saved surface is the shadow's floor
+  const baseFloor = flying ? flying.surfaceY : Math.max(0, player.floorY - capHover);
   const height = Math.max(0, player.y - baseFloor); // (z: the intro clip moves the root)
   const s = THREE.MathUtils.clamp(1 - height / 4, 0.45, 1);
   shadow.position.set(player.x, baseFloor + 0.08, player.root.position.z);

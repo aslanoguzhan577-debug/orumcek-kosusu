@@ -446,6 +446,10 @@ export class HeroSpecials {
       this.cap.hover = hover;
       this.player.floorY += hover;
       if (this.player.grounded) this.player.y = this.player.floorY;
+      // board stance (not the run cycle) on the shield; short timer: it lapses when the surf ends
+      const ov = this.player.override;
+      if (this.player.sliding) { if (ov === 'surf') this.player.clearOverride(); }
+      else if (!ov || ov === 'surf') this.player.setOverride('surf', 0.1);
     } else if (this.mode === 'raimi') {
       this.skills.raimi.beforePlayer(dt);
     } else if (this.mode === 'hulk' && this.hulk.phase === 'crouch') {
