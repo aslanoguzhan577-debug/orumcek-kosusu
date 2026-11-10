@@ -14,9 +14,9 @@
 // shows the menu overlay; OYNA then calls game.start().
 
 import { game } from './game.js';
-import { events } from './events.js';
+import { events, emit } from './events.js';
 import { missions, missionText } from './missions.js';
-import { setMuted, isMuted } from './audio.js';
+import { isMusicOn, setMusicOn, isSfxOn, setSfxOn } from './audio.js';
 import { drawPowerIcon } from './pickup-art.js';
 import { HEART_SVG_ICON } from './powerups/skillHelloKitty.js';
 import { BAT_SVG_ICON } from './powerups/skillBatman.js';
@@ -76,7 +76,8 @@ if (!el.hud || !el.menu) {
 }
 const screens = { intro: $('intro-hint'), hud: el.hud, menu: el.menu, market: el.market, skin: el.skin, help: el.help, pause: el.pauseScr, over: el.over };
 const slots = el.web ? Array.from(el.web.querySelectorAll('.slot')) : [];
-const muteButtons = Array.from(document.querySelectorAll('[data-mute]'));
+const musicButtons = Array.from(document.querySelectorAll('[data-music]'));
+const sfxButtons = Array.from(document.querySelectorAll('[data-sfx]'));
 const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 if ($('intro-hint')) $('intro-hint').textContent = coarse ? 'Geçmek için dokun' : 'Geçmek için tıkla veya bir tuşa bas';
 if (el.ironHint) el.ironHint.textContent = coarse ? 'çift dokun' : 'space';
@@ -128,7 +129,7 @@ function showScreen(name) {
   if (name === 'menu') refreshMenu();
   if (name === 'market') paintMarket();
   if (name === 'hud') resetHudCache();
-  if (name === 'pause' || name === 'menu') paintMute();
+  if (name === 'pause' || name === 'menu') paintSound();
 }
 
 function wantScreen(now) {
@@ -469,10 +470,11 @@ function goMenu() {
   forced = 'menu';
 }
 
-function paintMute() {
-  const text = isMuted() ? 'SES: KAPALI' : 'SES: AÇIK';
-  for (const b of muteButtons) if (b.textContent !== text) b.textContent = text;
+function paintToggle(list, on, label) {
+  const text = `${label}: ${on ? 'AÇIK' : 'KAPALI'}`;
+  for (const b of list) { if (b.textContent !== text) b.textContent = text; b.setAttribute('aria-pressed', String(on)); }
 }
+function paintSound() { paintToggle(musicButtons, isMusicOn(), 'MÜZİK'); paintToggle(sfxButtons, isSfxOn(), 'EFEKT'); }
 
 function onButton(node, fn) {
   if (!node) return;
@@ -504,8 +506,9 @@ onButton(el.pauseMenu, goMenu);
 onButton(el.again, startRun);
 onButton(el.overMenu, goMenu);
 onButton(el.share, () => shareScore());
-for (const b of muteButtons) onButton(b, () => { setMuted(!isMuted()); paintMute(); });
-paintMute();
+for (const b of musicButtons) onButton(b, () => { setMusicOn(!isMusicOn()); paintSound(); });
+for (const b of sfxButtons) onButton(b, () => { setSfxOn(!isSfxOn()); paintSound(); });
+paintSound();
 
 // ---------- repulsor boost & hero special skill buttons ----------
 function triggerHeroSpecial() {
@@ -602,6 +605,7 @@ function paintOver() {
 
 events.addEventListener('gameover', (e) => {
   recordScore(e.detail || {});
+  if (lastResult && lastResult.record) emit('newRecord', { score: lastResult.score });
   paintOver();
   overAt = performance.now() + OVER_DELAY_MS;
 });

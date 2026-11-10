@@ -1,8 +1,8 @@
 // G5 — Web Audio ile kodla uretilen efekt sesleri. Dosya yok, kutuphane yok.
-// Sozlesme olaylarina modul yuklenince abone olur. Disa acik API: setMuted, isMuted.
+// Sozlesme olaylarina modul yuklenince abone olur. Disa acik API: music / sfx toggles.
 import { events } from './events.js';
-
-const MUTE_KEY = 'spidey.muted';
+import { initMusic, setMusicOn as applyMusicOn, duckMusic, musicStats } from './music.js';
+import { loadSettings, saveSettings, COIN_MIDI, COIN_COMP, hz, coinNext, DUCK_SFX } from './audio-logic.js';
 const MASTER_VOL = 0.55;
 const MAX_VOICES = 24;   // bunun ustunde hicbir ses calinmaz
 const SOFT_VOICES = 14;  // bunun ustunde sadece onemli sesler calinir (low=true olanlar atlanir)
@@ -10,32 +10,27 @@ const NOISE_SECONDS = 2;
 
 let ctx = null;
 let master = null;
+let coinIn = null;
 let noiseBuf = null;
 let voices = 0;
 let paused = false;
-let muted = loadMuted();
-let coinCombo = 0;
-let lastCoinAt = -10;
+let unlocked = false;
+const settings = loadSettings((k) => { try { return localStorage.getItem(k); } catch (e) { return null; } });
+const coinState = { streak: 0, lastCoin: -10, lastPlay: -10 };
 const lastPlay = Object.create(null);
 
-// ---------- mute (kalici) ----------
-function loadMuted() {
-  try { return localStorage.getItem(MUTE_KEY) === '1'; } catch (e) { return false; }
+function persistSettings() {
+  saveSettings((k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* yoksay */ } }, settings);
 }
-function saveMuted() {
-  try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch (e) { /* yoksay */ }
-}
-export function isMuted() { return muted; }
-export function setMuted(value) {
-  muted = !!value;
-  saveMuted();
-  applyMasterGain();
-}
+export function isMusicOn() { return settings.music; }
+export function setMusicOn(value) { settings.music = !!value; persistSettings(); applyMusicOn(settings.music); }
+export function isSfxOn() { return settings.sfx; }
+export function setSfxOn(value) { settings.sfx = !!value; persistSettings(); applyMasterGain(); }
 function applyMasterGain() {
   if (!ctx) return;
   const t = ctx.currentTime;
   master.gain.cancelScheduledValues(t);
-  master.gain.setTargetAtTime(muted ? 0 : MASTER_VOL, t, 0.015);
+  master.gain.setTargetAtTime(settings.sfx ? MASTER_VOL : 0, t, 0.015);
 }
 
 // ---------- baslatma (mobil autoplay) ----------
@@ -46,7 +41,7 @@ function ensureContext() {
   try { ctx = new AC({ latencyHint: 'interactive' }); } catch (e) { ctx = null; return null; }
 
   master = ctx.createGain();
-  master.gain.value = muted ? 0 : MASTER_VOL;
+  master.gain.value = settings.sfx ? MASTER_VOL : 0;
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -16;
   comp.knee.value = 8;
@@ -54,12 +49,27 @@ function ensureContext() {
   comp.attack.value = 0.003;
   comp.release.value = 0.2;
   master.connect(comp);
-  comp.connect(ctx.destination);
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -4; limiter.knee.value = 0; limiter.ratio.value = 20;
+  limiter.attack.value = 0.001; limiter.release.value = 0.08;
+  const out = ctx.createGain(); out.gain.value = 0.9;
+  comp.connect(limiter); limiter.connect(out); out.connect(ctx.destination);
+  const coinLP = ctx.createBiquadFilter();
+  coinLP.type = 'lowpass'; coinLP.frequency.value = 5200; coinLP.Q.value = 0.5;
+  coinIn = ctx.createGain(); coinIn.gain.value = 1;
+  coinIn.connect(coinLP); coinLP.connect(master);
 
   // Tek, onbellekli gurultu tamponu
   noiseBuf = ctx.createBuffer(1, ctx.sampleRate * NOISE_SECONDS, ctx.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  applyMusicOn(settings.music);
+  initMusic(ctx, limiter, noiseBuf, () => unlocked);
+  ctx.onstatechange = () => {
+    if (ctx.state === 'running') removeUnlockListeners();
+    else if (!paused && !document.hidden) addUnlockListeners();
+  };
+  if (!unlocked || document.hidden) ctx.suspend().catch(() => {});
   return ctx;
 }
 
@@ -68,8 +78,9 @@ function ensureContext() {
 export function prepareAudio() { ensureContext(); }
 
 function unlock() {
+  unlocked = true;
   if (!ensureContext()) return;
-  if (!paused && ctx.state !== 'running') {
+  if (!paused && !document.hidden && ctx.state !== 'running') {
     const p = ctx.resume();
     if (p && p.catch) p.catch(() => {});
   }
@@ -90,7 +101,20 @@ const UNLOCK_OPTS = { capture: true, passive: true };
 function removeUnlockListeners() {
   for (const n of UNLOCK_EVENTS) window.removeEventListener(n, unlock, UNLOCK_OPTS);
 }
-for (const n of UNLOCK_EVENTS) window.addEventListener(n, unlock, UNLOCK_OPTS);
+function addUnlockListeners() {
+  for (const n of UNLOCK_EVENTS) window.addEventListener(n, unlock, UNLOCK_OPTS);
+}
+addUnlockListeners();
+document.addEventListener('visibilitychange', () => {
+  if (!ctx) return;
+  if (document.hidden) ctx.suspend().catch(() => {});
+  else resumeContext();
+});
+window.addEventListener('pagehide', () => { if (ctx) ctx.suspend().catch(() => {}); });
+function resumeContext() {
+  if (ctx && unlocked && !paused && !document.hidden && ctx.state !== 'running') ctx.resume().catch(() => {});
+}
+events.addEventListener('menu', () => { paused = false; resumeContext(); });
 
 // ---------- ses kurucu yardimcilar ----------
 function claim(low, count = 1) {
@@ -100,7 +124,7 @@ function claim(low, count = 1) {
 }
 function release(nodes, count = 1) {
   for (const n of nodes) { try { n.disconnect(); } catch (e) { /* yoksay */ } }
-  voices -= count;
+  voices = Math.max(0, voices - count);
 }
 
 // zarf: kisa atak, ussel sonum
@@ -260,6 +284,24 @@ function scream(o) {
   lfo.start(t); lfo.stop(t + dur + 0.03);
 }
 
+function coinEnvelope(p, t, peak, att, tau) {
+  p.setValueAtTime(0, t); p.linearRampToValueAtTime(peak, t + att); p.setTargetAtTime(0, t + att, tau);
+}
+function coinVoice(step) {
+  if (!claim(true, 2)) return;
+  const t = ctx.currentTime;
+  const f = hz(COIN_MIDI[step]), P = 0.12 * COIN_COMP[step], nodes = [];
+  const o1 = ctx.createOscillator(); o1.type = 'sine';
+  o1.frequency.setValueAtTime(f * 0.985, t); o1.frequency.linearRampToValueAtTime(f, t + 0.01);
+  const g1 = ctx.createGain(); g1.gain.value = 0; coinEnvelope(g1.gain, t, P, 0.004, 0.03);
+  const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.setValueAtTime(f * 2, t);
+  const g2 = ctx.createGain(); g2.gain.value = 0; coinEnvelope(g2.gain, t, P * 0.18, 0.002, 0.016);
+  o1.connect(g1); g1.connect(coinIn); o2.connect(g2); g2.connect(coinIn);
+  nodes.push(o1, g1, o2, g2);
+  o1.start(t); o1.stop(t + 0.14); o2.start(t); o2.stop(t + 0.08);
+  o1.onended = () => release(nodes, 2);
+}
+
 // ---------- sesler ----------
 const SOUNDS = {
   jump() {
@@ -277,15 +319,8 @@ const SOUNDS = {
     noise({ dur: 0.1, vol: 0.07, attack: 0.02, filter: 'bandpass', f1: 1200, f2: 2600, q: 2, low: true });
   },
   coin() {
-    const now = ctx.currentTime;
-    if (now - lastCoinAt > 0.6) coinCombo = 0;
-    lastCoinAt = now;
-    const steps = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
-    const f = 988 * Math.pow(2, steps[Math.min(coinCombo, steps.length - 1)] / 12);
-    coinCombo++;
-    tone({ type: 'square', f, dur: 0.07, vol: 0.1, attack: 0.002, low: true });
-    tone({ type: 'sine', f: f * 1.5, dur: 0.26, vol: 0.22, at: 0.055, attack: 0.002, low: true });
-    tone({ type: 'sine', f: f * 3, dur: 0.12, vol: 0.05, at: 0.055, low: true });
+    const i = coinNext(coinState, ctx.currentTime);
+    if (i >= 0) coinVoice(i);
   },
   pickup(d) {
     if (d && d.type === 'iron') {
@@ -506,16 +541,19 @@ const SOUNDS = {
 };
 
 // ayni sesin cok sik tekrarini engelle (saniye)
-const MIN_GAP = { senseDodge: 0.08, i_swing: 0.25, lane: 0.06, land: 0.08, slide: 0.15, stumble: 0.15, venomNear: 1.5, coin: 0.025, crash: 0.1, web: 0.1, hulkSmash: 0.12, hulkRoar: 1.0, capShieldSurf: 0.5, capShieldGong: 0.5, milesVenomBlast: 0.5, venomBlastNova: 0.5 };
+const MIN_GAP = { senseDodge: 0.08, i_swing: 0.25, lane: 0.06, land: 0.08, slide: 0.15, stumble: 0.15, venomNear: 1.5, crash: 0.1, web: 0.1, hulkSmash: 0.12, hulkRoar: 1.0, capShieldSurf: 0.5, capShieldGong: 0.5, milesVenomBlast: 0.5, venomBlastNova: 0.5 };
 
 function play(name, detail) {
-  if (muted || paused || !ctx || ctx.state === 'closed') return;
+  if (!settings.sfx || !unlocked || paused || document.hidden || !ctx || ctx.state !== 'running') return;
+  if (name === 'gameover' && isMusicOn()) return;
   const now = ctx.currentTime;
   const gap = MIN_GAP[name];
   if (gap) {
     if (now - (lastPlay[name] ?? -10) < gap) return;
     lastPlay[name] = now;
   }
+  const d = DUCK_SFX[name];
+  if (d) duckMusic(d, 0.25);
   try { SOUNDS[name](detail); } catch (e) { console.warn("[audio]", name, e); } // ses hatasi oyunu durdurmasin
 }
 
@@ -528,7 +566,7 @@ events.addEventListener('start', () => {
   // the start jingle waits a moment: when the intro clip begins it takes over (jingle on 'run')
   clearTimeout(startTimer);
   startTimer = setTimeout(() => { if (!introActive) play('start'); }, 40);
-  if (ctx && ctx.state !== 'running') {
+  if (ctx && unlocked && !document.hidden && ctx.state !== 'running') {
     const p = ctx.resume();
     if (p && p.catch) p.catch(() => {});
   }
@@ -542,7 +580,7 @@ events.addEventListener('pause', () => {
 });
 events.addEventListener('resume', () => {
   paused = false;
-  if (ctx && ctx.state !== 'running') {
+  if (ctx && unlocked && !document.hidden && ctx.state !== 'running') {
     const p = ctx.resume();
     if (p && p.catch) p.catch(() => {});
   }
@@ -561,3 +599,5 @@ events.addEventListener('intro', (e) => {
   else if (d.phase === 'end') { introActive = false; if (d.skipped) play('start'); }
   else if (INTRO_SOUND[d.phase]) play(INTRO_SOUND[d.phase]);
 });
+
+export function audioStats() { return { sfx: voices, music: musicStats() }; }

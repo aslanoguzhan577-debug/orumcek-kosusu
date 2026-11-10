@@ -972,5 +972,87 @@ for (let set = 1; set <= 60; set++) {
 const wallRun = (WG.duration - WG.liftTime - WG.landingTime) * speedAt(3000);
 ok(wallRun >= 120, `a base wall run where the pickup first appears covers ${wallRun.toFixed(0)} m >= the 120 m cap`);
 
+// Audio task 1
+const AL = await import('../src/audio-logic.js');
+const kv = (o) => (k) => (k in o ? o[k] : null);
+eq(json(AL.loadSettings(kv({}))), json({ music: true, sfx: true }), 'no save: music and effects on');
+eq(json(AL.loadSettings(kv({ 'spidey.muted': '1' }))), json({ music: false, sfx: false }), 'old mute save: both off');
+eq(json(AL.loadSettings(kv({ 'spidey.muted': '0' }))), json({ music: true, sfx: true }), 'old unmuted save: both on');
+eq(json(AL.loadSettings(kv({ 'spidey.muted': '1', 'spidey.music': '1' }))), json({ music: true, sfx: false }), 'a new key beats the old one');
+eq(json(AL.loadSettings(kv({ 'spidey.music': 'x' }))), json({ music: true, sfx: true }), 'garbage falls back');
+const saved = {}; AL.saveSettings((k, v) => { saved[k] = v; }, { music: false, sfx: true });
+eq(json(saved), json({ 'spidey.music': '0', 'spidey.sfx': '1', 'spidey.muted': '0' }), 'save writes both keys + legacy');
+AL.saveSettings((k, v) => { saved[k] = v; }, { music: false, sfx: false });
+eq(saved['spidey.muted'], '1', 'all off keeps the legacy mute key');
+eq(json(AL.loadSettings(kv(saved))), json({ music: false, sfx: false }), 'save -> load round trip');
+let menuSeen = 0; events.addEventListener('menu', () => menuSeen++);
+game.state.mode = 'over'; game.toMenu();
+eq(menuSeen, 1, 'toMenu emits menu'); eq(game.state.mode, 'menu', 'toMenu reaches the menu');
+
+// Audio task 2
+const cs = () => ({ streak: 0, lastCoin: -10, lastPlay: -10 });
+let s1 = cs(); const seqIdx = []; for (let i = 0; i < 12; i++) seqIdx.push(AL.coinNext(s1, i * 0.1));
+eq(seqIdx.join(','), '0,1,2,3,4,5,6,7,4,5,6,7', 'ladder climbs 8 steps then sparkles on the top four');
+eq(AL.coinNext(s1, 1.1 + 0.61), 0, 'a 0.61 s break starts again at step 0');
+let s2 = cs(); let played = 0; for (let i = 0; i < 30; i++) if (AL.coinNext(s2, i / 30) >= 0) played++;
+ok(played <= 12 && played >= 10, `30 magnet coins in 1 s play ${played} sounds (cap 12/s)`);
+let s3 = cs(); const mag = []; for (let i = 0; i < 9; i++) { const k = AL.coinNext(s3, i / 30); if (k >= 0) mag.push(k); }
+eq(mag.join(','), '0,1,2', 'skipped coins do not advance the ladder');
+eq(AL.COIN_MIDI.length, 8, '8 ladder steps');
+ok(AL.COIN_MIDI.every((m) => [9, 0, 2, 4, 7].includes(m % 12)), 'ladder is A minor pentatonic');
+ok(Math.abs(AL.hz(AL.COIN_MIDI[0]) - 880) < 0.01 && Math.abs(AL.hz(AL.COIN_MIDI[7]) - 2349.32) < 0.01, 'ladder spans 880-2349 Hz');
+ok(AL.COIN_COMP.every((c, i) => i === 0 || c < AL.COIN_COMP[i - 1]), 'higher steps play quieter');
+
+// Audio task 3
+const vp = new AL.VoicePool(44, [0, 4, 8, 12, 16]);
+let n = 0; while (vp.claim(4, 1)) n++;
+eq(n, 28, 'lowest priority stops at max - 16');
+ok(vp.claim(0, 2), 'top priority still gets a voice');
+eq(vp.claim(3, 3), false, 'prio 3 is refused above max - 12');
+for (let i = 0; i < 100; i++) vp.release(1);
+eq(vp.used, 0, 'release never goes below 0');
+for (let i = 0; i < 10000; i++) { if (vp.claim(i % 5, 1 + (i % 3))) vp.release(1 + (i % 3)); }
+eq(vp.used, 0, '10000 claim/release cycles leak nothing');
+eq(AL.musicPoolMax(4), 36, 'low-end phone pool'); eq(AL.musicPoolMax(8), 44, 'normal pool');
+ok(AL.shouldDuck({ level: 0.6, until: 5 }, 4, 0.45), 'a deeper duck wins');
+eq(AL.shouldDuck({ level: 0.45, until: 5 }, 4, 0.6), false, 'a shallower duck waits');
+ok(AL.shouldDuck({ level: 0.45, until: 5 }, 5, 0.6), 'after the hold any duck applies');
+
+// Audio task 4
+eq(AL.musicScene('menu', false), 'menu', 'menu scene');
+eq(AL.musicScene('running', true), 'silent', 'intro is silent');
+eq(AL.musicScene('running', false), 'run', 'run scene');
+eq(AL.musicScene('paused', false), 'hold', 'pause keeps the scene');
+eq(AL.musicScene('over', false), 'over', 'over scene');
+eq(AL.resyncTime(10, 10.02), 10, 'on time: unchanged');
+eq(AL.resyncTime(9, 10), 10.05, 'late: skip ahead, never burst');
+const A_MINOR = [9, 11, 0, 2, 4, 5, 7];
+for (const p of [AL.M_KICK, AL.M_RIM, AL.M_HAT]) eq(p.length, 16, 'menu drum pattern has 16 steps');
+eq(AL.BOX.length, 8, 'music box has 8 bars'); eq(AL.MENU_BARS.length, 8, 'menu has 8 chords');
+ok(AL.BOX.flat().every((x) => x[0] >= 0 && x[0] + x[2] <= 16 && A_MINOR.includes(x[1] % 12)), 'music box notes stay in their bar and in A minor');
+ok(AL.MENU_BARS.every((c) => AL.CH[c]), 'every menu chord exists');
+
+// Audio task 5
+eq(AL.tierFor(11), 0, 'start speed = tier 0'); eq(AL.tierFor(13.5), 1, 'tier 1 at 13.5');
+eq(AL.tierFor(17), 2, 'tier 2 at 17'); eq(AL.tierFor(22), 3, 'tier 3 at 22'); eq(AL.tierFor(39), 4, 'top speed = tier 4');
+eq(AL.bpmFor(11), 112, '112 BPM at start'); eq(AL.bpmFor(26), 122, '122 at cruise'); eq(AL.bpmFor(39), 128, '128 at top');
+eq(AL.bpmFor(800), 128, 'a boost never runs the tempo away');
+let lastB = 0; for (let s = 11; s <= 39; s += 0.5) { ok(AL.bpmFor(s) >= lastB, 'tempo never falls'); lastB = AL.bpmFor(s); }
+eq(json(AL.layersFor(0)), json({ fill: false, stabs: false, lead: false, kickB: false, hatsB: false, bassB: false, arp: false, sparkle: false, crash8: false }), 'tier 0 layers');
+ok(AL.layersFor(2).lead && !AL.layersFor(1).lead, 'the lead opens at tier 2');
+ok(AL.layersFor(4).arp && !AL.layersFor(3).arp, 'the arp opens at tier 4');
+for (const t of [1, 2, 3, 4]) ok(Object.keys(AL.layersFor(t)).every((k) => !AL.layersFor(t - 1)[k] || AL.layersFor(t)[k]), `tier ${t} keeps every lower layer`);
+for (const p of [AL.KICK_A, AL.KICK_B, AL.SNARE, AL.HAT_A, AL.HAT_B, AL.ARP_ORDER]) eq(p.length, 16, 'run pattern has 16 steps');
+eq(AL.LEAD.length, 8, 'lead has 8 bars'); eq(AL.RUN_BARS.length, 8, 'run has 8 chords');
+ok(AL.LEAD.flat().every((x) => x[0] >= 0 && x[0] + x[2] <= 16 && A_MINOR.includes(x[1] % 12)), 'lead notes stay in their bar and in A minor');
+ok([...AL.BASS_A, ...AL.BASS_B].every((x) => x[0] + x[2] <= 16), 'bass notes stay in their bar');
+
+// Audio task 6
+ok(AL.stingerReady(-10, 0), 'first pickup stinger plays');
+eq(AL.stingerReady(5, 6.5), false, 'a second pickup within 2 s is quiet');
+ok(AL.stingerReady(5, 7), 'after 2 s it plays again');
+
+await import('./test-audio.mjs');
+
 console.log(`OK ${checks} checks`);
 

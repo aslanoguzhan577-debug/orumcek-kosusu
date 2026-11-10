@@ -45,7 +45,7 @@
 
 <script type="module">
 import { events } from './src/events.js';
-import { setMuted, isMuted } from './src/audio.js';
+import { isSfxOn, setSfxOn } from './src/audio.js';
 
 const groups = [
   ['Hareket', [
@@ -104,8 +104,8 @@ for (const [title, items] of groups) {
 }
 
 const muteBtn = document.getElementById('mute');
-function paintMute() { muteBtn.textContent = isMuted() ? 'Sesi ac' : 'Sesi kapat'; }
-muteBtn.addEventListener('click', () => { setMuted(!isMuted()); paintMute(); });
+function paintMute() { muteBtn.textContent = isSfxOn() ? 'Sesi kapat' : 'Sesi ac'; }
+muteBtn.addEventListener('click', () => { setSfxOn(!isSfxOn()); paintMute(); });
 paintMute();
 </script>
 </body>

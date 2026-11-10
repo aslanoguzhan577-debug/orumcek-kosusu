@@ -110,6 +110,7 @@ export const game = {
     if (state.mode === 'menu') return;
     this._resetRun();
     state.mode = 'menu';
+    emit('menu');
     if (this.cameraRig) this.cameraRig.snap(this.player);
   },
 
