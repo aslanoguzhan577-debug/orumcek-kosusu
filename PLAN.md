@@ -252,6 +252,7 @@ Değişmez kurallar:
 - Bitti sayılır: kare süresi ve çizim çağrısı sayısı önce/sonra ölçülür, telefonda akıcılık bozulmaz; engeller her bölgede ve gece net okunur.
 
 ### 11.4 Bir koşu daha: oyun sonu, kapaklar, günün parkuru
+- Venom yakalama animasyonu: bugünkü "arkadan sarılma" yerine simbiyot yutması. Venom siyah balçık gibi çözülür, dokunaçlar karakteri ayaklarından yukarı sarar, karakter bir an çırpınır; dev çene kameranın üstüne kapanır, ekran kararır, "GULP!" yazısı patlar ve karartı oyun sonu sayfasına açılır. Toplam ~1,5 sn (tekrar oynamayı bekletmez), dokunarak geçilebilir, 11 karakterde aynı çalışır (balçık modeli örter, karaktere özel animasyon yok), havuzlu parçalarla.
 - Oyun sonu bir çizgi roman sayfası olur: son anın dondurulmuş karesi ve ölüm nedeni yazısı, koşu özeti, bu koşuda ilerleyen görev rozetleri, kazanılan altın, "sıradaki hedef" satırı.
 - Kapak albümü: başarımlar çizgi roman kapağı olarak açılır (yaklaşık 20 kapak, kodla çizilir, oyuncunun adını taşır); her kapak altın ödülü verir.
 - Adil rekor: skorun yanında çarpandan bağımsız "en uzun mesafe" rekoru; ilk 5 listesinde çarpan rozeti.
