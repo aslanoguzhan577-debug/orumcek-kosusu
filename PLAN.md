@@ -209,3 +209,59 @@ Zaten olanlar: Mıknatıs (Coin Magnet), Iron Spider (Kaykay), Iron Man jeti (H�
 
 ### Ponytail ayarı (aşamaya göre, kullanıcı kararı)
 Full: oyun mantığı, kayıt / skor formülü, HUD ve menü, güçlerin oynanış kodu, testler. Ponytail kapalı (sadelik kuralı uygulanmaz, gösterişli yapılır; efektler YAPILIR): güç görselleri / efektler / ikonlar / eşya modelleri ve konsept tasarım.
+
+## 11. Şehir Yaşıyor (yol haritası, 2026-11-10)
+
+Amaç: oyunu bitirince "bununla gurur duyuyorum" dedirtmek. Bugün mekanik sağlam; eksik olan kulak (müzik yok, altın sesi rahatsız ediyor), anlatım (yeni mekanikler hiçbir yerde açıklanmıyor), ortam (tek bölge, hep gündüz) ve "bir koşu daha" dedirten hedefler.
+
+Çalışma düzeni (her aşama için aynı döngü):
+1. Tasarım: Opus high, çıktısı `tasarim/11-N-*.md` (kodlayıcının yorum yapmadan uygulayabileceği kesinlikte: sayılar, renkler, çizim tarifleri, dosya dosya bağlantı haritası, sıralı kod görevleri).
+2. Kod: DeepSeek işçisi, tasarım dosyasındaki görevleri sırayla yapar.
+3. Kontrol: Sonnet (bilinen liste: medium, geniş test: high). Eksikler işçiye geri döner.
+4. Commit + push + vault kaydı.
+
+Değişmez kurallar:
+- Görsel ve ses dosyası eklenmez: her şey kodla üretilir (canvas, Web Audio). Yeni kütüphane yok.
+- Telefon bütçesi: dinamik ışık yok, çalışma anında doku/malzeme üretimi yok (yüklemede, ısıtma sırasında üretilir), her şey instanced ya da havuzlu, post-processing yok.
+- Ponytail: oyun mantığı, HUD, kayıt, testler FULL. Görsel, ses ve tasarım KAPALI (sadelik kuralı uygulanmaz, gösterişli yapılır).
+- Zorluk hiç sabitlenmez; her tohumda geçilebilir yol kalır (tools/check-patterns.mjs).
+- Karakterler kilitlenmez; oyuncunun kazandığı hiçbir şey geri alınmaz. Eski kayıtlar yüklenmeye devam eder.
+- Her yeni mantık kendi assert kontrolünü tools/test-skills.mjs içine bırakır.
+
+### 11.1 Kulak: altın sesi ve müzik
+- Altın sesi: yumuşak, kısa (en çok ~120 ms), tatlı bir "çın" (rahatsız etmeyen, Subway Surfers tarzı). Art arda toplamada nota pentatonik merdivende bir basamak yükselir (8 basamak; ~0,6 sn ara verilince başa döner). Mıknatısla toplu toplamada saniyede en çok ~12 ses. Düzeyi diğer efektlerin altında.
+- Müzik: dosyasız, Web Audio adım dizisiyle. Menü teması (sakin). Koşu teması katmanlı: davul, bas, melodi hız kademesiyle açılır, tempo hafif artar. Venom yakınken alçak gerilim katmanı. Güç alınca kısa nağme, oyun sonunda kapanış. Tema özgündür (var olan bir film ya da oyun melodisi kullanılmaz).
+- Ayar: SES düğmesi "Müzik" ve "Efekt" olarak ayrılır, ikisi de kaydedilir. İlk dokunuştan önce ses başlamaz, sekme gizlenince durur.
+- Bitti sayılır: aynı anda çalan ses sayısı sınırlı ve sızıntı yok; sessize alma her ikisini de keser; testler geçer.
+
+### 11.2 İlk beş dakika: anlatım ve ekran düzeni
+- İlk karşılaşma ipuçları: her mekanik ve güç için bir kez, çizgi roman anlatı kutusu (~2,5 sn, oyunu durdurmaz), görüldüğü kaydedilir.
+- Kahraman yeteneği: şarj yokken düğme "ŞARJ YOK" durumunu ve nasıl dolacağını gösterir; her kahramanla ilk koşuda bir kereye mahsus 1 hediye şarj.
+- Karakter seçimi: seçili karakter sahnede dönerek görünür, yetenek adı + tek satır açıklama, 11 karakter kaydırmadan sığan ızgara.
+- Nasıl oynanır: 4 sayfalık çizgi roman şeridi (kontroller, güçler, görevler ve çarpan, kahraman yeteneği).
+- Yerleşim (360×740 ve yatay): ana menü taşmaz; market iki sekme (Sarf / Yükseltme) ve sıkışmayan satırlar; aktif güç göstergeleri tek sıra, halka sayaçlı küçük ikonlar (8 güç sığar).
+- Doğrulama: marketteki "Iron Spider Zırhı" ve "Özel Kahraman Gücü" yükseltmeleri süreyi gerçekten uzatıyor mu; uzatmıyorsa düzeltilir.
+
+### 11.3 Şehir yaşıyor: bölgeler, gün döngüsü, kaplamalar
+- Bölgeler (yaklaşık her 1,5 km'de geçiş, anlatı kutusuyla duyurulur): Midtown (bugünkü), Chinatown (fenerler, tabelalar), Köprü (açık gökyüzü, halatlar, altta su: nefes alma anı), Metro tüneli (kısa, karanlık, ışık şeritleri, güçler parlar), Neon Meydan (dev panolar).
+- Gün döngüsü mesafeye bağlıdır: gündüz → altın saat → alacakaranlık → gece (ışıklı pencereler, neon) → şafak; yaklaşık 6 km'de bir tur. Uzun koşu farklı görünür: "geceyi gördüm" övünülecek şeydir.
+- Kaplamalar: cephelerde çizgi roman yarım ton gölge, mürekkep kenar çizgisi, gece pencere ışıkları.
+- Bugle panoları: şehirdeki panolar oyuncunun adını, rekorunu, yerel ilk 5'i ve duruma göre manşetler gösterir ("<İSİM> YİNE KAÇTI!").
+- Canlı ayrıntılar (havuzlu): raylardan havalanan güvercinler, buhar menfezleri, çatı su depoları, uzakta çarpanı yazan zeplin.
+- Hava: nadir ve kısa yağmur (ıslak ray parlaması, çizgi damlalar).
+- Bitti sayılır: kare süresi ve çizim çağrısı sayısı önce/sonra ölçülür, telefonda akıcılık bozulmaz; engeller her bölgede ve gece net okunur.
+
+### 11.4 Bir koşu daha: oyun sonu, kapaklar, günün parkuru
+- Oyun sonu bir çizgi roman sayfası olur: son anın dondurulmuş karesi ve ölüm nedeni yazısı, koşu özeti, bu koşuda ilerleyen görev rozetleri, kazanılan altın, "sıradaki hedef" satırı.
+- Kapak albümü: başarımlar çizgi roman kapağı olarak açılır (yaklaşık 20 kapak, kodla çizilir, oyuncunun adını taşır); her kapak altın ödülü verir.
+- Adil rekor: skorun yanında çarpandan bağımsız "en uzun mesafe" rekoru; ilk 5 listesinde çarpan rozeti.
+- Günün parkuru: herkes için aynı günlük tohum, günlük en iyi, paylaşım metni günü ve skoru taşır. Sunucu gerekmez.
+
+### 11.5 Yol sürprizleri: yeni engeller ve olaylar
+- Bölgeye bağlı 3 engel: sallanan vinç kirişi (şeritleri süpürür, önceden uyarı verir), köprüde ray boşluğu (zıpla), tünelde sinyal kapısı (kay). Adalet denetçisi yeni türleri tanır.
+- Venom Hamlesi: belirli aralıklarla ~10 sn; dokunaçlar şeritlere vurur (kırmızı şerit uyarısı), atlatınca ödül.
+- Yeşil Cin baskını (gece bölgelerinde): süzülür, şeritlere bomba bırakır; atlatınca ödül.
+
+### 11.6 Karar bekleyen ve bu turda olmayanlar
+- Karar bekleyen: çevrimiçi skor tablosu (bir sunucu hesabı gerekir).
+- Bu turda yok: karakter kilitleme, zorluk ayarı menüsü, ağ izi kozmetikleri.
