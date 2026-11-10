@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ses tasarımı 11.1</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #12141c; color: #eee; margin: 0 auto; padding: 16px; max-width: 680px; }
+  h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 14px; color: #9aa; margin: 18px 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { font: inherit; padding: 10px 14px; border: 0; border-radius: 8px; background: #2b6cff; color: #fff; cursor: pointer; }
+  button.alt { background: #c0392b; } button.gold { background: #b8860b; }
+  pre { font: 12px/1.45 monospace; color: #8c8; white-space: pre-wrap; background: #0b0c11; padding: 8px; border-radius: 6px; }
+  label { font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>Örümcek Koşusu — ses 11.1 prototipi</h1>
+<p style="font-size:13px;color:#aaa">Tasarım dosyası: tasarim/11-1-ses-muzik.md. Telefon hoparlöründen de dinle.</p>
+
+<h2>Altın</h2>
+<div class="row">
+  <button id="coinOld" class="alt">Eski altın x10</button>
+  <button id="coinNew" class="gold">Yeni altın x10</button>
+  <button id="coinLong" class="gold">Yeni: 20 altın dizisi</button>
+  <button id="coinMag" class="gold">Yeni: mıknatıs (30/sn, 1,5 sn)</button>
+</div>
+
+<h2>Müzik</h2>
+<div class="row">
+  <button id="menu">Menü teması</button>
+  <button id="run">Koşu teması</button>
+  <button id="stop" class="alt">Durdur</button>
+</div>
+<div class="row" style="margin-top:8px">
+  <label>Hız <input id="speed" type="range" min="11" max="39" step="0.5" value="11"> <b id="speedV">11</b> m/s
+  · kademe <b id="tierV">0</b> · <b id="bpmV">112</b> BPM</label>
+  <label><input id="tension" type="checkbox"> Venom yakın</label>
+</div>
+
+<h2>Nağmeler</h2>
+<div class="row">
+  <button id="pickup">Güç alındı (koşuda)</button>
+  <button id="mDone">Görev bitti</button>
+  <button id="mSet">Set bitti (çarpan)</button>
+  <button id="record">Yeni rekor</button>
+  <button id="closing">Oyun sonu</button>
+</div>
+
+<h2>Ölçüm (çevrimdışı çizim)</h2>
+<div class="row"><button id="measure">Ölç</button></div>
+<pre id="log">-</pre>
+
+<script type="module">
+import * as P from './ses-proto.js';
+const $ = (id) => document.getElementById(id);
+let ctx = null, E = null, seq = null, timer = 0, stopCrackle = null;
+const state = { speed: 11, tension: false };
+let song = null;
+function live() {
+  if (!ctx) { ctx = new AudioContext({ latencyHint: 'interactive' }); E = P.makeEngine(ctx); }
+  if (ctx.state !== 'running') ctx.resume();
+  return E;
+}
+function stopSong() {
+  clearInterval(timer); seq = null; song = null;
+  if (stopCrackle) { stopCrackle(); stopCrackle = null; }
+}
+function startSong(kind) {
+  stopSong(); live();
+  song = kind === 'menu' ? P.menuSong(E) : P.runSong(E, state);
+  if (kind === 'menu') stopCrackle = P.crackleStart(E, ctx.currentTime + 0.05);
+  E.g.fade.gain.cancelScheduledValues(0); E.g.fade.gain.value = 0; E.g.fade.gain.setTargetAtTime(P.SCENE_GAIN[kind], ctx.currentTime, kind === 'menu' ? 0.8 : 0.01);
+  seq = new P.Seq(song); seq.start(ctx.currentTime + 0.1);
+  timer = setInterval(() => {
+    if (seq.next < ctx.currentTime - 0.05) seq.next = ctx.currentTime + 0.05; // gap guard
+    seq.run(ctx.currentTime + 0.12);
+  }, 25);
+}
+const st = () => ({ streak: 0, lastCoin: -10, lastPlay: -10 });
+$('coinOld').onclick = () => { live(); const t = ctx.currentTime + 0.05; for (let i = 0; i < 10; i++) P.coinOld(E, t + i * 0.12, i); };
+function coins(n, gap) { live(); const s = st(), t0 = ctx.currentTime + 0.05; for (let i = 0; i < n; i++) { const k = P.coinNext(s, i * gap); if (k >= 0) P.coinNew(E, t0 + i * gap, k); } }
+$('coinNew').onclick = () => coins(10, 0.12);
+$('coinLong').onclick = () => coins(20, 0.12);
+$('coinMag').onclick = () => coins(45, 1 / 30);
+$('menu').onclick = () => startSong('menu');
+$('run').onclick = () => startSong('run');
+$('stop').onclick = stopSong;
+$('speed').oninput = (e) => { state.speed = +e.target.value; $('speedV').textContent = state.speed; $('tierV').textContent = P.tierFor(state.speed); $('bpmV').textContent = P.bpmFor(state.speed); };
+$('tension').onchange = (e) => { state.tension = e.target.checked; if (E) P.setTension(E, state.tension, ctx.currentTime); };
+$('pickup').onclick = () => { if (song && song.pickupAt !== undefined) P.ST.pickup(E, song, ctx.currentTime); };
+$('mDone').onclick = () => { live(); P.ST.missionDone(E, ctx.currentTime + 0.02); };
+$('mSet').onclick = () => { live(); P.ST.missionSet(E, ctx.currentTime + 0.02); };
+$('record').onclick = () => { stopSong(); live(); P.ST.record(E, ctx.currentTime + 0.05); };
+$('closing').onclick = () => { stopSong(); live(); P.ST.closing(E, ctx.currentTime + 0.05); };
+
+// ---------- offline measurement ----------
+const SR = 44100;
+const db = (x) => (x > 0 ? (20 * Math.log10(x)).toFixed(1) : '-inf');
+async function render(seconds, scenario, band = null) {
+  const oc = new OfflineAudioContext(1, Math.ceil(SR * seconds), SR);
+  const e = P.makeEngine(oc, { band });
+  // offline: every note is scheduled before rendering, so the live pool would fill at once;
+  // count concurrent oscillator / noise sources from their start-stop times instead
+  e.pool = { used: 0, claim: () => true, release() {} }; e.trace = [];
+  scenario(e, oc);
+  const ev = []; for (const [a, b] of e.trace) ev.push([a, 1], [b, -1]);
+  ev.sort((x, y) => x[0] - y[0] || x[1] - y[1]); let cur = 0, maxVoices = 0;
+  for (const [, k] of ev) { cur += k; maxVoices = Math.max(maxVoices, cur); }
+  const b = await oc.startRendering();
+  const d = b.getChannelData(0); let peak = 0, sum = 0, win = Math.floor(SR * 0.3), ws = 0, maxWin = 0;
+  for (let i = 0; i < d.length; i++) {
+    const v = d[i] * d[i]; peak = Math.max(peak, Math.abs(d[i])); sum += v; ws += v;
+    if (i >= win) ws -= d[i - win] * d[i - win];
+    if (i >= win) maxWin = Math.max(maxWin, ws / win);
+  }
+  return { peak, rms: Math.sqrt(sum / d.length), maxRms300: Math.sqrt(maxWin), maxVoices, poolEnd: 0 };
+}
+function seqFor(e, kind, s, bars, tension) {
+  const state = { speed: s, tension };
+  const song = kind === 'menu' ? P.menuSong(e) : P.runSong(e, state);
+  e.g.fade.gain.value = P.SCENE_GAIN[kind];
+  if (tension) P.setTension(e, true, 0);
+  const q = new P.Seq(song); q.start(0.05); q.run(bars * 16 * 15 / q.bpm + 0.05);
+  return song;
+}
+$('measure').onclick = async () => {
+  const L = []; const HARSH = [2000, 5000], PHONE = [250, 6000];
+  const row = (name, r, rb) => L.push(`${name.padEnd(30)} peak ${db(r.peak).padStart(6)} dBFS  rms300max ${db(r.maxRms300).padStart(6)}  rms ${db(r.rms).padStart(6)}` +
+    (rb ? `  | band rms300max ${db(rb.maxRms300).padStart(6)}` : '') + (r.maxVoices ? `  sources<=${r.maxVoices}` : ''));
+  $('log').textContent = 'çiziliyor...';
+  const oldC = (e) => { for (let i = 0; i < 10; i++) P.coinOld(e, 0.05 + i * 0.12, i); };
+  const newC = (e) => { const s = st(); for (let i = 0; i < 10; i++) { const k = P.coinNext(s, i * 0.12); P.coinNew(e, 0.05 + i * 0.12, k); } };
+  const magC = (e) => { const s = st(); for (let i = 0; i < 45; i++) { const k = P.coinNext(s, i / 30); if (k >= 0) P.coinNew(e, 0.05 + i / 30, k); } };
+  const jumps = (e) => { for (let i = 0; i < 4; i++) P.jump(e, 0.05 + i * 0.4); };
+  row('coin old x10', await render(1.6, oldC), await render(1.6, oldC, HARSH));
+  row('coin new x10', await render(1.6, newC), await render(1.6, newC, HARSH));
+  row('coin new magnet 30/s', await render(1.8, magC), await render(1.8, magC, HARSH));
+  row('coin new x10 (phone band)', await render(1.6, newC), await render(1.6, newC, PHONE));
+  row('jump x4 (reference sfx)', await render(1.8, jumps), await render(1.8, jumps, PHONE));
+  const menu = (e) => { seqFor(e, 'menu', 11, 8, false); };
+  row('menu theme 8 bars', await render(8 * 16 * 15 / 84 + 2, menu), await render(8 * 16 * 15 / 84 + 2, menu, PHONE));
+  for (const [s, ten] of [[11, false], [18, false], [24, false], [39, false], [39, true]]) {
+    const bpm = P.bpmFor(s), dur = 8 * 16 * 15 / bpm + 1.5;
+    const sc = (e) => { seqFor(e, 'run', s, 8, ten); };
+    row(`run tier ${P.tierFor(s)} ${bpm}bpm${ten ? ' +venom' : ''}`, await render(dur, sc), await render(dur, sc, PHONE));
+  }
+  const busy = (e) => { seqFor(e, 'run', 39, 8, true); magC(e); jumps(e); P.ST.missionSet(e, 1.0); };
+  row('busiest: T4+venom+magnet+jump+set', await render(8 * 16 * 15 / 128 + 1.5, busy));
+  const rec = (e) => P.ST.record(e, 0.05), clo = (e) => P.ST.closing(e, 0.05);
+  row('stinger record', await render(4.5, rec), await render(4.5, rec, PHONE));
+  row('stinger closing', await render(6.5, clo), await render(6.5, clo, PHONE));
+  row('stinger missionDone', await render(2.5, (e) => P.ST.missionDone(e, 0.05)));
+  $('log').textContent = L.join('\n');
+  window.__measure = L;
+};
+</script>
+</body>
+</html>

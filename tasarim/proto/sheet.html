@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>11.3 doku sayfası</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bangers&family=Baloo+2:wght@600;800&display=swap">
+<style>
+  body { margin: 0; background: #2a2d36; color: #fff; font: 14px system-ui; }
+  h2 { margin: 18px 12px 6px; font: 26px Bangers, sans-serif; letter-spacing: .05em; color: #ffd23a; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 12px; }
+  canvas { background: #000; max-width: 100%; height: auto; image-rendering: auto; }
+  .lbl { font-size: 12px; opacity: .7; }
+  .sw { display: inline-block; width: 92px; height: 54px; margin: 2px; border: 2px solid #000; font-size: 10px; color: #000; padding: 2px; box-sizing: border-box; vertical-align: top; }
+</style>
+</head>
+<body>
+<div id="out"></div>
+<script type="module">
+import * as T from './sehir-tex.js';
+import { PHASES, DISTRICT_PAL } from './tables.js';
+await document.fonts.load("64px 'Bangers'", 'ÖĞÜŞİ'); await document.fonts.load("800 16px 'Baloo 2'", 'ÖĞÜŞİ');
+const out = document.getElementById('out');
+function sec(title) { const h = document.createElement('h2'); h.textContent = title; out.appendChild(h); const r = document.createElement('div'); r.className = 'row'; out.appendChild(r); return r; }
+function cv(row, w, h, draw, show = 0.5, label = '') {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; c.style.width = (w * show) + 'px';
+  draw(c.getContext('2d'), w, h);
+  const box = document.createElement('div'); box.appendChild(c);
+  if (label) { const l = document.createElement('div'); l.className = 'lbl'; l.textContent = label; box.appendChild(l); }
+  row.appendChild(box); return c;
+}
+let r = sec('Midtown');
+cv(r, 1024, 1024, T.drawMidtownAtlas, 0.45, 'day atlas 1024');
+cv(r, 512, 512, T.drawMidtownGlow, 0.9, 'glow atlas 512');
+r = sec('Chinatown');
+cv(r, 1024, 1024, T.drawChinatownAtlas, 0.45, 'day');
+cv(r, 512, 512, T.drawChinatownGlow, 0.9, 'glow');
+r = sec('Neon Meydan');
+cv(r, 1024, 1024, T.drawNeonAtlas, 0.45, 'day');
+cv(r, 512, 512, T.drawNeonGlow, 0.9, 'glow');
+r = sec('Metro');
+cv(r, 1024, 512, T.drawTunnelAtlas, 0.45, 'tiles');
+cv(r, 512, 256, T.drawTunnelGlow, 0.9, 'glow');
+r = sec('Su + skyline maskesi');
+cv(r, 512, 512, (g) => { T.drawWater(g); g.globalCompositeOperation = 'multiply'; g.fillStyle = '#2f7fc0'; g.fillRect(0, 0, 512, 512); }, 0.6, 'water (tinted day)');
+cv(r, 2048, 512, (g) => T.drawSkylineMask(g), 0.45, 'skyline mask RGB');
+r = sec('Bugle atlası');
+cv(r, 1024, 1024, (g) => {
+  const name = 'OĞUZ';
+  const s = (i) => [(i % 2) * 512, Math.floor(i / 2) * 256, 512, 256];
+  T.drawBuglePage(g, ...s(0), { kicker: 'SON DAKİKA', headline: name + ' YİNE KAÇTI!', sub: 'Venom eli boş döndü · Sayfa 3' });
+  T.drawRecordBoard(g, ...s(1), name, 48210);
+  T.drawTopFive(g, ...s(2), [{ n: 'OĞUZ', s: 48210 }, { n: 'MERT', s: 31400 }, { n: 'ECE', s: 27755 }, { n: 'CAN', s: 9300 }, { n: 'OĞUZ', s: 8100 }], name);
+  T.drawBuglePage(g, ...s(3), { kicker: 'GECE BASKISI', headline: 'GECE YARISI KOŞUCUSU: ' + name, sub: 'Şehir uyuyor, o uyumuyor', photo: 'spidey' });
+  T.drawBuglePage(g, ...s(4), { kicker: 'CANLI', headline: name + ' REKORA KOŞUYOR!', sub: 'Jameson kahvesini döktü' });
+  T.drawBuglePage(g, ...s(5), { kicker: 'ÖZEL BASKI', headline: 'REKOR PARAMPARÇA!', sub: name + ' tarihe ağ attı', photo: 'spidey' });
+  T.drawBuglePage(g, ...s(6), { kicker: 'TEHLİKE', headline: 'VENOM ŞEHİRDE: KAÇIN!', sub: 'Uzmanlar: "Koşun" diyor', photo: 'venom' });
+  T.drawDistrictSign(g, ...s(7), 'NEON MEYDAN', 'IŞIKLAR SENİN İÇİN YANIYOR', '#ff2fa8', '#22e6ff');
+}, 0.6, 'bugle 1024 (8 slots)');
+cv(r, 512, 128, (g) => T.drawBlimpBanner(g, 12), 0.8, 'blimp banner');
+r = sec('Gün döngüsü (gökyüzü / ışık)');
+for (const p of PHASES) {
+  const d = document.createElement('div');
+  d.innerHTML = `<b>${p.name}</b><br>` + ['skyTop', 'skyMid', 'horizon', 'fog', 'far', 'near', 'hemiSky', 'hemiGround', 'sun', 'dotTint'].map((k) => `<span class="sw" style="background:#${p[k].toString(16).padStart(6, '0')}">${k}</span>`).join('');
+  r.appendChild(d);
+}
+r = sec('Bölge paletleri');
+for (const [id, pal] of Object.entries(DISTRICT_PAL)) {
+  const d = document.createElement('div');
+  d.innerHTML = `<b>${id}</b><br>` + Object.entries(pal).map(([k, v]) => `<span class="sw" style="background:#${v.toString(16).padStart(6, '0')}">${k}</span>`).join('');
+  r.appendChild(d);
+}
+</script>
+</body>
+</html>
