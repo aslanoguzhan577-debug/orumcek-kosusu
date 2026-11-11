@@ -1,36 +1,28 @@
-VERDICT: NEEDS FIXES
+# VERDICT: READY TO COMMIT
 
-Re-check after the fix pass. All four commands re-run, all green (last lines below). I fixed nothing.
+Re-check of the uncommitted second half of 11.3, after the fix pass that carried manager rulings A (wall dragon deleted), B (body emission = own colour × k, outline always ink) and C (worst window and extension share recomputed). Every defect of the previous verdict is resolved or now matches its ruling.
 
-## Really done
+## Previous defects
 
-- **B1** facade hook only switches night windows — `Object.keys(shader.uniforms) === 'uWinOn'`, no dot/halftone/fwidth path, toon chain intact (`tools/test-skills.mjs:1595-1597`, `:1603`, `:1607`; `src/config.js:479`, `src/city-tex.js:565`, `src/city.js:518`).
-- **B2** 16 hangers per bridge segment, bottom meets rail top within 0.02 m, top meets the main cable, one clamp each, railing beneath (`tools/test-skills.mjs:1881-1887`).
-- **B3** body emission = colour × the exact day/tunnel blend (`src/daycycle.js:24-26`, `tools/test-skills.mjs:1565-1566`), cleared on reset (`:1569`), non-emissive materials untouched (`:1572`), ink hulls retained (`src/obstacle-art.js:17,43,81,506`, `tools/test-skills.mjs:2184`).
-- **Task 11** as written: `ROW_HOME` verbatim (`src/city-logic.js:16`), both span ends masked, roll consumed, empty table places nothing and leaves the row due (`src/patterns.js:41,349,352-356`), goblin iff the zone starts in Neon, tunnel overlap skipped (`:399-405`), asserted at `tools/test-skills.mjs:230-269`.
-- **Fairness — the decisive check: PASS.** The `tools/check-patterns.mjs` diff adds only the home-district row rule, the district-derived zone kind and the tunnel-zone rule. No spacing, margin, speed or difficulty number was touched, loosened or special-cased; still 150 seeds × 38 424 m with "reaction margin >= 0.4 s everywhere", so district obstacles are proven passable.
-- Scenery: no colliders, nothing written to saves (no `setItem` in `src/city.js`), no per-frame `new` (`tools/test-skills.mjs:2075`), pools emptied and hidden on start/gameover/menu (`src/city-chinatown.js:81-84`, `src/city-dragon.js:136-137`), hidden outside Chinatown.
-- Budget, harness-computed: extension 12 calls / 18 616 tris / 3 932 160 B; stage 117 / 182 394 / 42 991 608 vs 150 / 250 000 / 60 MB.
+1. **BLOCKER, 996-tri K9 wall head asserted as correct** — resolved by ruling A, by deletion, not by a rewritten assert. Nothing of it remains: no geometry, no pool, no `CONFIG` key, no warm-up entry, no K9 triangle claim; three absence asserts guard it (`tools/test-skills.mjs:2039-2041`). The dance dragon is untouched — head/jaw/fan/pole, 12 rings, 4 outlines (`src/city-dragon.js:77-95`), and `tasarim/11-3-chinatown-ek.md` §3e + cut steps 1–2 are marked void with the old text kept as record.
+2. **BUG, unapproved body emission and deleted R7** — ruling B option (a): `src/daycycle.js:33` writes `color × (obstacleGlow × lerp(nightBlend, 1, tunnel))`; ink hull is never written or normalised (`tools/test-skills.mjs:1610` checks `0x15171c` at every phase and tunnel blend; `:1618` forbids `NIGHT.rim`/`ffb020`/`rims`/`outline…setHex` in the clock; `:1619` that no `rim` key survives). R7 and the exception lists are restored in `11-3-gun-dongusu.md` and `11-3-gorevler.md:41`, and the docs now describe exactly what the code does. My own numbers: sunset k 0.045, night/tunnel 0.18, half 0.099, no hue introduced.
+3. **POLISH, bugle frozen while paused** — `src/city.js:585-589` repaints outside `running`, called every frame from `src/main.js:217`; asserted for paused and menu at `:1771-1779`.
+4. **POLISH, dragon sweep proves rings only** — still not automated, and the fix pass says so instead of faking it: the harness stubs (`PieceGeometry.rotate/translate/scale`, `computeBoundingSphere`, `BoardRotation.setFromUnitVectors`) return no real bounds, and sweeping fabricated bounds would certify nothing. Production does call `computeBoundingSphere()` at `src/city-dragon.js:73`. I closed it by hand from the same CONFIG constants: head centre `|x| = fenceOuter(4.05) + sideOffset(1.0)`, wave ±0.2, largest head lateral reach ≈0.68 → innermost point 4.17 m, outside `fenceOuter` and far outside the 3.3 m lane edge; rings reach no closer than 4.03 m. So the property holds and K8/§3d are met; the brief's own assert list (`11-3-chinatown-ek.md:182`) asks for rings only, which exist. Residual risk is phone-only visual confirmation of head/jaw/fan.
+5. **POLISH, dead leftovers** — all three gone: no hull write, no `rims` in the day-cycle call (`src/city.js:706-712`), `tunnelLook.rim` removed, and `src/patterns.js` now derives the tunnel zone from `CONFIG.city.districts`/`loop` instead of hardcoded 3340/3700. One harmless remnant: `src/obstacle-art.js:506 rims` is now read only by the D4 assert.
 
-## Defects — 1-3 need an owner ruling, not a coder
+## Ten checks
 
-1. **blocker** tasks 9 and 10 absent; `src/city-life.js` does not exist (`tasarim/11-3-gorevler.md:171-189`). Task 9 sits on a real contradiction: 3 vents × 0.28 s × 3.4 s life = 36 concurrent puffs (`tasarim/11-3-canli-ayrintilar.md:53`) against a 24 pool and the assert at `:97`. Pick capacity/lifetime/cadence; task 10 follows.
-2. **blocker** the 20 000-tri extension share is unreachable as designed — 1-in-6 with cuts 2+3+4 measures ≈ 22 124 (`tasarim/ilerleme-11-3-kod.md:11`). The fit was bought with `wallEvery: 10` (`src/config.js:483`), past the ladder's 1-in-6 (`tasarim/11-3-chinatown-ek.md:157`) and the mandated `hash % 4` (`:152`), and pinned as if sanctioned at `tools/test-skills.mjs:1990`.
-3. **bug** the 996-tri wall head (`src/city-dragon.js:78-103`) reaches the cap only by dropping the mandated gold lip strip (`tasarim/11-3-chinatown-ek.md:65`, a box per K2 `:115`) plus nostrils, mouth lining, tongue, pearl, pomps, brow/cheek patches, lids and blue mane tips. K9 halves listed counts, it does not delete parts. Frozen as asserts at `tools/test-skills.mjs:1961,1971`.
-4. **polish** dead import `ROW_HOME`, `tools/test-skills.mjs:9`.
-5. **polish** determinism assert spans 20 km (`:227`) where `gorevler.md:198` asks 30 km.
+1. Commands as given: `node tools/test-skills.mjs` → `OK 1694508 checks`; `check-patterns` → `OK: every seed has a passable route; reaction margin >= 0.4 s everywhere.`; `check-quality` → `OK: adaptive resolution`; `test-audio` → `OK: audio lifecycle…peak music 36`. None refused.
+2. Stray files: only the four intended new sources (`bugle-logic.js`, `city-chinatown.js`, `city-dragon.js`, `city-life.js`). No scratch output.
+3. B1 dot-free facades: hook reduced to one uniform `uWinOn` (`src/city-tex.js:530`), painters and shading path asserted (`:1652-1664`); non-building dots (water, newsprint, sunburst) correctly left alone. B2 hangers: 16 per span with bottom on the railing within 0.02 m, top exactly on the cable chord, one 0.08 m `0x222222` clamp per hanger in a single InstancedMesh, cable endpoints join spans and land within 0.05 m of the real tower top 32.8 m (`tools/test-skills.mjs:1936-1964`), pool emptied at game over (`:2418`). B3 as in defect 2.
+4. Tasks 7–11 and K1–K10: unchanged from the previous pass except K9, which is now void by ruling A. Bounds exist before the run (`:1962`), 40 cable geometries at load (`:1964`), plans cached (`:2342-2343`), K6 banner midpoints and K10 no-collider/no-allocate hold.
+5. Fairness: `fits()` derives `d`/`len` from the same expressions `_placeRow` uses; only row type and event kind changed; `check-patterns.mjs` gained rules (C10 district row, tunnel zone) but no spacing or margin; the Chinatown empty-table case stays due and consumes `rng()` exactly as before. Nothing collidable, scenery clear of lanes.
+6. Reset: game over empties boards, clamps, weather, sparks and portals, restores Midtown/noon and the dry track, resets announcer once; menu shares the cleanup and dispose removes the listener.
+7. Performance: one ceiling, `src/config.js:481` = 150 calls / 250 000 tris / 60 MB; the old 105 / 140 000 / 38 MB survives nowhere in code. Computed worst window `?gun=1351600`: 123 calls / 173 650 tris / 43 515 896 B; call peak 123 first at `?gun=1600`; extension share after the wall removal 11 calls / 6 664 tris / 3 932 160 B, so the Chinatown cut steps are correctly not triggered. No dynamic lights, no run-time texture/material creation, no per-frame allocation.
+8. Saves: stale-mission and broken-JSON paths keep their set/level and never rewrite old saves; no new field gates a character or earned progress.
+9. Asserts are real: they recompute cable chords, tower tops, phase blends and the 120 800-window resource walk from source and CONFIG rather than echoing the implementation. The only non-certified claim is defect 4, declared openly.
+10. `tasarim/HARITA.md` corrected where the fix pass shifted lines: `test-skills.mjs` ink 1610, dots 1652-1664, banner phases 2090, celebrations 2228, resource cap 2285, worst-window 2320-2322, K6 2355; `city-dragon.js:103`, `city-chinatown.js:40`, `city-pieces.js:156`, `city.js` 642/670/727/734/760/775, `config.js:485`.
 
-Progress file is current and honest (`tasarim/ilerleme-11-3-kod.md:30,60-76`): per-km frequencies reported (rows 1.4/km, was 2.0; zones 0.5/km), own decisions listed.
+Files stayed unchanged throughout this re-check (newest in-scope edit 20:31, checked at 20:48). Not checked: on-screen appearance at night/in tunnel and the dragon head on a phone — both need a real device.
 
-## Only a human on a phone can judge
-
-`?gun=1500` bridge hangers read as attached, gulls beside you, no yellow frames; `?gun=2540` tunnel gate; `?gun=3500` Neon girder; `?gun=4300` Chinatown wall heads legible at speed, banners clear of the rails; `?gun=10300` rain/festival not testable, task 10 absent.
-
-## Last check lines
-
-- `node tools/test-skills.mjs` → `OK 323598 checks`
-- `node tools/check-patterns.mjs` → `OK: every seed has a passable route; reaction margin >= 0.4 s everywhere.`
-- `node tools/check-quality.mjs` → `OK: adaptive resolution`
-- `node tools/test-audio.mjs` → `OK: audio lifecycle, stingers and simulated 20-minute soak (8 cores, peak music 36)`
-
-No command refused. `tasarim/HARITA.md` corrected for `obstacle-art.js`, `patterns.js` task 11, `daycycle.js` emission, `city-logic.js` exports, `city-chinatown.js` head-only wall dragons, Palette row.
+Vault: new method note `knowledge/concepts/assert-bagimsizlik-ve-el-len-bosluk-denetimi.md` (how to tell an independent assert from a self-echoing one, and how to close a clearance gap by hand when the harness stubs cannot produce bounds). Receipt `spidermanoyun-denetci-11-3-kontrol-yeniden-2026-11-11`.

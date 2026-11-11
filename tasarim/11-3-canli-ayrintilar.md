@@ -94,5 +94,5 @@ Rain and snow never change fog distance, light or any gameplay value. With reduc
 1. `flockAt(0)` ≥ 300; no flock position lies in bridge, tunnel or neon, or within 100 m of a border, over 0 – 30000 m; consecutive flocks are at least 160 m apart.
 2. `weatherAt(1, s).kind` is null for every `s`; `weatherAt(2, 4300).kind === 'rain'`; `weatherAt(3, 4300).kind === 'snow'`; `k` is 0 outside 4200-4500 and 1 at 4350.
 3. `celebrationKind('night', 0) === 'fireworks'`, `('golden', 0) === 'tape'`, `('night', 1) === 'wait'`.
-4. Pools: a 20-minute simulated run (dt 1/60, speed curve of `patterns.js`) never asks for more than 12 birds, 24 puffs, 160 weather pieces, 120 sparks, and every pool is empty after `reset()`.
+4. Pools: a 20-minute simulated run (dt 1/60, speed curve of `patterns.js`) never asks for more than 12 birds, 39 puffs, 160 weather pieces, 120 sparks, and every pool is empty after `reset()`.
 5. Fireworks: 11 shells in 8 s, at most 3 alive at once.

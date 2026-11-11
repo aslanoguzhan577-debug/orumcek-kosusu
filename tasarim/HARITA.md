@@ -17,9 +17,9 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 | `src/config.js` | all tunables | 4 `CONFIG`; 6-37 core; 147-470 systems (372-395 `events`); 471 `city` tables; 481 single owner budget (150 / 250000 / 60000000 bytes); 482 banners; 483 dragon |
 | `src/events.js` | single `EventTarget` bus | 2-5 name contract (incl. `menu`, `newRecord {score}`, `districtEnter {id,lap}`, `recordPass {score}`); 10 bus; 12-14 `emit` |
 | `src/player.js` | lanes, jump, gravity, slide, hitbox, model state | 39 class; 107-119 actions; 214-300 update |
-| `src/world.js` | endless track segments, fence measurements and recycle callbacks | 24 `laneX`; 40-41 fence outer face/top; 100 class; 133 `onRecycle`; 149 `update`; 201 blob shadow |
+| `src/world.js` | endless track segments, shared track material, fence measurements and recycle callbacks | 24 `laneX`; 40-41 fence outer face/top; 100 class; 110 `trackMaterial`; 134 `onRecycle`; 150 `update`; 202 blob shadow |
 | `src/obstacles.js` | obstacle/coin/pickup system, row groups, pits, patches, event hits | 126 class; 149-160 hooks; 264 pickups; 305 event hits; 411 floor; 437 collide; 457-460 pit-only surf/drop exemption; 528 draw |
-| `src/obstacle-art.js` | shared obstacle art with merged ink hulls and a rim pass; coins keep their rim | 17 `OUTLINE_T`; 40 ShapeBuilder; 43 hull list; 81 merged hull geometry; 474 createObstacleArt; 480 kinds; 506 obstacle rim; 508 addRow |
+| `src/obstacle-art.js` | shared obstacle art with merged ink hulls kept at their own colour (no day-cycle writes); coins keep their rim | 17 `OUTLINE_T`; 40 ShapeBuilder; 43 hull list; 81 merged hull geometry; 474 createObstacleArt; 476 ink hull material; 480 kinds; 505 obstacleMaterial; 506 `rims` = hull material + its constant base; 508 addRow |
 | `src/event-logic.js` | pure event row/timing/reward maths | 8 rAt; 9 floorW; 11 warnAt; 12 restAt; 13 doubleChance; 16 nextRow; 34 nearestSafe; 43 rewardFor |
 | `src/patterns.js` | pure seeded track generator | 49 `createRng`; 66-121 speed/difficulty/length; 128 `descLanes`; 136 `girderOffset`; 157 class; 192 `_block`; 330-342 extras; 349 `_row`; 352-356 `ROW_HOME` district mask; 373 `_placeRow`; 399 `_eventZone`; 402 district event kind; 41 imports `districtAt`/`loopMetre`/`ROW_HOME` |
 | `src/road-events.js` | manual Venom event director, lifecycle, hits/sense/rewards; optional art injected | 11 constructor; 23 reset; 37 calm; 43 start; 62 update; 85 volley; 139 sense; 152 reward; 161 end; 172 hide |
@@ -31,16 +31,17 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 | `src/xray.js` | player silhouette through obstacles | 35 `createXray`; 14 render order |
 | `src/lights.js` | hemisphere + one directional sun, no shadow maps | 7-15 |
 | `src/quality.js` | adaptive pixel ratio | 9 `createAdaptiveRatio`; 28 `tick` |
-| `src/warmup.js` | precompile/upload city variants, pieces, boards and clamp pool | 13 warmUp; 35 city geometry; 44 dress/portal geometry; 62 board counts; 66 Chinatown; 69 bridge clamps |
-| `src/city-pieces.js` | district recipes, shared painters, glyph/rope anchors and bridge clamp anchors | 14 fin; 57 gate; 81 ctDress; 108 ctFest; 117 cableY (tower top 32.8); 128 clamps; 320 createCityPieces |
-| `src/city-boards.js` | fixed atlas pools with swap-remove; optional shared geometry/material for tassels; top-edge banner sway | 5 createBoards; 24 take; 34 release; 44 update; 66 sway; curve hook chains via existing setter |
-| `src/city-chinatown.js` | seeded sign/banner/tassel pools, overhead banners and the wall-dragon head pool; head-only, one per `CONFIG.city.dragon.wallEvery` facades (`57`) — the value is 10 in `config.js:483`, where `11-3-chinatown-ek.md:152` mandates `% 4` and its cut order `:157` allows only 6 | 10 hash; 15 signCharacter; 26 createChinatown; 34 wall head pool; 39 vertical banner recipe; 64 vertical banner position; 72 clear; 86 meshes (includes wall); 87 update; 94 dispose |
-| `src/city-dragon.js` | code-drawn dancing head/jaw/fan/poles, shared scale rings and cached INK hulls, plus the half-detail wall head | 9 palette; 14 dragonPose; 22 geometry; 78 wallGeometry; 108 load-time pools/materials; 134 dance update; 164 clear |
-| `src/daycycle.js` | light/sky clock; facade window switch; rim tint blend and obstacle emission | 5 createDayCycle; 10 update; 20 window uniform; 23 rims mixed toward `CONFIG.city.rim`; 25 obstacle emission `obstacleGlow × lerp(p.rim / NIGHT.rim, 1, t)`; reusable phase/disc storage |
-| `src/city-tex.js` | node-safe painters; building patterns have no dots; facade hook only switches windows | 6 rng; 224/228 Midtown; 319/320 Chinatown; 380/385 Neon; 404 tunnel; 435 skyline mask; 477 sky shaders; 530 facadeHook; 546 water; 565-655 page helpers; 657 paintBugle; 687 tabela; 712 shore; 734 Chinese strokes; 745 character atlas; 767 horizontal banner; 797 vertical banner; 802 scales |
+| `src/warmup.js` | load-time upload/compile of city variants/pieces/boards, Chinatown, life and clamps | 13 warmUp; 35 chunks; 62 boards; 66 Chinatown; 69 life; 72 clamps |
+| `src/city-pieces.js` | district recipes, shared bird/puff/blimp geometry, normal/festival lanterns and K6 banner/rope anchors, bridge clamps | 13 fin; 32 birdGeometry; 42 puffGeometry; 44 blimp; 55 blimpBanner; 82 lanternString; 112 ctDress; 145 cableY; 156 clamps; 348 cached pieces |
+| `src/city-boards.js` | fixed swap-remove board ownership and top-edge banner sway; wall-only matrix/UV options removed | 5 createBoards; 23 take; 33 release; 42 update |
+| `src/city-chinatown.js` | seeded signs/banners, facade banners and tassels; dance dragon only, no wall objects/pools | 26 createChinatown; 32 dragon; 40 assign; 83 warm-up meshes |
+| `src/city-dragon.js` | full dance head/jaw/fan geometry and fixed dance-only pools; wall dragons removed by ruling A | 23 dragonGeometry; 77 createDragon; 103 update |
+| `src/daycycle.js` | shared sky/light clock, wet track sheen, rain facade glow and own-colour obstacle emission; no hull writes | 5 createDayCycle; 23 facade glow; 27 sheen; 32 coin; 33 obstacle k=0..0.18; 34 scenery glow |
+| `src/city-tex.js` | node-safe facade/window/sky/news/Chinese painters (no building dots), blimp glyph strip and dragon scales | 530 facadeHook; 657 paintBugle; 745 Chinese atlas; 802 drawBlimpGlyphs; 816 drawDragonScales |
+| `src/city-life.js` | fixed bird/steam/weather/spark pools and blimp; one city updater, record-event celebration, reduced motion | 12 createCityLife; 35 weather/sparks; 71 hashed weather respawn; 80 record listener; 88 reset; 101 update; 194 tunnel wait; 207 fireworks/Goblin; 226 tape; 237 rain/snow; 258 dispose |
 | `src/bugle-logic.js` | unchanged pure headline catalogue and chooser with self-check | 8 HEADLINES; 65 SLOT; 72 buildSlots; 96 bugleDeck; 110 heroSlot; 112 recordPassed |
-| `src/city-logic.js` | pure district/day/dressing logic, obstacle home masks, shared lantern lift and anchor capacities | 5 lanternLift; 6 ANCHOR_COUNTS; 13 loopMetre; 14 loopOf; 15 segCentre; 16 ROW_HOME; 18 districtInfo; 25 districtAt; 83 dressFor; 106 districtEvent; 112 createAnnouncer |
-| `src/city.js` | fixed city chunks, district plans, atlases, news and one bridge clamp pool | 280 buildings; 470 initCity; 500 Chinese canvases; 517 shared window-only facade uniforms; 530 clamp pool; 634 assign; 689 Chinatown; 703 updateScenery; 715 reset |
+| `src/city-logic.js` | pure route/day/dress/announcer, loop flavours/weather/celebration, ROW_HOME, lantern clearance and flock placement | 5 lanternLift; 6 ANCHOR_COUNTS; 16 ROW_HOME; 17 cityHash; 23 loopFlavor; 27 weatherAt; 33 celebrationKind; 35 flockAt; 48 districtInfo; 136 districtEvent |
+| `src/city.js` | fixed chunks, cached normal/festival plans, atlases/news/clamps, Chinatown and life; one final game system | 471 initCity; 501 blimp atlas; 603 planAt; 624 festival plans; 642 assign; 670 clamp take; 699 life; 714 updateScenery; 727 reset; 748 system; 776 dry/day restoration; 778 life disposal |
 | `src/fx.js` | event-driven comic VFX, own rAF | 478 `initFx`; 662-1404 handlers; 247-267 words |
 | `src/vfxCore.js` | pooled toon particles, stickers, screen panels | 224 `ToonPool`; 451 `initVfx`; 560-663 spawners; 691-729 screen/impact |
 | `src/pickup-art.js` | 3D pickup builders and 2D HUD power icons | 15 icon kinds; 811 `drawPowerIcon`; 959-2040 builders |
@@ -102,7 +103,7 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 | `tools/serve.py` | local no-cache server on port 5173 | 5-12 |
 | `tools/check-patterns.mjs` | fairness/solvability invariant test | 1-20 contract; 22-23 imports |
 | `tools/check-quality.mjs` | adaptive-resolution assertion script | 1-23 |
-| `tools/test-skills.mjs` | powers/missions/audio and11.3/11.5 assertions | 11 Bugle logic import; 134 deck order; 1524 B3 emission; 1532 Bugle catalogue copied byte-for-byte; 1552-1554 shared facade window U and no dot path; 1840-1854 B2 attachments/clamps; 1930 wall-dragon seeding; 1952 scenery hidden outside Chinatown; 2023-2024 Chinatown extension and stage budget; 2112 deleted obstacle hulls |
+| `tools/test-skills.mjs` | powers/audio/city fairness, life/weather/celebration soak, festival K6 cadence and resource bounds | 25 task10 pure rules; 250 deterministic150 seeds x30km; 1610 ink; 1652-1664 no building dots; 2090 independent banner phases; 2177 life soak; 2228 celebrations; 2285 resource cap; 2320-2322 403-loop worst; 2355 K6 |
 | `tools/test-audio.mjs` | fake `AudioContext` lifecycle + music/stinger/leak soak; imported by `test-skills.mjs`, also runnable alone | 24-79 fake context; 81-95 pump + cap asserts; 97-202 behaviour asserts |
 | `tools/test-ui-hud-qa.mjs` | DOM-mocked HUD/market QA for 8 heroes | 1-2 |
 | `tools/test-hero-specials-qa.mjs` | simulation QA of 8 specials | 1-2 |
@@ -133,7 +134,7 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 11. Warm-up (240) compiles/uploads behind the loader, including the explicit city textures.
 
 Frame loop (`main.js:209-237`): dt capped at CONFIG.dtCap (211); quality tick (213);
-game update (216); city.updateIdle(dt) (217, signature cadence in menu/over, paused/run untouched); curve/chaser bank (219-220); camera unless paused (221); xray (222);
+game update (216); city.updateIdle(dt) (217, signature cadence in menu/over/paused, running untouched; city.js:585); curve/chaser bank (219-220); camera unless paused (221); xray (222);
 shadow (224-234); render (236).
 
 `game.update` order (`game.js:182-227`):
@@ -156,9 +157,10 @@ Audio auto-listens to **every** `SOUNDS` key except `start` and `i_*` (`audio.js
 | `start` | game.js:101 (first), :108 (restart) | `{restart}` | audio.js:564; chaser.js:59; shop.js:204; vfxCore.js:457; ui.js:612; main.js:188 |
 | `pause` | game.js:134 | `{}` | audio.js:574; missions.js:196 |
 | `resume` | game.js:140 | `{}` | audio.js:581; main.js:192 |
-| `recordPass` | city.js:741 | `{score}`, once per run crossing an existing best | none yet; task 10 celebration |
-| `districtEnter` | city.js:711 via city-logic.js:110 createAnnouncer | `{id, lap}`, once at start, then 60 m ahead | 11.2 may listen; no polling |
-| `menu` | game.js:117 (`toMenu`) | none | city.js:747 (shared day/board/clamp cleanup); audio.js:117 (clears `paused`, resumes context); tools/test-skills.mjs:988. missions.js:198's comment "toMenu emits no event" is stale |
+| `flock` | city-life.js:87 on one pigeon take-off | `{position}` (preallocated) | no sound listener |
+| `recordPass` | city.js:753 | `{score}`, once per run crossing an existing best | city-life.js:80; fireworks at night, tape by day, queued inside tunnel; no new sound |
+| `districtEnter` | city.js:751 via city-logic.js:142 createAnnouncer | `{id, lap}`, once at start, then 60 m ahead | 11.2 may listen; no polling |
+| `menu` | game.js:117 (`toMenu`) | none | city.js:760 (shared day/board/clamp/life/sheen cleanup); audio.js:117 (clears `paused`, resumes context); tools/test-skills.mjs:1024. missions.js:198's comment "toMenu emits no event" is stale |
 | `gameover` | game.js:147 | `{score, coins, distance}` | audio auto (SOUNDS `gameover`, skipped while music is on: audio.js:548); music.js:487 (closing phrase); missions.js:195; shop.js:219; vfxCore.js:456; ui.js:606; road-events.js:17 (abort/reset) |
 | `newRecord` | ui.js:608 (only when the run beat the best) | `{score}` | music.js:495 (record fanfare) |
 | `intro` | intro.js:75 start, :116 end (`skipped?`), :132 each phase | `{phase}` / `{phase:'end',skipped}` | audio.js:596; fx.js:1322; main.js:192 |
@@ -336,7 +338,7 @@ empty masked table places no row and leaves it due, consuming the roll. Endless 
 gap/gate combos, with a full 0.6 s run-up for each partner. `_placeRow` (373) places all-lane
 jump/slide rows or a parked two-lane girder, with two lane-change windows to its open outer lane.
 `_eventZone` (399) picks `goblin` only in Neon Meydan and `venom` elsewhere from 1200 m (`402`),
-skips any zone overlapping the tunnel range, keeps all lanes empty, suppresses
+skips any zone overlapping the tunnel range read from `CONFIG.city.districts` (`404-406`), keeps all lanes empty, suppresses
 pickups before zones and rows for 120 m afterwards. Zone hooks remain no-ops until task 13.
 
 `tools/check-patterns.mjs` checks C1-C14: lane-expanded cells, coin profiles, gap jump timing
@@ -505,7 +507,7 @@ Power-ups without a `SOUNDS` entry (bugle, spring, swing, decoy, wall, tracer, f
 
 ## 11 World and look
 
-11.3 pure logic: `city-logic.js` reads `CONFIG.city` (config.js:471), preserving the approved 6000 m route and phase/disc tables. `districtEvent` announces 60 m ahead; negative distances stay Midtown. City runs last as a game system; reset clears the announcer and returns the day clock to zero; reset re-dresses fixed segments after resetting Bugle counters; start refreshes the signature and shifted scene before intro. Gameover empties all three board pools, hides portals/dress/shell and restores Midtown/noon without changing gameplay distance or score (`city.js:690-705`). Pause freezes the scene and Bugle atlas.
+11.3 pure logic: `city-logic.js` reads `CONFIG.city` (config.js:471), preserving the 6000 m route and phase/disc tables. `districtEvent` announces 60 m ahead; negative distances stay Midtown. City runs last; reset clears news/life/announcer and restores the day clock; start refreshes news and shifted scenery before intro. Gameover/menu clear pools/portals/dress/shell, restore Midtown/noon and dry track, without changing gameplay distance or score (`city.js:727`, `:734`). Pause freezes the scene and particle clocks; Bugle still checks its signature every repaintEvery seconds (`city.js:585-589`). Loop2 has rain/festival, loop3 snow, later weather uses the prescribed hash and even-loop festival (`city-logic.js:23`).
 
 
 | Concern | Facts |
@@ -515,17 +517,17 @@ Power-ups without a `SOUNDS` entry (bugle, spring, swing, decoy, wall, tracer, f
 | Segments | 13 segments × 20 m (`config.js:104-112`); 96 m kept behind |
 | Recycle | `onRecycle(fn)` returns unsubscribe (132-138); `reset` re-fires all (141-145); `update` scrolls and recycles (147-163) |
 | Blob shadow | canvas radial texture (182-198), factory (199) |
-| City | 300 chunk specs/plans cached at load; assign (city.js:635) swaps geometry, board/clamp instances and portal ownership. Only chunks mirror; bridge/tunnel hide chunks. Full far dress remains under the raised budget |
+| City | 300 chunk specs plus300 normal/300 festival plans cached at load; assign (city.js:642) swaps geometry, board/clamp instances and portal ownership. Only chunks mirror; bridge/tunnel hide chunks. K6 ropes/banners follow normal/festival lantern rows. Full far dress remains |
 | Skyline | one 700 × 175 shader plane (`city.js:447`), approved RGB skyline/shore masks; curve shader wrapper still chains |
-| City API | skyline, variants, textures, atlases, facades, dayCycle, cityShift, pieces, materials, boards, portals, chinatown, bridgeClamps, updateIdle, dispose (city.js:749); dispose removes pooled meshes/hooks and fixed city children |
+| City API | skyline, variants, textures, atlases, facades, dayCycle, cityShift, pieces, materials, boards, portals, chinatown, bridgeClamps, life, updateIdle, dispose (city.js:765); dispose restores dry/day state then removes pooled meshes/listeners and fixed city children (775) |
 | Debug city | `?gun=<metres>` rounds to a 20 m city-only shift; score, generator and world distance stay unchanged |
 | Lighting | hemisphere + one directional sun, no shadow maps (`lights.js:1-2, 7-15`) |
 | Curved world | every material's shader patched (48-70); bend samples 36 × 6 m (24-26); `curve.update` 126; `curve.offsetAt` 157 |
 | Camera | follow, portrait fit, blocked-follow, shot blend, kick/shake (`camera.js:24-171`) |
 | X-ray | shared shader, `GreaterDepth`, player render group 10 (`xray.js:6-14, 35-69`) |
 | Resolution | adaptive steps `[2,1.5,1.25,1]` (`config.js:115-134`); algorithm `quality.js:9-49` |
-| Warm-up | fonts before city paint (`main.js:181`); all chunk/facade/dress/portal geometries and board shader instances, sky and all 12 explicit city textures (including non-mipped Bugle atlas) (`warmup.js:13`) |
-| Palette | approved five-phase sky/fog/scenery table in `CONFIG.city.phase` (`config.js:492`), fog near ≥42/far ≥155; toon shading `toon.js:20-67`; obstacle bodies glow in their own colour with day/tunnel blend (`daycycle.js:25`), rims shift to `CONFIG.city.rim` (`daycycle.js:23`), ink hulls stay black (`obstacle-art.js:81`), other gameplay materials retain their palette |
+| Warm-up | fonts before city paint (`main.js:181`); all chunk/facade/dress/portal geometries and board shader instances, sky and all explicit city textures, every life geometry and preallocated bird/weather/spark instanceColor (`warmup.js:13`, `city-life.js:31`) |
+| Palette | five-phase sky/fog/scenery CONFIG table (config.js:504), fog near >=42/far >=155; original obstacle ink0x15171c stays constant; body emissive = own colour times0.18 times linear nightBlend/tunnel blend (daycycle.js:33, obstacle-art.js:505, city.js:710). Track keeps specified rain/snow sheen (daycycle.js:27) |
 
 ## 12 VFX and art kits
 
@@ -539,7 +541,7 @@ Power-ups without a `SOUNDS` entry (bugle, spring, swing, decoy, wall, tracer, f
 | Ghost/shatter | `ghostLayer` 797, `ghostMaterial` 850, `shatterObstacle` 884, compatibility camera/light helpers 906-935 |
 | `pickup-art.js` | icon switch 811-840; builders: web 247, iron 251, sense 959, magnet 994, bugle 1121, spring 1156, swing 1238, decoy 1788, wall 1821, tracer 1854; props: dummy 1914, drone 1946, wall panel 1978, ribbon 2006 |
 | `obstacle-art.js` | one InstancedMesh per obstacle kind plus its merged ink hull; coins and obstacle rims both draw. ShapeBuilder40; createObstacleArt474; original capacities24/24/24/24/64/16/256; row caps3/3/3/3/3/3/3/6/3 |
-| Obstacle art API | `begin/add(kind,x,y,z,colorIndex)/addRow(type,z,len,open,tau)/addPatch(z,len)/addCoin/end(time)` 505-553; gap/patch z scale, gate CONFIG smoothstep, girder high pivot + static pads/arrows; all built at load and included in warm-up's scene traversal |
+| Obstacle art API | `begin/add(kind,x,y,z,colorIndex)/addRow(type,z,len,open,tau)/addPatch(z,len)/addCoin/end(time)` 504-552; gap/patch z scale, gate CONFIG smoothstep, girder high pivot + static pads/arrows; all built at load and included in warm-up's scene traversal |
 | `toon.js` | 3-step gradient 20-29, soft vinyl ramp 34-49, `toonMaterial` 58, outline shell 119-171, canvas texture 176, lathe/sphere grids 220-271, `flatPicture` 277, `smoothLathe` 349, `facePatch` 373, `roundCube`/`boxify` 414-438, `TubeShape` 477, `PoseBlend` 561 |
 | `heroKit.js` | merged sculpted extras with hidden swatch UVs 1-7, `attach` 89, `rangeToggle` 117, `headPoint`/`headRing` 143-168 |
 | Models | every hero is a Funko-style vinyl figure on `createSpiderCharacter`; `spiderman.js:558`; Iron Spider adds four arms `ironspider.js:456`; Venom `venom.js:399`; skins listed in §1 |
@@ -599,7 +601,7 @@ Defaults: shop starts with 250 coins and 10 upgrade levels at 0 (`shop.js:32-40`
 | intro | 397-429 | 3 swings, phase times, swing geometry, Venom lag, reverse camera, fog |
 | seed | 432 | null = random run, number = same track |
 | patterns | 433-470 | safe start 60, block times, difficulty curve, endless knobs, train start, reaction limits; `rows` schedule (461-469) |
-| city | 471 onwards | 6000 m loop, six districts,60 m announcements, phase/disc tables, tunnel floors, no building dot fields, bridge rail/clamp/towerTop32.8, obstacleGlow0.18, single150/250000/60000000 budget (481), board/life pool capacities |
+| city | 471 onwards | 6000m loop, six districts,60m announcements, no building dots, bridge rail/clamp/towerTop32.8, single150/250000/60000000 budget (481), birds12/steam39/weather160/sparks120 and exact life/weather/celebration constants (485-499); obstacleGlow 0.18 / phase.nightBlend (no rim controls) |
 
 ## 15 Tools and tests
 
@@ -610,7 +612,7 @@ No `package.json` and no `node_modules` at the repo root (root glob). Browser im
 | `python tools/serve.py` | serves the game at `http://localhost:5173` with `Cache-Control: no-store` (serve.py:1-12) |
 | `node tools/check-patterns.mjs [seeds] [metres] [marginSeeds]` | independent solvability model, 20-minute speed curve, reaction margin, static/train overlap, coin placement, pool capacity (1-20) |
 | `node tools/check-quality.mjs` | adaptive ratio steps down/up, locks, hidden-tab gaps, failed probe backoff (1-23) |
-| `node tools/test-skills.mjs` | powers/audio/fairness; city route/clock/events, Bugle, exact B3 colour-times-k emission (1565) and retained ink hulls (2184), shared window U/no building dots (1596), same facade set at0/400m (2018), board/roof pool walk, bridge attachment/clamp/tower tolerances, budget and station/portal/reset |
+| `node tools/test-skills.mjs` | powers/audio/fairness; retuned tunnel event boundaries (293), frozen body-colour/hull guards and exact R7 emission checks (1599-1621), paused Bugle cadence/upload (1763-1769), route/clock/events/news/no building dots, facade/board/bridge/station/reset checks; actual20-minute bird/steam/weather/spark soak,11-shell/Goblin/tunnel/reduced-motion checks, normal/festival K6 cadence,403-loop computed budget scan and computed-worst assert (2320). Wall-dragon absence is asserted; dragon clearance still covers rings only |
 | `node tools/test-audio.mjs` | audio only: a fake `AudioContext` proves gesture gating, hidden-tab silence, per-bus mute, ladder/coalescing behaviour, stinger timing, voice caps and a simulated 20-minute leak soak (1-208) |
 | `node tools/test-ui-hud-qa.mjs` | HUD/market/shop integration for 8 heroes with a DOM mock (1-2) |
 | `node tools/test-hero-specials-qa.mjs` | simulation/verification of 8 hero specials with DOM mock (1-2) |

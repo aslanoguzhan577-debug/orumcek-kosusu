@@ -7,7 +7,7 @@ Oğuzhan'ın 2026-11-11 isteği; tasarım yöneticinin. Chinatown'un bugünkü t
 - **Hiçbiri engel değil.** Chinatown'a yeni engel konmaz (Oğuzhan'ın onayladığı varsayılan). Ejderha, flama, tabela yalnız görüntüdür: çarpışma yok, `tools/check-patterns.mjs` değişmez.
 - Flamalar ve ejderha, oyuncunun en yüksek zıplama/uçuş tepesinin **en az 1 m üstünde** ya da korkuluk ötesindedir. Hiçbir zaman bir şeridin, bir engelin, bir altının ya da bir uyarının önünü kapatmaz.
 - Yalnız Chinatown'da görünür; başka bölgede `visible = false` (sıfır çizim çağrısı). Yükte bir kez kurulur, ısınmada (warm-up) derlenir. Koşu sırasında doku/malzeme üretimi yok, kare başına bellek ayırma yok.
-- Bütçe (Oğuzhan'ın kararıyla genişletildi; hedef iPhone 11 ve üstü: 150 çizim çağrısı, 250k üçgen, +60 MB doku) aşılmaz. Bu ekin payı: **en çok 12 çizim çağrısı, 20k üçgen, 4 MB doku.** Sığmazsa aşağıdaki "kesme sırası"na uyulur ve ilerleme dosyasına yazılır.
+- Bütçe (Oğuzhan'ın kararıyla genişletildi; hedef iPhone 11 ve üstü: 150 çizim çağrısı, 250k üçgen, +60 MB doku) aşılmaz. Bu ekin payı: **en çok 14 çizim çağrısı, 32k üçgen, 4 MB doku.** Sığmazsa aşağıdaki "kesme sırası"na uyulur ve ilerleme dosyasına yazılır.
 
 ## 1. Tabelalardaki küçük kareler: çince karakterler
 
@@ -73,7 +73,7 @@ Referans: Oğuzhan'ın yolladığı ejderha dansı fotoğrafları. Oyunun diğer
 - **Yele:** kafanın arkasında yelpaze gibi açılan 10 yassı dilim (yassılaştırılmış koni, 0,45 boy). Altın ve turuncu sırayla, her birinin ucunda küçük mavi yama.
 - **Kaş/yanak yamaları:** gözlerin üstünde ve yanaklarda mavi yassı kubbeler (küre 0,18, z ekseninde 0,3 basık), beyaz 0,02 kenarlı.
 - **Sakal:** çenenin altından sarkan 7 ince krem koni (r 0,03, boy 0,35), hafif arkaya yatık.
-- Üçgen hedefi: dans ejderhasının kafası ≤ 3.000, duvar kafası (aşağıda) ≤ 1.000 (900'dü; K2 elipsoitleri ve K9 parçalarıyla en az 916 çıktığı için Oğuzhan'ın onayıyla yükseltildi).
+- Üçgen hedefi: dans ejderhasının kafası ≤ 3.000, duvar kafası (aşağıda) ≤ 1.400. K9'un bütün parçaları bulunur, hiçbiri silinmez; üçgeni azaltan tek şey K9'daki düşük segment sayılarıdır. (Sınır önce 900'dü, sonra 1.000'e çıktı; zorunlu parçalarla tutmadığı için yönetici 1.400 yaptı.)
 
 ### 3c. Gövde ve kuyruk
 
@@ -94,7 +94,11 @@ Referans: Oğuzhan'ın yolladığı ejderha dansı fotoğrafları. Oyunun diğer
 - Yol virajlıysa yerleşim, kod tabanının şehir parçalarını yola nasıl oturttuğuna (`curve` / `rAt`) göre yapılır.
 - Görünürlük: oyuncu dansın 60 m önüne gelince görünür olur, 15 m arkasında kalınca gizlenir.
 
-### 3e. Duvarda asılı ejderhalar (ara sıra)
+### 3e. Duvarda asılı ejderhalar: KALDIRILDI (yönetici, 2026-11-11)
+
+Bütün parçalarıyla kafa 3.652 üçgen tuttu; ne 900'e, ne 1.000'e, ne 1.400'e sığdı. Parça silerek sığdırma denemeleri de ejderhayı bozdu. Ejderha maskotunu dans ejderhası taşır. 3e, K9 ve kesme sırasının 1-2. adımları geçersizdir. Kod, CONFIG ve testlerde duvar ejderhasından hiçbir şey kalmaz. Aşağıdaki eski metin yalnızca kayıt için duruyor.
+
+### (eski) 3e. Duvarda asılı ejderhalar (ara sıra)
 
 - Chinatown binalarının yaklaşık her 4'ünde 1'inde, yola bakan cephede, ikinci kat hizasında, duvara asılı bir ejderha kafası. Hafif öne eğik, ağzı 20° açık, hareketsiz.
 - Arkasından cephe boyunca S biçiminde sarkan **4 halkalık** kısa gövde. Gövde yine kuyruk yelpazesiyle biter.
@@ -146,7 +150,14 @@ Flama dokusu ayrı bir canvas, 1024 × 128: kırmızı zemin, 0,06 m'ye karşıl
 - Kafa koşucuya doğru bakar (−ileri yön); gövde ileriye doğru uzanır. Oyuncu önce yüzü, sonra gövdeyi görür.
 - Halkalar arası 0,75 m. Halka i'nin ekseni, i−1'in konumuna bakar (i = 0'ın bir öncekisi kafanın arka noktasıdır).
 
-**K9. Duvar ejderhası.** Ana kafanın yarı detaylı sürümü (göz 2 ama iris+bebek tek disk, boynuz dalsız, 4+4 diş, 4 sakal, 6 yele dilimi), ölçek 0,7.
+**K9. Duvar ejderhası.** Ana kafanın yarı detaylı sürümü, ölçek 0,7. Ana kafayla aynı parçalar, şu farklarla:
+- göz 2, ama iris ve bebek tek disk;
+- boynuz dalsız;
+- 4+4 diş, 4 sakal, 6 yele dilimi.
+
+Dudak şeridi, burun delikleri, dil, inci, ponponlar, yamalar, göz kapakları ve yele uçları **kalır**.
+
+Düşük segment: bütün küre ve elipsoitler `SphereGeometry(r, 10, 8)`, silindirler 6 kenar, torus `(r, tüp, 4, 8)`, koniler 4 kenar.
 - 4 halka (ölçek 0,7) cephe düzleminde, kafaya göre (cephe boyunca, aşağı): (0,8, −0,3), (1,5, −0,1), (2,2, −0,4), (2,9, −0,2) m.
 - Kuyruk yelpazesi (3,5, −0,3) m'de.
 - Seçim: `hash % 4 === 0` olan binalar, ikinci kat hizası = binanın tabanından 4,5 m.
@@ -155,6 +166,7 @@ Flama dokusu ayrı bir canvas, 1024 × 128: kırmızı zemin, 0,06 m'ye karşıl
 
 ## Kesme sırası (bütçeye sığmazsa, bu sırayla)
 
+0. Kesme sırasına yalnız sahnenin toplamı tavanı (150 çağrı / 250k üçgen / +60 MB) aşarsa geçilir. Ekin kendi payını aşmak tek başına kesme sebebi değildir; yalnız ilerleme dosyasına yazılır.
 1. Duvar ejderhalarının sıklığı 4'te 1'den 6'da 1'e.
 2. Duvar ejderhalarının gövdesi kalkar, yalnız kafa kalır.
 3. Dans ejderhasının halka sayısı 12'den 9'a.

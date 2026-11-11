@@ -11,7 +11,7 @@ Line numbers in `src/` come from `HARITA.md` and drift while 11.5 is being coded
 ## 0 Shared rules for every task
 
 - Nothing is created during a run: every texture, material, geometry, mesh and instanced pool is built in `initCity` (behind the loader) and reaches `warmup.js`. In a run only uniforms, colours, `visible`, instance matrices / counts and small UV buffers change.
-- Never write a gameplay material except the three exceptions of `11-3-gun-dongusu.md` §1 (coin `emissiveIntensity`, obstacle outline `color`, track `emissive` for wet rails).
+- Never write a gameplay material except the three exceptions of `11-3-gun-dongusu.md` §1 (coin `emissiveIntensity`, obstacle body `emissive` = own colour × k (outline always ink), track `emissive` for wet rails).
 - Scenery never calls the generator's RNG. Placement hash: `hash(n) = fract(sin(n * 127.1) * 43758.5453)`.
 - No scenic geometry inside `|x| < CONFIG.city.clearX` (4.6 m) below `CONFIG.city.clearY` (9.5 m). One deliberate exception: the tunnel haunches (`SEC`, kit 278) slope into the box beyond the outer lanes; over the outer lane centre (x ±2.2, `laneWidth`) the roof is at 9.8 m, 1 m above the highest body top (8.8 m), and over x ±2.7 at 9.47 m.
 - New events: `districtEnter { id, lap }`, `recordPass { score }`, `flock { position }`. None of them is a `SOUNDS` key, so audio stays silent (`audio.js` auto-listens only to `SOUNDS` keys).
@@ -30,7 +30,7 @@ city: {
   clearX: 4.6, clearY: 9.5,                       // m: empty box over the lanes
   texScale: 1,                                    // 0.5 = low-memory textures (11-3-kaplamalar.md §1)
   boards: { tabela: 32, ads: 40, bugle: 24 },     // instanced board capacities
-  life: { birds: 12, steam: 24, weather: 160, sparks: 120 },
+  life: { birds: 12, steam: 39, weather: 160, sparks: 120 },
   weather: [4200, 4240, 4460, 4500],              // m (loop metres): night weather envelope, loop 2 on
   stumbleNews: 600,                               // m: STUMBLE headline window
   repaintEvery: 1,                                // s: Bugle signature check while not running
@@ -38,8 +38,8 @@ city: {
   phaseKeys: [[0, 'DAY'], [1300, 'DAY'], [1700, 'GOLDEN'], [2440, 'GOLDEN'], [2700, 'SUNSET'], [3340, 'SUNSET'],
     [3520, 'NIGHT'], [5000, 'NIGHT'], [5300, 'DAWN'], [5650, 'DAWN'], [6000, 'DAY']],
   discKeys: [...],                                // = kit lines 40-43, unchanged
-  tunnelLook: { fog: 0x0a0b16, hemiSky: 0xbfe8ff, hemiI: 1.15, sunI: 1.0, coin: 3, rim: 1 },
-  rim: 0xffb020,
+  tunnelLook: { fog: 0x0a0b16, hemiSky: 0xbfe8ff, hemiI: 1.15, sunI: 1.0, coin: 3 },
+  obstacleGlow: 0.18,                            // body emissive = own colour × k; k = obstacleGlow * mix(phase.nightBlend, 1, tunnel); outline always ink
 },
 ```
 
@@ -210,9 +210,9 @@ Baseline measured in the unbatched prototype at 126 m: **76 draw calls, 96,964 t
 | Köprü | 71-94 / 73-90k | dress replaces chunk: 76 + water 1 + tower or ferry 1 + blimp 2 + gulls 2 = 82 | |
 | Metro tunnel | 77-80 / 72-74k | shell + glow replace chunk: 76 + mouth 3 = 79 (blimp hidden) | |
 | Neon Meydan, loop 2 rain + record fireworks | not seen | 76 + 18 + ads 1 + bugle 1 + gantry 2 + blimp 2 + steam 1 + weather 1 + sparks 1 = 103 | |
-| **Any point of the loop** | | | **≤ 105 draw calls, ≤ 140k triangles** |
+| **Any point of the loop** | | | **≤ 150 draw calls, ≤ 250k triangles** |
 
-- Texture memory: **+43.2 MB** new, −5.6 MB deleted = **+38 MB net** at `texScale 1`; 15 MB at `texScale 0.5` (computed, RGBA8 × 1.33 mipmaps).
+- Texture ceiling: **+60 MB net** (iPhone 11 and newer). Inventory before the Chinatown extension: **+43.2 MB** new, −5.6 MB deleted = **+38 MB net** at `texScale 1`; 15 MB at `texScale 0.5` (computed, RGBA8 × 1.33 mipmaps).
 - Shader programs: + facade (one shared), sky, board hook, basic-vertex-colour, basic-map-vertex-colour: all compiled in the warm-up.
 - Per-frame CPU: ≤ 96 board matrices, ≤ 316 particle matrices (12 + 24 + 160 + 120), one `update(d)` with about 40 uniform/colour writes. No allocation per frame.
 - **Acceptance (PLAN 11.3 "bitti sayılır")**: the checker records `renderer.info.render.calls / triangles` at 0, 1450, 2800, 3500, 3650, 4300 m (`?gun=`) before task 2 and after task 10; on the owner's phone the adaptive resolution (`quality.js`) must not settle on a lower step in Neon Meydan than in today's Midtown.

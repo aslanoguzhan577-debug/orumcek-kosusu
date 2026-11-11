@@ -17,7 +17,7 @@ Design by the art director, 2026-11-11. Documents and prototypes only: no game c
 
 Shared names across the set: district ids `midtown chinatown bridge tunnel neon dawn` (the same ids as 11.2's caption catalogue); events `districtEnter { id, lap }`, `recordPass { score }`, `flock { position }`; new modules `src/city-logic.js` (pure), `src/daycycle.js`, `src/city-tex.js`, `src/city-pieces.js`, `src/city-boards.js`, `src/bugle-logic.js` (pure), `src/city-life.js`; CONFIG group `CONFIG.city`.
 
-Budget in one line (computed, not measured on a phone): ≤ 105 draw calls and ≤ 140k triangles at any point of the loop (today 76 / 97k), +38 MB net texture memory (15 MB with `texScale 0.5`), nothing created during a run.
+Budget in one line (computed, not measured on a phone): ≤ 150 draw calls and ≤ 250k triangles at any point of the loop (today 76 / 97k), +60 MB net texture ceiling (iPhone 11 and newer), nothing created during a run.
 
 Prototype files are part of the design (the recipes live in them):
 

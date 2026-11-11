@@ -76,7 +76,9 @@ Sixteen cells of 64 x 128. Fill `#12161f`. Cells 0-9: the digit in Bangers 104 p
 
 ## 4 Shader hooks (three, each compiled once)
 
-**4.1 Facade** — `facadeHook(U)` of `sehir-tex.js`, set as `onBeforeCompile` on the three facade materials (`toonMaterial(0xffffff, { map, emissiveMap, emissive: 0xffffff, emissiveIntensity: 0, vertexColors: true })`). It adds: per-window on/off (`step(hash(floor(vEmissiveMapUv * 4)), uWinOn)`, always-on pixels marked by emissive alpha) and the comic halftone: where the toon light is in its dark band, dots of `uDotTint` are multiplied in, 8 dots per window bay on a 45° screen, anti-aliased, fading to a flat tone when dots get smaller than a pixel. `U` is one shared uniforms object. The three materials share one program. Seen working in Midtown, Chinatown, bridge approach.
+**4.1 Facade** — `facadeHook(U)` in `src/city-tex.js`, set as `onBeforeCompile` on the three facade materials (`toonMaterial(0xffffff, { map, emissiveMap, emissive: 0xffffff, emissiveIntensity: 0, vertexColors: true })`). It adds per-window on/off (`step(hash(floor(vEmissiveMapUv * 4)), uWinOn)`, always-on pixels marked by emissive alpha). Walls use their plain wall colour and existing toon lighting. `U` is one shared uniforms object. The three materials share one program.
+
+Oğuzhan 2026-11-11: binalarda nokta/benek deseni yok.
 
 **4.2 Sky** — §3 of `11-3-gun-dongusu.md`. `SKY_VERT` calls `curveWorld()` itself (curve.js injects it into every non-raw material).
 
