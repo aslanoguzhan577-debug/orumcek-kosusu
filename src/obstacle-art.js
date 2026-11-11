@@ -11,6 +11,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from './config.js';
 import { toonMaterial } from './models/toon.js';
+import { laneX } from './world.js';
+import { girderOffset } from './patterns.js';
 
 const OUTLINE_T = 0.045;
 const OUTLINE_COLOR = 0x15171c;
@@ -41,12 +43,13 @@ class ShapeBuilder {
     this.hulls = [];
   }
 
-  // Box of size w,h,d centred at x,y,z. opts: { hull: true, visible: true, rx, rz }
+  // Box of size w,h,d centred at x,y,z. opts: { hull: true, visible: true, rx, ry, rz }
   box(w, h, d, x, y, z, color, opts = {}) {
     const hull = opts.hull !== false;
     const visible = opts.visible !== false;
     const place = (g) => {
       if (opts.rx) g.rotateX(opts.rx);
+      if (opts.ry) g.rotateY(opts.ry);
       if (opts.rz) g.rotateZ(opts.rz);
       g.translate(x, y, z);
       return g;
@@ -268,6 +271,131 @@ function buildRamp() {
   return s.build();
 }
 
+const INK = 0x15171c, STEEL = 0x3a3d45, YEL = 0xffc93c, BLK = 0x22242a;
+const RED = 0xe63946, WHT = 0xf4f4f4, RAIL = 0xc8ced8;
+
+function strip(s, f0, f1, color, w = 7.4, y = 0.075, h = 0.02, x = 0) {
+  s.box(w, h, f1 - f0, x, y, -(f0 + f1) / 2, color, { hull: false });
+}
+
+function buildGapHole() {
+  const s = new ShapeBuilder();
+  strip(s, 0, 0.02, INK);
+  strip(s, 0.02, 0.55, 0x0d0b12);
+  strip(s, 0.55, 0.80, 0x2b2733);
+  strip(s, 0.80, 0.94, 0x55505a);
+  strip(s, 0.94, 0.985, 0x8d8880);
+  strip(s, 0.985, 1, 0xe8e2d4, 7.4, 0.09, 0.03);
+  for (let i = 0; i < 8; i++) strip(s, 0.55, 0.985, 0x1a1820, 0.12, 0.078, 0.02, -3.2 + i * 0.914);
+  return s.build();
+}
+
+function buildGapEnds() {
+  const s = new ShapeBuilder();
+  for (const sx of [-1, 1]) {
+    s.box(0.16, 3.4, 0.16, sx * 3.45, 1.7, 0.3, WHT, { visible: false });
+    for (let i = 0; i < 6; i++) s.box(0.16, 0.567, 0.16, sx * 3.45, 0.283 + i * 0.567, 0.3, i % 2 ? WHT : RED, { hull: false });
+    s.box(1.0, 1.0, 0.04, sx * 3.45, 2.9, 0.4, BLK, { rz: Math.PI / 4 });
+    s.box(0.9, 0.9, 0.06, sx * 3.45, 2.9, 0.41, YEL, { rz: Math.PI / 4, hull: false });
+    s.box(0.12, 0.42, 0.07, sx * 3.45, 2.84, 0.42, BLK, { hull: false });
+    for (const a of [-1, 1]) s.box(0.12, 0.3, 0.07, sx * 3.45 + a * 0.09, 3.04, 0.42, BLK, { rz: a * 0.7, hull: false });
+  }
+  for (const x of [-2.2, 0, 2.2]) {
+    s.box(2.0, 0.1, 0.25, x, 0.06, 0.12, 0x8d8880, { hull: false });
+    for (const r of [-0.72, 0.72]) {
+      s.box(0.1, 0.1, 0.5, x + r, 0.12, 0.2, RAIL, { rx: -0.4, hull: false });
+      s.box(0.1, 0.1, 0.5, x + r, 0.36, 0.02, RAIL, { rx: -0.9, hull: false });
+      s.box(0.1, 0.1, 0.5, x + r, 0.68, -0.05, 0xff7a1a, { rx: -1.4, hull: false });
+    }
+    for (const z of [2.0, 4.0]) for (const a of [-1, 1]) {
+      s.box(0.9, 0.022, 0.22, x + a * 0.36, 0.075, z, YEL, { ry: -a * 0.6, hull: false });
+    }
+  }
+  return s.build();
+}
+
+function buildGapPatch() {
+  const s = new ShapeBuilder();
+  strip(s, 0, 1, 0x9aa1ad, 7.0, 0.09, 0.08);
+  strip(s, 0, 0.08, YEL, 7.0, 0.092, 0.085);
+  strip(s, 0.92, 1, YEL, 7.0, 0.092, 0.085);
+  for (let i = 0; i < 6; i++) strip(s, 0.16 + i * 0.13, 0.18 + i * 0.13, 0x5b616c, 6.6, 0.092, 0.085);
+  for (const sx of [-1, 1]) s.box(0.06, 0.09, 1, sx * 3.5, 0.09, -0.5, INK, { hull: false });
+  return s.build();
+}
+
+function buildGateFrame() {
+  const s = new ShapeBuilder();
+  for (const sx of [-1, 1]) {
+    s.box(0.3, 3.9, 0.3, sx * 3.78, 1.95, -0.175, STEEL);
+    s.box(0.6, 0.12, 0.6, sx * 3.78, 0.06, -0.175, STEEL, { hull: false });
+  }
+  s.box(7.9, 0.5, 0.4, 0, 3.65, -0.175, STEEL);
+  s.box(7.9, 0.1, 0.42, 0, 3.42, -0.175, YEL, { hull: false });
+  for (const x of [-2.2, 0, 2.2]) {
+    s.box(0.7, 0.9, 0.25, x, 4.35, -0.05, INK);
+    s.box(0.34, 0.34, 0.06, x, 4.55, 0.1, 0xff2d2d, { hull: false });
+    s.box(0.34, 0.34, 0.06, x, 4.15, 0.1, 0x1d5c33, { hull: false });
+    s.box(0.1, 0.1, 0.07, x + 0.08, 4.63, 0.1, 0xffffff, { hull: false });
+  }
+  return s.build();
+}
+
+function buildGateShutter() {
+  const s = new ShapeBuilder();
+  s.box(7.2, 0.26, 0.2, 0, 1.08, -0.175, WHT, { visible: false });
+  for (let i = 0; i < 12; i++) s.box(0.6, 0.26, 0.2, -3.3 + i * 0.6, 1.08, -0.175, i % 2 ? WHT : RED, { hull: false });
+  for (let i = 0; i < 15; i++) s.box(0.07, 2.1, 0.07, -3.36 + i * 0.48, 2.25, -0.175, 0x55595f, { hull: false });
+  for (const y of [1.9, 2.6]) s.box(7.2, 0.06, 0.06, 0, y, -0.175, 0x55595f, { hull: false });
+  for (const x of [-2.2, 0, 2.2]) {
+    s.box(0.3, 0.3, 0.08, x, 1.08, -0.03, 0xff2d2d, { hull: false });
+    s.box(0.1, 0.1, 0.09, x + 0.07, 1.15, -0.03, 0xffffff, { hull: false });
+    for (const a of [-1, 1]) s.box(0.5, 0.12, 0.05, x + a * 0.2, 1.65, -0.13, YEL, { rz: a * 0.6, hull: false });
+  }
+  return s.build();
+}
+
+function buildGirderBeam() {
+  const s = new ShapeBuilder();
+  for (const z of [-0.07, -0.43]) {
+    for (const y of [0.37, 2.03]) s.box(4.4, 0.14, 0.14, 0, y, z, 0xf5b417);
+    for (const x of [-2.13, -1.065, 0, 1.065, 2.13]) s.box(0.1, 1.52, 0.1, x, 1.2, z, 0xf5b417, { hull: false });
+    for (let b = 0; b < 4; b++) s.box(0.08, 1.86, 0.08, -1.5975 + b * 1.065, 1.2, z, 0xd9960a, { rz: (b % 2 ? 1 : -1) * 0.611, hull: false });
+  }
+  for (const x of [-2.13, 0, 2.13]) s.box(0.08, 0.08, 0.36, x, 2.03, -0.25, 0xd9960a, { hull: false });
+  for (const sx of [-1, 1]) {
+    s.box(0.12, 1.8, 0.5, sx * 2.2, 1.2, -0.25, YEL, { visible: false });
+    for (let i = 0; i < 5; i++) s.box(0.12, 0.36, 0.5, sx * 2.2, 0.48 + i * 0.36, -0.25, i % 2 ? BLK : YEL, { hull: false });
+    s.box(0.2, 0.16, 0.2, sx * 2.2, 2.2, -0.25, 0xffa51f, { hull: false });
+    s.box(0.05, 1.85, 0.05, sx * 0.7, 2.7, -0.25, 0x2a2d34, { rz: sx * 0.862, hull: false });
+  }
+  s.box(0.14, 0.3, 0.14, 0, 3.2, -0.25, RED, { hull: false });
+  s.box(0.5, 0.45, 0.4, 0, 3.5, -0.25, 0xf5b417);
+  s.box(0.07, 12.3, 0.07, 0, 9.86, -0.25, 0x2a2d34, { hull: false });
+  return s.build();
+}
+
+function buildGirderJib() {
+  const s = new ShapeBuilder();
+  for (let i = 0; i < 5; i++) s.box(5.2, 0.9, 0.9, -10.4 + i * 5.2, 16.5, -0.25, i % 2 ? WHT : RED, { hull: false });
+  s.box(1.0, 0.5, 0.8, 0, 16.1, -0.25, STEEL, { hull: false });
+  return s.build();
+}
+
+function buildGirderPad() {
+  const s = new ShapeBuilder();
+  s.box(2.15, 0.02, 7.0, 0, 0.07, 3.5, BLK, { hull: false });
+  for (let i = 0; i < 7; i++) s.box(2.15, 0.022, 0.5, 0, 0.072, 0.5 + i, YEL, { hull: false });
+  for (const sx of [-1, 1]) s.box(0.1, 0.03, 7.0, sx * 1.03, 0.075, 3.5, RED, { hull: false });
+  return s.build();
+}
+
+function buildGirderGo() {
+  const s = new ShapeBuilder();
+  for (const z of [1.5, 3.5, 5.5]) for (const a of [-1, 1]) s.box(0.9, 0.022, 0.26, a * 0.36, 0.075, z, 0x35e06a, { ry: -a * 0.6, hull: false });
+  return s.build();
+}
+
 // Coin: a lathe of a recessed face + thick raised rim (profile [r, y] bottom -> top, axis turned to Z),
 // vertex colours: recess mid tone, inner wall shadow, rim gold. Highlight comes from the material gloss.
 function buildCoin() {
@@ -357,6 +485,15 @@ export function createObstacleArt(scene) {
     wagon: new InstancedKind(scene, buildWagon(), material, outlineMaterial, 64),
     ramp: new InstancedKind(scene, buildRamp(), material, outlineMaterial, 16),
     coin: new InstancedKind(scene, buildCoin(), coinMaterial, coinOutline, 256),
+    gapHole: new InstancedKind(scene, buildGapHole(), material, outlineMaterial, 3),
+    gapEnds: new InstancedKind(scene, buildGapEnds(), material, outlineMaterial, 3),
+    gapPatch: new InstancedKind(scene, buildGapPatch(), material, outlineMaterial, 3),
+    gateFrame: new InstancedKind(scene, buildGateFrame(), material, outlineMaterial, 3),
+    gateShutter: new InstancedKind(scene, buildGateShutter(), material, outlineMaterial, 3),
+    girderBeam: new InstancedKind(scene, buildGirderBeam(), material, outlineMaterial, 3),
+    girderJib: new InstancedKind(scene, buildGirderJib(), material, outlineMaterial, 3),
+    girderPad: new InstancedKind(scene, buildGirderPad(), material, outlineMaterial, 6),
+    girderGo: new InstancedKind(scene, buildGirderGo(), material, outlineMaterial, 3),
   };
   const carColors = CAR_COLORS.map((hex) => new THREE.Color(hex));
   const m = new THREE.Matrix4();
@@ -364,6 +501,30 @@ export function createObstacleArt(scene) {
 
   return {
     kinds,
+
+    addRow(type, z, len, open, tau) {
+      if (type === 'gap') {
+        kinds.gapHole.add(m.makeScale(1, 1, len).setPosition(0, 0, z));
+        kinds.gapEnds.add(m.makeTranslation(0, 0, z));
+      } else if (type === 'gate') {
+        const G = CONFIG.obstacles.gate;
+        kinds.gateFrame.add(m.makeTranslation(0, 0, z));
+        const u = Math.min(1, Math.max(0, (tau - G.dropTo) / (G.dropFrom - G.dropTo)));
+        kinds.gateShutter.add(m.makeTranslation(0, G.raised * u * u * (3 - 2 * u), z));
+      } else {
+        const R = CONFIG.obstacles.girder;
+        const th = girderOffset(tau, open) / (R.pivotY - 1.2);
+        kinds.girderBeam.add(m.makeRotationZ(th).setPosition(R.pivotY * Math.sin(th), R.pivotY * (1 - Math.cos(th)), z));
+        kinds.girderJib.add(m.makeTranslation(0, 0, z));
+        for (let lane = 0; lane < 3; lane++) (lane === open ? kinds.girderGo : kinds.girderPad).add(m.makeTranslation(laneX(lane), 0, z));
+      }
+    },
+
+    addPatch(z, len) {
+      kinds.gapHole.add(m.makeScale(1, 1, len).setPosition(0, 0, z));
+      kinds.gapEnds.add(m.makeTranslation(0, 0, z));
+      kinds.gapPatch.add(m.makeScale(1, 1, len).setPosition(0, 0, z));
+    },
 
     begin() {
       for (const k in kinds) kinds[k].begin();

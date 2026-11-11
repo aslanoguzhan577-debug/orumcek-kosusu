@@ -81,6 +81,9 @@ export class Chaser {
     this.floor = this.player.floorY;
     this.timer = 0;
     this.arrived = false;
+    this.spare = 0;
+    this.hunting = false;
+    this.pose = null;
     this._snapNear = false;
     this.knockback = 0;
     this.root.scale.setScalar(C.nearScale);
@@ -125,8 +128,27 @@ export class Chaser {
   }
 
   // Side hit (called by obstacles after the stumble itself).
+  hunt() {
+    this.mode = 'near';
+    this.timer = Infinity;
+    this.arrived = false;
+    this.spare = 1;
+    this.hunting = true;
+  }
+
+  endHunt(wasHit) {
+    this.hunting = false;
+    this.pose = null;
+    this.spare = 0;
+    if (this.mode === 'near') {
+      if (wasHit) this.timer = C.nearTime;
+      else this._dropBack();
+    }
+  }
+
   onStumble() {
     if (CATCHING.has(this.mode)) return;
+    if (this.mode === 'near' && this.spare > 0) { this.spare--; return; }
     if (this.mode === 'near') {
       if (this.hooks.absorbCatch()) {
         this._dropBack();
@@ -198,8 +220,8 @@ export class Chaser {
     cam.updateMatrixWorld();
     const p = this.player;
     const feet = _proj.set(p.x, p.y, 0).project(cam).y;
-    const target = Math.min(feet - C.feetMargin, -1 + 2 * C.maxScreenShare);
-    const top = this.y + this.height * C.nearScale;
+    const target = Math.min(feet - C.feetMargin, -1 + 2 * (this.hunting ? CONFIG.events.venom.screenShare : C.maxScreenShare));
+    const top = this.y + this.height * this.root.scale.x;
     let lo = C.minGap;
     let hi = Math.max(C.minGap, CONFIG.camera.distance * rig.scale - 0.8);
     for (let i = 0; i < 10; i++) {
@@ -279,6 +301,7 @@ export class Chaser {
     let state = 'run';
     if (CATCHING.has(this.mode)) state = 'catch';
     else if ((this.mode === 'near' || this.mode === 'intro') && this.gap < near + 1.5) state = 'reach';
+    if (this.pose && !CATCHING.has(this.mode)) state = this.pose;
     if (state !== this._modelState) {
       this._modelState = state;
       this.model.setState(state);
@@ -286,7 +309,7 @@ export class Chaser {
     this.model.update(dt);
     // a bit smaller while chasing right behind the camera (his head would fill the bottom
     // of a phone screen); full size for the catch cam
-    const scale = damp(this.root.scale.x, CATCHING.has(this.mode) ? 1 : C.nearScale, C.followRate, dt);
+    const scale = damp(this.root.scale.x, CATCHING.has(this.mode) ? 1 : this.hunting ? CONFIG.events.venom.scale : C.nearScale, C.followRate, dt);
     this.root.scale.setScalar(scale);
     this._place();
     if (CATCHING.has(this.mode)) {

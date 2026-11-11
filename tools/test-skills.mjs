@@ -4,7 +4,8 @@
 
 import assert from 'node:assert/strict';
 import { CONFIG } from '../src/config.js';
-import { speedAt } from '../src/patterns.js';
+import { PatternGenerator, createRng, speedAt, descLength, descLanes, girderOffset } from '../src/patterns.js';
+import { floorW, warnAt, restAt, doubleChance, nextRow, nearestSafe, rewardFor } from '../src/event-logic.js';
 
 const KEY = 'spidey.missions';
 const store = new Map();
@@ -48,6 +49,96 @@ eq(game.mult.factor, 1, 'factor resets');
 eq(game.state.multiplier, 3, 'the first frame already runs at x3');
 eq(game.state.score, 0, 'score resets');
 eq(game.state.coins, 0, 'coins reset');
+
+// ---------- 11.5 görev 1: olay çarpanı, satır yardımcıları ----------
+game.mult.event = 2;
+game.update(0.1);
+eq(game.state.multiplier, (game.mult.base + game.mult.run + game.mult.temp + 2) * game.mult.factor, 'event multiplier pays the score');
+game.restart();
+eq(game.mult.event, 0, 'the event multiplier resets at a run start');
+
+eq(json(descLanes({ type: 'gap' })), json([0, 1, 2]), 'a gap spans all lanes');
+eq(json(descLanes({ type: 'gate' })), json([0, 1, 2]), 'a gate spans all lanes');
+eq(json(descLanes({ type: 'girder', open: 0 })), json([1, 2]), 'the girder covers the centre and the other outer lane');
+eq(json(descLanes({ type: 'girder', open: 2 })), json([1, 0]), 'from the other side the covered lanes swap');
+eq(json(descLanes({ type: 'low', lane: 2 })), json([2]), 'a normal obstacle keeps its lane');
+
+eq(girderOffset(0, 2), -1.1, 'parked over the covered lanes');
+eq(girderOffset(0, 0), 1.1, 'parked over the covered lanes (from the other side)');
+ok(Math.abs(girderOffset(2.2, 2) - 1.1) <= 1e-9, 'at the far end of the swing it hangs over the open lane');
+eq(girderOffset(1.2, 2), -1.1, 'it is already parked at lockTime');
+for (const open of [0, 2]) {
+  for (let t = 0; t <= 8 + 1e-9; t += 0.05) ok(Math.abs(girderOffset(t, open)) <= 1.1 + 1e-9, `girder stays within amp (open ${open}, tau ${t.toFixed(2)})`);
+}
+eq(descLength({ type: 'gap', len: 4.5 }), 4.5, 'a gap is as long as its len');
+eq(descLength({ type: 'girder', len: 0.5 }), 0.5, 'a girder is as long as its len');
+
+// ---------- 11.5 görev 5: seeded rows/zones, extras on every block ----------
+{
+  const generate = () => {
+    const gen = new PatternGenerator(7919);
+    let blocks = 0, extras = 0, specials = 0, calm = 0;
+    const out = [];
+    gen.addExtra((ctx) => {
+      extras++;
+      if (ctx.routeFree) ctx.push({ type: 'pickup', lane: ctx.route, d: (ctx.routeFree[0] + ctx.routeFree[1]) / 2, y: 1 });
+    });
+    while (gen.cursor < 20000) {
+      const due = gen.cursor >= Math.min(gen.nextRowD, gen.nextEventD);
+      const start = out.length;
+      gen._block(out); blocks++;
+      const batch = out.slice(start);
+      const special = batch.some((o) => ['gap', 'gate', 'girder', 'event'].includes(o.type));
+      if (special) specials++;
+      else if (due) calm++;
+      if (special || due) ok(!batch.some((o) => o.type === 'pickup'), 'special/calm blocks suppress pickups');
+      eq(extras, blocks, 'extra exactly once per block, including safe start');
+    }
+    ok(specials > 0 && calm > 0, 'special and draining calm blocks exercised');
+    for (const type of ['gap', 'gate', 'girder', 'event']) ok(out.some((o) => o.type === type), `${type} generated`);
+    return out;
+  };
+  eq(json(generate()), json(generate()), 'same seed gives identical descriptors over 20 km');
+}
+
+// ---------- 11.5 görev 6: pure event rows and timing ----------
+{
+  const E = CONFIG.events, P = CONFIG.patterns;
+  let lastWarn = Infinity, lastRest = Infinity;
+  const rng = createRng(11506);
+  for (const d of [1200, 3000, 8000, 14600, 20000, 60000, 300000]) {
+    ok(warnAt(d) >= floorW(1, d), 'warning includes one-lane reaction floor');
+    ok(warnAt(d) <= lastWarn && restAt(d) <= lastRest && restAt(d) > 0, 'warning/rest decrease without a finite plateau');
+    lastWarn = warnAt(d); lastRest = restAt(d);
+    ok(doubleChance(d) <= 0.6, 'two-lane chance is capped');
+    ok(E.goblin.lead >= Math.max(E.warnEasy, floorW(2, d)) + 0.1, 'Goblin lead covers every row warning');
+    for (let mask = 1; mask < 8; mask++) for (let aim = 0; aim < 3; aim++) {
+      const prev = [0, 1, 2].map((l) => !!(mask & (1 << l)));
+      if (!prev[aim]) continue;
+      for (let n = 0; n < 500; n++) {
+        let draws = 0;
+        const row = nextRow(() => { draws++; return rng(); }, prev, aim, d);
+        eq(draws, 2, 'each row consumes exactly two draws');
+        ok(row.deadly.some((v) => !v) && row.deadly[aim], 'aim is deadly and at least one lane is safe');
+        let delta = 0;
+        for (let l = 0; l < 3; l++) if (prev[l]) {
+          const distances = [0, 1, 2].filter((c) => !row.deadly[c]).map((c) => Math.abs(c - l));
+          delta = Math.max(delta, Math.min(...distances));
+        }
+        eq(row.delta, delta, 'delta matches brute-force worst escape');
+        ok(row.warn >= floorW(delta, d), 'row covers its full escape floor');
+        ok(row.warn >= P.minReaction + delta * CONFIG.laneSwitchTime, 'row retains human reaction plus every lane crossing');
+      }
+    }
+  }
+  eq(doubleChance(1200), 0, 'first Venom has single-lane strikes');
+  ok(E.venom.duration - E.venom.intro - E.venom.outro >= 3 * (warnAt(1200) + E.venom.slamTime + restAt(1200)), 'at least three strikes fit');
+  eq(json(rewardFor('venom', 4, 0)), json({ coins: 45, mult: 3, clean: true }), 'flawless Venom reward');
+  eq(json(rewardFor('goblin', 5, 1)), json({ coins: 30, mult: 1, clean: false }), 'survived Goblin reward');
+  eq(nearestSafe([true, false, false], 0), 1, 'nearest centre escape');
+  eq(nearestSafe([true, true, false], 0), 2, 'two-lane escape');
+  eq(nearestSafe([false, true, false], 1), 0, 'equal outer lanes tie left');
+}
 
 // ---------- missions.js (bozuk kayıtla yüklenir: defaults bekleniyor) ----------
 store.set(KEY, '{bozuk');
@@ -1051,6 +1142,446 @@ ok([...AL.BASS_A, ...AL.BASS_B].every((x) => x[0] + x[2] <= 16), 'bass notes sta
 ok(AL.stingerReady(-10, 0), 'first pickup stinger plays');
 eq(AL.stingerReady(5, 6.5), false, 'a second pickup within 2 s is quiet');
 ok(AL.stingerReady(5, 7), 'after 2 s it plays again');
+
+// ---------- 11.5 görev 2: gerçek collider / player döngüsü, çizim headless ----------
+const { Obstacles } = await import('../src/obstacles.js');
+const rowDT = 1 / 120;
+const rowLog = [];
+const rowListeners = ['crash', 'stumble', 'rowWarn', 'rowPass', 'gapPatch', 'senseDodge'].map((name) => {
+  const fn = (e) => rowLog.push({ name, ...e.detail, atD: game.world.distance });
+  events.addEventListener(name, fn);
+  return [name, fn];
+});
+const rowSaved = { player: game.player, world: game.world, heroSpecials: game.heroSpecials, web: game.web };
+function rowHarness(speed, lane = 1) {
+  const player = new Player({ root: {}, setState() {}, update() {} });
+  player.lane = lane;
+  player.x = player.lastX = player._laneFromX = laneX(lane);
+  const world = { distance: 0, segments: [], onRecycle() {} };
+  const ob = new Obstacles({ add() {} }, world, player);
+  let crashes = 0, stumbles = 0;
+  ob.hooks.onCrash = () => { crashes++; };
+  ob.hooks.onSideStumble = () => { stumbles++; };
+  game.player = player; game.world = world; game.web = null; game.heroSpecials = null;
+  game.state.speed = speed; game.state.springTime = 0; game.halted = false;
+  rowLog.length = 0;
+  return {
+    player, ob, world,
+    get crashes() { return crashes; }, get stumbles() { return stumbles; },
+    step(dt = rowDT, sense = null) {
+      world.distance += speed * dt;
+      ob.beforePlayer(dt);
+      sense?.beforePlayer(dt);
+      player.update(dt, true);
+      ob.update(dt);
+    },
+    run(seconds, sense = null, dt = rowDT) { for (let t = 0; t < seconds; t += dt) this.step(dt, sense); },
+    spawn(type, d = 8, open = 2, len = type === 'gap' ? 4 : type === 'gate' ? CONFIG.obstacles.gate.depth : CONFIG.obstacles.girder.depth) {
+      ob._spawn({ type, lane: 1, d: world.distance + d, len, open });
+    },
+  };
+}
+const rowCount = (name, type) => rowLog.filter((e) => e.name === name && (!type || e.type === type)).length;
+for (const speed of [20, 39]) {
+  let h = rowHarness(speed);
+  h.spawn('gap');
+  eq(h.ob.active.length, 3, 'gap: three colliders');
+  eq(json(h.ob.active.map((o) => o.lane)), json([0, 1, 2]), 'gap: all lanes');
+  eq(h.ob.active.filter((o) => o.owner).length, 1, 'gap: one owner');
+  ok(h.ob.active.every((o) => o.group === h.ob.active[0].group), 'gap: shared group');
+  h.run(1);
+  eq(rowCount('crash'), 1, `ground gap: one crash at ${speed}`);
+  eq(h.crashes, 1, 'front hook once');
+  eq(h.player.floorY, 0, 'pit never raises the floor');
+  eq(rowCount('rowPass'), 0, 'a hit row is not passed');
+
+  h = rowHarness(speed); h.spawn('gap', speed * 0.1); h.player.jump(); h.run(0.8);
+  eq(rowCount('crash'), 0, `jump before lip at ${speed}`);
+  eq(rowCount('rowPass', 'gap'), 1, 'jump passes the gap once');
+  h = rowHarness(speed); h.spawn('gap', -1);
+  h.player.y = 1; h.player.vy = -16; h.player.grounded = false;
+  h.run(0.3);
+  eq(rowCount('crash'), 1, 'falling into the pit is a front hit');
+  h.run(0.5); eq(rowCount('rowPass'), 0, 'falling into a row never earns a pass');
+  h = rowHarness(speed); h.spawn('gap', -4.1);
+  h.player.y = 0.35; h.player.vy = -7; h.player.grounded = false;
+  h.step(1 / 60);
+  eq(rowCount('crash'), 1, 'swept far edge can still hit on the last overlap frame');
+  eq(rowCount('rowPass'), 0, 'beforePlayer must not award a pass before that collision');
+
+  h = rowHarness(speed); h.spawn('gap');
+  const mates = [...h.ob.active], removed = mates[1];
+  h.ob.remove(removed);
+  ok(!h.ob.active.includes(removed), 'remove splices the requested collider immediately');
+  ok(h.ob.active.every((o) => o.z === 1e6), 'mates wait for normal release');
+  eq(h.ob.patches.length, 1, 'one patch per group');
+  eq(rowCount('gapPatch'), 1, 'one patch event');
+  h.step();
+  ok(mates.every((o) => !h.ob.active.includes(o)), 'all mates released next frame');
+  const patchZ = h.ob.patches[0].z;
+  h.ob.shift(-2);
+  eq(h.ob.patches[0].z, patchZ - 2, 'catch knockback shifts patches');
+  h.run(1);
+  eq(rowCount('crash'), 0, 'patch is safe to run across');
+  h.ob.reset(); eq(h.ob.patches.length, 0, 'reset clears patches');
+  h.spawn('low', 30, 2, CONFIG.obstacles.low.depth);
+  eq(h.ob.active[0].group, null, 'reused normal collider has no group');
+  eq(h.ob.active[0].owner, false, 'reused normal collider is not an owner');
+
+  h = rowHarness(speed); h.spawn('gap'); h.spawn('gate', 20); h.spawn('low', 30, 2, CONFIG.obstacles.low.depth);
+  for (let i = h.ob.active.length - 1; i >= 0; i--) h.ob.remove(h.ob.active[i]);
+  h.step(); eq(h.ob.active.length, 0, 'reverse-index hero clear removes mixed groups safely');
+  eq(rowCount('gapPatch'), 1, 'reverse clear patches once');
+  eq(rowCount('rowPass'), 0, 'removed owners emit no pass');
+
+  h = rowHarness(speed); h.spawn('gate'); h.run(1);
+  eq(rowCount('crash'), 1, 'standing hits gate');
+  h = rowHarness(speed); h.spawn('gate'); h.player.rescueSlide(); h.run(1);
+  eq(rowCount('crash'), 0, 'slide clears gate');
+  eq(rowCount('rowPass', 'gate'), 1, 'gate passed once');
+  for (const lane of [0, 1, 2]) {
+    h = rowHarness(speed, lane); h.spawn('girder'); h.run(1);
+    eq(rowCount('crash'), lane === 2 ? 0 : 1, `girder lane ${lane}`);
+    eq(rowCount('rowPass', 'girder'), lane === 2 ? 1 : 0, 'girder group pass is emitted once');
+  }
+  h = rowHarness(speed, 2); h.spawn('girder', speed * 0.045); h.player.changeLane(-1); h.run(0.2);
+  eq(rowCount('stumble'), 1, 'switching beside the girder stumbles');
+  for (const type of ['gap', 'gate', 'girder']) {
+    h = rowHarness(speed); h.spawn(type, speed * 2.5);
+    h.run(0.09); eq(rowCount('rowWarn'), 0, 'no early row warning');
+    while (-h.ob.active[0].z / speed > CONFIG.obstacles.rowWarnTime) h.step();
+    eq(rowCount('rowWarn'), 1, 'warning on first frame at tau <= 2.4');
+    h.run(0.2); eq(rowCount('rowWarn'), 1, 'warning once per row');
+  }
+  h = rowHarness(speed); h.spawn('gap');
+  game.heroSpecials = { active: true, mode: 'cap' };
+  let absorbed = 0;
+  h.ob.hooks.onFrontHit = () => { absorbed++; return true; };
+  h.run(1);
+  eq(absorbed, 0, 'Cap ignores pits explicitly even at ground height');
+  eq(rowCount('crash'), 0, 'Cap surf gap has no hit');
+  eq(h.ob.patches.length, 0, 'surf does not destroy the gap');
+  h = rowHarness(speed);
+  h.ob.grace(1); eq(h.ob.graced, true, 'graced getter');
+  eq(h.ob.eventHit(0), false, 'grace refuses event hit');
+  eq(rowCount('stumble'), 0, 'graced hit is silent');
+  h.run(1.1); eq(h.ob.graced, false, 'grace expires');
+  eq(h.ob.eventHit(0), true, 'event hit reaches shared side path');
+  eq(rowCount('stumble'), 1, 'event stumbles'); eq(h.stumbles, 1, 'side stumble hook');
+  h.ob.hooks.onSideHit = (hit) => { h.ob.remove(hit.obstacle); return true; };
+  h.run(0.4); h.ob.eventHit(0);
+  eq(rowCount('stumble'), 1, 'side absorb suppresses event stumble');
+  let zone = null;
+  h.ob.hooks.onEventZone = (desc) => { zone = desc; };
+  const desc = { type: 'event', kind: 'venom', d: 1200, len: 400 };
+  h.ob._spawn(desc);
+  eq(zone, desc, 'zone hook receives original descriptor');
+  eq(h.ob.active.length, 0, 'zone has no collider');
+}
+// The surf expires after Player.update, before the collider reads lastY from the hover frame.
+for (const speed of [19, 39]) for (const dt of [1 / 120, CONFIG.dtCap]) for (const sliding of [false, true]) {
+  const h = rowHarness(speed);
+  h.spawn('gap', -1, 2, 6);
+  const surf = Object.assign(Object.create(HeroSpecials.prototype), {
+    player: h.player, obstacles: h.ob, active: true, mode: 'cap', skills: {}, cap: {},
+    shield: { root: { rotation: { set() {} } } },
+  });
+  game.heroSpecials = surf;
+  if (sliding) h.player.rescueSlide();
+  h.ob.beforePlayer(dt);
+  surf.beforePlayer(dt);
+  h.player.update(dt, true);
+  surf.deactivate(true);
+  h.ob.update(dt);
+  h.run(0.6, null, dt);
+  eq(rowCount('crash') + rowCount('stumble'), 0, 'Cap exit over a long gap never hits');
+  eq(h.ob.patches.length, 0, 'Cap exit leaves the gap intact');
+  eq(h.ob.graced, false, 'Cap exit grace expires');
+  h.spawn('gap', speed * 0.1);
+  h.run(0.5, null, dt);
+  eq(rowCount('crash'), 1, 'a later gap still hits after Cap exit');
+}
+
+{
+  const { IronSpiderPowerup } = await import('../src/powerups/ironspider.js');
+  const h = rowHarness(20);
+  h.spawn('gap', -1);
+  h.spawn('low', 4, 2, CONFIG.obstacles.low.depth);
+  let savedPositions;
+  const onSave = (e) => { savedPositions = e.detail.positions; };
+  events.addEventListener('ironSave', onSave);
+  const suit = Object.assign(Object.create(IronSpiderPowerup.prototype), {
+    active: true, obstacles: h.ob, player: { useModel() {} }, ironModel: {}, normalModel: {},
+  });
+  ok(suit._absorb(), 'Iron Spider absorbs beside a gap');
+  eq(savedPositions.filter((p) => p.y === 0).length, 1, 'gap save spark is at deck level');
+  const low = CONFIG.obstacles.low;
+  eq(savedPositions.filter((p) => p.y === low.height / 2).length, 1, 'solid obstacle spark keeps its centre height');
+  eq(h.ob.patches.length, 1, 'Iron Spider still patches the gap once');
+  events.removeEventListener('ironSave', onSave);
+}
+// ---------- 11.5 görev 4: his, gerçek hareket ve çarpışma döngüsü ----------
+const { SensePowerup } = await import('../src/powerups/sense.js');
+for (const dt of [rowDT, 1 / 60, 1 / 30, CONFIG.dtCap]) for (const speed of [19, 26, 39]) for (const type of ['gap', 'gate']) {
+  const h = rowHarness(speed);
+  h.spawn(type, speed * 1.5, 2, type === 'gap' ? Math.min(6, Math.max(4, Math.round(speed * CONFIG.obstacles.gap.lenTime * 2) / 2)) : CONFIG.obstacles.gate.depth);
+  const sense = new SensePowerup({ player: h.player, obstacles: h.ob });
+  sense.start(); h.run(2.3, sense, dt);
+  eq(json(rowLog.filter((e) => e.name === 'senseDodge').map((e) => e.action)), json([type === 'gap' ? 'jump' : 'slide']), `${type}: sense chooses the row verb at ${speed}`);
+  eq(rowCount('crash') + rowCount('stumble'), 0, `${type}: sense clears it at ${speed}, dt ${dt}: ${json(rowLog)}`);
+  eq(rowCount('rowPass', type), 1, `${type}: sense passes the row`);
+}
+for (const dt of [rowDT, 1 / 60, 1 / 30, CONFIG.dtCap]) for (const speed of [20, 39]) for (const open of [0, 2]) for (const lane of [1, 2 - open]) {
+  const h = rowHarness(speed, lane);
+  h.spawn('girder', speed * 1.5, open);
+  const sense = new SensePowerup({ player: h.player, obstacles: h.ob });
+  sense.start(); h.run(2.3, sense, dt);
+  const action = open === 2 ? 'right' : 'left';
+  eq(json(rowLog.filter((e) => e.name === 'senseDodge').map((e) => e.action)), json(Array(Math.abs(open - lane)).fill(action)), `girder: sense crosses from ${lane} to ${open} at ${speed}`);
+  eq(h.player.lane, open, 'sense reaches the green lane');
+  eq(rowCount('crash') + rowCount('stumble'), 0, 'sense crosses both covered lanes without hit');
+  eq(rowCount('rowPass', 'girder'), 1, 'sense passes the girder once');
+}
+// Existing shapes still use their original verb / lane escape.
+for (const [type, expected] of [['low', 'jump'], ['high', 'slide'], ['wagons', 'left']]) {
+  const h = rowHarness(20);
+  h.ob._spawn({ type, lane: 1, d: 30, len: descLength({ type, cars: 1 }), cars: 1 });
+  const sense = new SensePowerup({ player: h.player, obstacles: h.ob });
+  sense.start(); h.run(2.3, sense);
+  eq(rowLog.find((e) => e.name === 'senseDodge')?.action, expected, `${type}: original sense action`);
+  eq(rowCount('crash') + rowCount('stumble'), 0, `${type}: original sense remains safe`);
+}
+for (const blocked of ['beside', 'tooSoon', 'farLane']) {
+  const h = rowHarness(20, 0);
+  h.spawn('girder', 8);
+  const lane = blocked === 'farLane' ? 2 : 1;
+  h.ob._spawn({ type: 'wagons', lane, d: blocked === 'beside' ? 0 : 5, len: CONFIG.obstacles.wagon.length, cars: 1 });
+  const sense = new SensePowerup({ player: h.player, obstacles: h.ob });
+  eq(sense._freeLane(h.player, 20, h.ob.active), 0, `two-lane escape rejects ${blocked}`);
+}
+
+// ---------- 11.5 görev 3: M0–M3 parçaları, kapasite ve runtime matrisleri ----------
+const { readFile } = await import('node:fs/promises');
+const { runInNewContext } = await import('node:vm');
+const artSource = await readFile(new URL('../src/obstacle-art.js', import.meta.url), 'utf8');
+class RecipeShape {
+  constructor() { this.boxes = []; }
+  box(...args) { this.boxes.push(args); return this; }
+  build() { return this.boxes; }
+}
+class RecipeMatrix {
+  makeScale(x, y, z) { this.scale = [x, y, z]; this.angle = 0; return this.setPosition(0, 0, 0); }
+  makeTranslation(x, y, z) { this.scale = [1, 1, 1]; this.angle = 0; return this.setPosition(x, y, z); }
+  makeRotationZ(angle) { this.makeTranslation(0, 0, 0); this.angle = angle; return this; }
+  setPosition(x, y, z) { this.position = [x, y, z]; return this; }
+}
+class RecipeKind {
+  constructor(scene, shape, material, outline, capacity) { this.shape = shape; this.capacity = capacity; this.instances = []; }
+  begin() { this.instances.length = 0; }
+  add(m) { this.instances.push({ position: [...m.position], scale: [...m.scale], angle: m.angle }); }
+  end() {}
+}
+const emptyShape = () => [];
+const recipeArt = runInNewContext(
+  artSource.slice(artSource.indexOf('const INK ='), artSource.indexOf('// Coin:')) +
+  artSource.slice(artSource.indexOf('export function createObstacleArt')).replace('export ', '') + '\ncreateObstacleArt({});',
+  {
+    CONFIG, laneX, girderOffset, ShapeBuilder: RecipeShape, InstancedKind: RecipeKind,
+    THREE: { Matrix4: RecipeMatrix, MeshBasicMaterial: class {} },
+    toonMaterial() {}, OUTLINE_COLOR: 0x15171c, CAR_COLORS: [],
+    buildLow: emptyShape, buildHigh: emptyShape, buildCarBody: emptyShape, buildCarDetail: emptyShape,
+    buildWagon: emptyShape, buildRamp: emptyShape, buildCoin: emptyShape,
+  },
+);
+const recipeExpected = {
+  gapHole: [14, 0, 3], gapEnds: [57, 4, 3], gapPatch: [11, 0, 3],
+  gateFrame: [18, 6, 3], gateShutter: [42, 1, 3], girderBeam: [44, 7, 3],
+  girderJib: [6, 0, 3], girderPad: [10, 0, 6], girderGo: [6, 0, 3],
+};
+for (const [name, [boxes, hulls, capacity]] of Object.entries(recipeExpected)) {
+  const kind = recipeArt.kinds[name];
+  eq(kind.shape.length, boxes, `${name}: all recipe primitives`);
+  eq(kind.shape.filter((b) => b[7]?.hull !== false).length, hulls, `${name}: only specified outline shells`);
+  eq(kind.capacity, capacity, `${name}: fixed instance budget`);
+}
+for (const name of ['gapEnds', 'girderGo']) {
+  for (const b of recipeArt.kinds[name].shape.filter((box) => box[7]?.ry)) {
+    const lane = Math.round(b[3] / CONFIG.laneWidth);
+    const towardCenter = -Math.sign(b[3] - lane * CONFIG.laneWidth) * b[0] / 2;
+    ok(-Math.sin(b[7].ry) * towardCenter < 0, `${name}: chevron apex points forward (-Z)`);
+  }
+}
+for (const len of [4, 4.5, 5, 5.5, 6]) {
+  recipeArt.begin(); recipeArt.addPatch(-80, len);
+  eq(recipeArt.kinds.gapHole.instances[0].scale[2], len, 'hole scales with length');
+  eq(recipeArt.kinds.gapPatch.instances[0].scale[2], len, 'patch scales with length');
+  eq(recipeArt.kinds.gapEnds.instances[0].scale[2], 1, 'signs and rails never stretch');
+}
+for (const [tau, raised] of [[3, 1.9], [2.4, 1.9], [2, 0.95], [1.6, 0], [-1, 0]]) {
+  recipeArt.begin(); recipeArt.addRow('gate', -80, 0.35, undefined, tau);
+  ok(Math.abs(recipeArt.kinds.gateShutter.instances[0].position[1] - raised) < 1e-9, 'gate drops by CONFIG smoothstep');
+}
+for (const open of [0, 2]) for (const tau of [-0.2, 1.2, 2.2]) {
+  recipeArt.begin(); recipeArt.addRow('girder', -80, 0.5, open, tau);
+  eq(recipeArt.kinds.girderPad.instances.length, 2, 'two fixed warning pads');
+  eq(recipeArt.kinds.girderGo.instances[0].position[0], laneX(open), 'green arrows stay in the open lane');
+  eq(recipeArt.kinds.girderBeam.instances[0].angle, girderOffset(tau, open) / (CONFIG.obstacles.girder.pivotY - 1.2), 'beam swings around its high pivot');
+}
+
+// ---------- 11.5 görev 7: actual game/player/obstacle/chaser event loop ----------
+{
+  const { Chaser } = await import('../src/chaser.js');
+  const { RoadEvents } = await import('../src/road-events.js');
+  const saved = { ...game }, savedState = { ...game.state }, savedMult = { ...game.mult };
+  const h = rowHarness(20);
+  h.world.update = (dt, speed) => { h.world.distance += dt * speed; };
+  h.world.reset = () => { h.world.distance = 0; };
+  game.camera = null;
+  game.cameraRig = { scale: 1, clearShot() {}, setShot() {}, snap() {} };
+  const chaser = new Chaser({ add() {} }, h.player, h.ob, { root: {}, setState() {}, update() {} });
+  const director = new RoadEvents({ player: h.player, obstacles: h.ob, chaser });
+  game.systems = [h.ob, chaser, director];
+  game.chaser = chaser; game.roadEvents = director;
+  game.intro = null;
+  h.ob.fixedSeed = 11507;
+  let log = [], target = null, avoid = () => false;
+  const names = ['eventStart', 'strikeWarn', 'strikeSlam', 'strikeHit', 'eventDodge', 'eventReward', 'eventEnd', 'eventBonusOff', 'stumble', 'senseDodge', 'coin'];
+  const listeners = names.map((name) => {
+    const fn = (e) => {
+      log.push({ name, ...e.detail, t: game.state.time, d: h.world.distance, aim: h.player.lane, bonusTime: game.state.eventBonusTime });
+      if (name === 'strikeWarn' && avoid()) target = nearestSafe([0, 1, 2].map((l) => e.detail.lanes.includes(l)), h.player.lane);
+    };
+    events.addEventListener(name, fn); return [name, fn];
+  });
+  const count = (name) => log.filter((e) => e.name === name).length;
+  const reset = (d) => {
+    game.swing = { active: false }; game.wall = { active: false }; game.web = { zipping: false };
+    game.heroSpecials = { active: false }; game.sense = { dodges: 0 };
+    game.restart();
+    game.state.intro = false;
+    game.state.senseTime = game.state.tracerTime = 0;
+    chaser.mode = 'away';
+    h.world.distance = game.state.distance = d;
+    game.naturalSpeed = game.state.speed = speedAt(d);
+    log = []; target = null; avoid = () => false;
+  };
+  const step = () => {
+    if (game.state.mode === 'running' && !game.halted && target != null && h.player.lane !== target) h.player.changeLane(Math.sign(target - h.player.lane));
+    game.update(1 / 60);
+  };
+  const run = (seconds) => { for (let n = 0; n < Math.round(seconds * 60); n++) step(); };
+  const until = (done) => {
+    for (let n = 0; n < 900 && !done(); n++) step();
+    ok(done(), 'event reaches its expected boundary within 15 s');
+  };
+  const start = () => {
+    ok(director.start('venom'), 'manual Venom starts');
+    eq(game.state.eventKind, 'venom', 'director owns event kind');
+    eq(chaser.mode, 'near', 'hunt brings Venom near'); eq(chaser.spare, 1, 'hunt forgives one hit');
+  };
+  for (const d of [1500, 20000]) {
+    reset(d);
+    for (const [owner, key, value] of [[game.swing, 'active', true], [game.wall, 'active', true], [game.web, 'zipping', true], [game.heroSpecials, 'active', true], [game.state, 'tracerTime', 1], [game, 'speedOverride', 100], [h.player, 'controlsLocked', true]]) {
+      const old = owner[key]; owner[key] = value;
+      eq(director.start('venom'), false, `start refuses ${key}`); owner[key] = old;
+    }
+    start(); eq(director.start('venom'), false, 'only one event at a time');
+    until(() => count('strikeHit') > 0);
+    eq(count('stumble'), 1, 'first event hit stumbles'); eq(game.halted, false, 'first hit is forgiven'); eq(chaser.spare, 0, 'first hit consumes spare');
+    until(() => !director.active);
+    eq(count('stumble'), 2, 'second strike stumbles through the shared hook');
+    eq(game.halted, true, 'second strike catches'); eq(chaser.mode, 'catch', 'catch animation retains ownership');
+    eq(log.find((e) => e.name === 'eventEnd').aborted, true, 'catch aborts the event immediately');
+    eq(count('eventReward'), 0, 'catch has no reward');
+
+    reset(d); avoid = () => true; start(); run(11);
+    eq(count('strikeHit') + count('stumble'), 0, 'moving to nearestSafe avoids every strike');
+    ok(director.dodged >= 3, 'at least three strikes resolved');
+    const reward = log.find((e) => e.name === 'eventReward');
+    eq(reward.coins, director.dodged * 5 + 25, 'clean reward pays per dodge plus bonus');
+    eq(reward.mult, 3, 'clean reward multiplier'); eq(game.state.coins, reward.coins, 'reward goes into run coins');
+    eq(reward.bonusTime, 12, 'clean reward starts a full twelve-second timer');
+    eq(count('coin'), 0, 'reward emits no individual coin events');
+    eq(game.mult.event, 3, 'reward uses its own multiplier'); eq(chaser.mode, 'away', 'clean hunt drops Venom back');
+    const cleanRows = log.filter((e) => e.name === 'strikeWarn').map((e) => ({ lanes: e.lanes, warn: e.warn }));
+    const warns = log.filter((e) => e.name === 'strikeWarn');
+    for (let i = 0; i < warns.length; i++) {
+      const w = warns[i];
+      const delta = Math.min(...[0, 1, 2].filter((l) => !w.lanes.includes(l)).map((l) => Math.abs(l - w.aim)));
+      ok(w.warn >= floorW(delta, w.d), 'every emitted warning covers its actual lane distance');
+      if (i) ok(w.t - warns[i - 1].t >= warns[i - 1].warn + CONFIG.events.venom.slamTime - 1 / 60, 'next warning waits for previous strike resolution');
+    }
+    run(12); eq(game.mult.event, 0, 'event multiplier expires'); eq(game.state.eventBonusTime, 0, 'bonus timer expires');
+    eq(count('eventBonusOff'), 1, 'bonus off once');
+
+    reset(d); avoid = () => director.hits > 0; start();
+    until(() => !director.active);
+    eq(director.hits, 1, 'one hit then dodging survives');
+    const hitReward = log.find((e) => e.name === 'eventReward');
+    eq(hitReward.mult, 1, 'survival reward is +1'); eq(hitReward.coins, director.dodged * 5, 'hit loses clean coins');
+    eq(chaser.mode, 'near', 'surviving a hit leaves Venom near'); ok(chaser.timer <= CONFIG.chaser.nearTime, 'near timer is finite again');
+    eq(game.state.eventBonusTime, 12, 'full bonus duration at event completion');
+
+    reset(d); game.state.senseTime = 99; start(); run(11);
+    eq(count('strikeHit'), 0, 'sense dodges without input');
+    ok(count('senseDodge') >= count('strikeWarn'), 'sense makes at least one change per strike');
+    eq(game.sense.dodges, count('senseDodge'), 'sense dodge counter follows event dodges');
+    reset(d); h.ob.grace(99); start(); run(11);
+    eq(count('strikeHit'), 0, 'landing/save grace protects event hits');
+
+    reset(d); avoid = () => true; start(); run(2);
+    game.pause();
+    const frozen = json([director.t, director.strike, chaser.gap, h.world.distance, game.state.eventTime, game.state.eventBonusTime]);
+    run(100 / 60);
+    eq(json([director.t, director.strike, chaser.gap, h.world.distance, game.state.eventTime, game.state.eventBonusTime]), frozen, '100 paused frames freeze every event clock');
+    game.resume(); run(9);
+    eq(json(log.filter((e) => e.name === 'strikeWarn').map((e) => ({ lanes: e.lanes, warn: e.warn }))), json(cleanRows), 'pause preserves the seeded volley');
+
+    reset(d); start(); run(2); game.restart();
+    eq(game.state.eventKind, null, 'restart clears event'); eq(game.mult.event, 0, 'restart clears multiplier');
+    eq(chaser.spare, 0, 'restart clears spare'); eq(chaser.hunting, false, 'restart clears hunting'); eq(chaser.pose, null, 'restart clears forced pose');
+
+    reset(d); start(); run(2); game.heroSpecials.active = true; step();
+    eq(log.find((e) => e.name === 'eventEnd').aborted, true, 'mid-event special aborts'); eq(count('eventReward'), 0, 'special abort has no reward');
+    reset(d); start(); run(2); game.halt(); step();
+    eq(game.state.eventKind, null, 'external halt aborts'); eq(count('eventReward'), 0, 'halt pays nothing');
+
+    reset(d); start(); director.active.len = game.state.speed * 3;
+    run(5);
+    ok(!log.some((e) => e.name === 'strikeSlam' && e.d > d + speedAt(d) * 3 - speedAt(e.d) * CONFIG.events.endMargin), 'short zone never slams beyond early-end line');
+    eq(game.state.eventKind, null, 'short zone ends');
+
+    reset(d); start(); run(2); game.gameOver();
+    eq(game.state.eventKind, null, 'game over clears active event'); eq(game.mult.event, 0, 'game over clears multiplier');
+    eq(game.state.eventBonusTime, 0, 'game over clears bonus clock'); eq(count('eventReward'), 0, 'game over abort pays nothing');
+    reset(d); start(); run(2); game.toMenu();
+    eq(game.state.eventKind, null, 'menu clears event'); eq(chaser.hunting, false, 'menu clears hunt');
+  }
+  reset(999); eq(director.start('venom'), false, 'no event in first kilometre');
+  reset(1500); start();
+  until(() => director.strike?.phase === 'slam');
+  const lanes = director._lanes, position = director._position;
+  director._lanes = director._position = () => { throw new Error('allocation helper called during an unhit slam frame'); };
+  h.player.x = laneX(nearestSafe(director.strike.deadly, h.player.lane));
+  for (let n = 0; n < 3; n++) director._venom(1 / 60);
+  eq(director.strike.hit, false, 'unhit slam frames use no array or position allocation helper');
+  director._lanes = lanes; director._position = position;
+  reset(1500); eq(director.start('goblin'), false, 'Goblin logic belongs to task 9');
+  // A decoy wrapper installed after the chaser must still intercept the first stumble.
+  const chained = h.ob.hooks.onSideStumble;
+  let decoySpare = 1;
+  h.ob.hooks.onSideStumble = (hit) => { if (decoySpare) { decoySpare--; return; } chained(hit); };
+  start(); h.ob.eventHit(0); eq(chaser.spare, 1, 'decoy consumes its spare before Venom is told');
+  h.ob._sideHitTimer = 0; h.ob.eventHit(0); eq(chaser.spare, 0, 'next hit reaches Venom through wrapper');
+  chaser.hooks.absorbCatch = () => true;
+  h.ob._sideHitTimer = 0; h.ob.eventHit(0); eq(game.halted, false, 'Iron Spider catch absorb still saves him');
+  director.reset();
+  for (const [name, fn] of listeners) events.removeEventListener(name, fn);
+  Object.assign(game, saved); Object.assign(game.state, savedState); Object.assign(game.mult, savedMult);
+}
+
+for (const [name, fn] of rowListeners) events.removeEventListener(name, fn);
+Object.assign(game, rowSaved);
 
 await import('./test-audio.mjs');
 

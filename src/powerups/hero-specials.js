@@ -672,6 +672,7 @@ export class HeroSpecials {
   }
 
   _capExit() {
+    this.obstacles.grace(0.1); // Dropping the surf hover must not count as falling into a pit.
     this.cap.exit = 0;
     this.shield.root.rotation.set(0, 0, 0);
   }

@@ -158,6 +158,11 @@ export const CONFIG = {
     trainSpeedMax: 11,
     spawnDistance: 160,    // oncoming trains appear this far ahead
     releaseZ: 16,          // obstacles / coins / pickups this far behind are released
+    // Stage 11.5 row obstacles: one descriptor, all lanes; each lane gets its own collider.
+    gap:    { lenMin: 4, lenMax: 6, lenTime: 0.16, pitTop: 0.35, width: 2.2 },
+    gate:   { bottom: 0.95, top: 3.3, depth: 0.35, width: 2.2, raised: 1.9, dropFrom: 2.4, dropTo: 1.6 },
+    girder: { length: 4.4, bottom: 0.3, top: 2.1, depth: 0.5, amp: 1.1, period: 2.0, lockTime: 1.2, pivotY: 16 },
+    rowWarnTime: 2.4,      // s before arrival: rowWarn event (horn / clang, first-time caption)
   },
 
   // --- Coins (G2) ---
@@ -364,6 +369,31 @@ export const CONFIG = {
     pickupScale: 1.3,
   },
 
+  // --- Road events (11.5): Venom Hamlesi and Yeşil Cin baskını on a reserved zone ---
+  events: {
+    firstAt: 1200,         // m: first event zone is due (never in the first km)
+    gapMin: 1400, gapMax: 2200, // m from a zone's end to the next due point ...
+    gapEndless: 0.6,       // ... times this at endless k = 1
+    tail: 2.0,             // s of reserved track beyond the event's duration (speed grows up to 1.5 m/s in 10 s)
+    endMargin: 1.0,        // s: an event stops this long before its zone ends, whatever the clock says
+    pickupClear: 9,        // s: no pickup this long before a zone is due (a flight would skip it)
+    rowClear: 120,         // m after a zone before the next row obstacle
+    hitHeight: 2.2,        // feet below this are hit (a normal jump, apex 1.5, does not dodge)
+    laneHalf: 1.0,         // |player.x - laneX| below this = in that lane
+    warnEasy: 1.3, warnHard: 0.9, warnEndless: 0.78,   // s of warning: start, difficultyMax, x at k = 1
+    restEasy: 0.45, restHard: 0.15, restEndless: 0.6,  // s between a slam and the next warning
+    switchSlack: 0.08,     // s added per lane to laneSwitchTime (a human's second swipe)
+    inputSlack: 0.06,      // s added once
+    doubleFrom: 0.5, doubleSpan: 1.0, doubleMax: 0.6,  // two-lane rows: chance = clamp((diff - from) / span, 0, max)
+    senseActTime: 0.45,    // spider-sense moves him this long before a slam / blast (= sense.laneActTime)
+    bonusTime: 12,         // s the reward multiplier lasts
+    bonusClean: 3, bonusHit: 1, // game.mult.event after a flawless / a survived event
+    venom:  { duration: 10, intro: 1.4, outro: 1.2, slamTime: 0.12, holdTime: 0.25, retractTime: 0.3,
+              coinPerDodge: 5, cleanCoins: 25, scale: 1.0, screenShare: 0.34 },
+    goblin: { duration: 10, intro: 1.6, outro: 1.4, lead: 1.6, fly: 0.45, blastAhead: 0.6, blastBehind: 1.0,
+              coinPerRow: 6, cleanCoins: 30, stationZ: -13, stationY: 3.5, height: 1.85 },
+  },
+
   // --- Start-of-run intro clip (intro.js). Seconds unless noted; z is metres behind the
   //     player's start spot (the world stands still during the clip). ---
   intro: {
@@ -427,5 +457,15 @@ export const CONFIG = {
     trainStart: 200,       // no oncoming trains before this distance
     checkGapTime: 0.6,     // tools/check-patterns.mjs: min seconds between two actions in a lane ...
     minReaction: 0.4,      // ... which may shrink to this in the endless phase (never lower)
+    // Stage 11.5 row obstacles (gap / gate / girder) share one generator schedule.
+    rows: {
+      firstAt: 600,        // m: first gap
+      gateAt: 1100,        // m: gates join
+      girderAt: 1700,      // m: girders join
+      gapMin: 260, gapMax: 520, // m between two rows (random in between) ...
+      gapEndless: 0.7,     // ... times this at endless k = 1
+      comboChance: 0.4,    // at k = 1: gap -> gate (or gate -> gap) back to back
+      weights: { gap: 3, gate: 3, girder: 2.5 },
+    },
   },
 };

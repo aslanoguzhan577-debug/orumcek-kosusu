@@ -131,7 +131,7 @@ function applySim(action, floor) {
 function simulate(p, list, action, delay, horizon) {
   loadSim(p);
   const s = sim;
-  const dt = S.simStep;
+  const dt = Math.max(S.simStep, list.n ? list.items[0].o.dz / list.items[0].rel : 0); // match Player's Euler step
   const g = CONFIG.gravity;
   let done = !action;
   for (let t = 0; t <= horizon; t += dt) {
@@ -140,6 +140,7 @@ function simulate(p, list, action, delay, horizon) {
     let floor = 0;
     for (let i = 0; i < list.n; i++) {
       const it = list.items[i];
+      if (it.part.pit) continue;
       if (tn < it.t0 || tn > it.t1) continue;
       const top = topAt(it, tn);
       if (top > floor && s.y + O.stepUp >= top) floor = top;
@@ -188,18 +189,18 @@ function simulate(p, list, action, delay, horizon) {
     const by0 = s.y + 0.1, by1 = s.y + h - 0.05;
     for (let i = 0; i < list.n; i++) {
       const it = list.items[i];
-      if (tn < it.t0 || tn > it.t1) continue;
+      if (tn < it.t0 || t - it.o.dz / it.rel > it.t1) continue; // obstacles already moved; include their swept tail
       const top = topAt(it, tn);
       if (by1 <= it.part.y0 || by0 >= top) continue;
       const entering = it.t0 > 0 && t <= it.t0;
       const rising = y0 + h0 - 0.05 <= it.part.y0;
-      if (entering || rising) return tn;
+      if (entering || rising || it.part.pit) return tn;
     }
   }
   return Infinity;
 }
 
-const isWall = (it) => (it.o.type === 'wagons' || it.o.type === 'train') && !it.part.ramp;
+const isWall = (it) => (it.o.type === 'wagons' || it.o.type === 'train' || it.o.type === 'girder') && !it.part.ramp;
 
 export class SensePowerup {
   constructor({ player, obstacles }) {
@@ -272,7 +273,7 @@ export class SensePowerup {
     const wall = threat && isWall(threat);
     if (tHit > (wall ? S.laneActTime : S.actTime)) return; // still time for the player himself
 
-    const high = threat && threat.o.type === 'high';
+    const high = threat && (threat.o.type === 'high' || threat.o.type === 'gate');
     const order = wall ? ['lane', 'jump', 'slide'] : high ? ['slide', 'lane', 'jump'] : ['jump', 'lane', 'slide'];
     for (const a of order) {
       if (a === 'lane') {
@@ -323,6 +324,23 @@ export class SensePowerup {
       if (ok && score > bestScore) {
         best = dir;
         bestScore = score;
+      }
+    }
+    if (best === 0) {
+      for (let dir = -1; dir <= 1; dir += 2) {
+        const lane = p.lane + dir, farLane = p.lane + 2 * dir;
+        if (lane < 0 || lane >= CONFIG.laneCount || farLane < 0 || farLane >= CONFIG.laneCount) continue;
+        const list = this.there.collect(active, lane, v, S.laneRankTime);
+        let wallT = Infinity;
+        let side = false;
+        for (let i = 0; i < list.n; i++) {
+          const it = list.items[i];
+          if (isWall(it) && it.t0 > 0) wallT = Math.min(wallT, it.t0);
+          if (it.t0 < CONFIG.laneSwitchTime + 0.04 && topAt(it, Math.max(0, it.t0)) > p.y + 0.1 && it.part.y0 < p.y + CONFIG.playerHeight) side = true;
+        }
+        if (side || wallT <= 2 * CONFIG.laneSwitchTime + 0.08) continue;
+        list.collect(active, farLane, v, S.laneRankTime);
+        if (simulate(p, list, null, 0, S.laneClearTime) === Infinity) return dir;
       }
     }
     return best;

@@ -8,11 +8,15 @@ const data = (src) => 'data:text/javascript,' + encodeURIComponent(src);
 const THREE = data(`
 const vec = () => ({ x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } });
 export class Group {
-  constructor() { this.children = []; this.position = vec(); this.rotation = vec(); }
+  constructor() { this.children = []; this.position = vec(); this.rotation = vec(); this.scale = { x: 1, y: 1, z: 1, setScalar(n) { this.x = this.y = this.z = n; } }; }
   add(c) { this.children.push(c); }
   remove(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); }
 }
-export class Box3 { constructor() { this.min = vec(); this.max = vec(); } }
+export class Box3 {
+  constructor() { this.min = vec(); this.max = vec(); }
+  setFromObject() { return this; }
+  isEmpty() { return true; }
+}
 export class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
@@ -31,6 +35,7 @@ export const MathUtils = { clamp: (v, a, b) => Math.min(b, Math.max(a, v)) };
 const WORLD = data(`
 import { CONFIG } from '${CONFIG_URL}';
 export const laneX = (lane) => (lane - (CONFIG.laneCount - 1) / 2) * CONFIG.laneWidth;
+export const createBlobShadow = () => ({ position: { set() {} }, visible: false });
 `);
 const CURVE = data('export const curve = { bank: 0 };');
 // pickup-art.js is pure THREE + canvas: node only needs the factories the power-ups register.
@@ -39,7 +44,9 @@ const vec = () => ({ x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; th
 const node = () => ({ position: vec(), rotation: vec(), scale: { setScalar() {} }, visible: true });
 const item = () => ({ root: node(), update() {} });
 export const createSwingPickup = item;
+export const createSensePickup = item;
 export const createWebPickup = item;
+export const createIronPickup = item;
 export const createBuglePickup = item;
 export const createSpringPickup = item;
 export const createDecoyPickup = item;
@@ -55,11 +62,15 @@ export const createTracerRibbon = (n) => ({
   update() {},
 });
 `);
+const OBSTACLE_ART = data(`
+export const createObstacleArt = () => ({ begin() {}, add() {}, addRow() {}, addPatch() {}, addCoin() {}, end() {} });
+`);
 
 export async function resolve(spec, ctx, next) {
   if (spec === 'three') return { shortCircuit: true, url: THREE };
   if (spec.endsWith('/world.js')) return { shortCircuit: true, url: WORLD };
   if (spec.endsWith('/curve.js')) return { shortCircuit: true, url: CURVE };
   if (spec.endsWith('/pickup-art.js')) return { shortCircuit: true, url: PICKUP_ART };
+  if (spec.endsWith('/obstacle-art.js')) return { shortCircuit: true, url: OBSTACLE_ART };
   return next(spec, ctx);
 }

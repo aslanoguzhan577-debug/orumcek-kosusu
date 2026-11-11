@@ -10,6 +10,7 @@ import { World, createBlobShadow } from './world.js';
 import { Player } from './player.js';
 import { Obstacles } from './obstacles.js';
 import { Chaser } from './chaser.js';
+import { RoadEvents } from './road-events.js';
 import { WebPowerup } from './powerups/web.js';
 import { IronSpiderPowerup } from './powerups/ironspider.js';
 import { SensePowerup } from './powerups/sense.js';
@@ -159,6 +160,9 @@ game.wall = wall;
 const tracer = new TracerPowerup({ player, obstacles, scene }); // drone traces the open lane
 game.addSystem(tracer);
 game.tracer = tracer;
+const roadEvents = new RoadEvents({ player, obstacles, chaser });
+game.addSystem(roadEvents);
+game.roadEvents = roadEvents;
 const flash = new FlashBooster(); // market consumable: start-of-run score boost
 game.addSystem(flash);
 game.flash = flash;

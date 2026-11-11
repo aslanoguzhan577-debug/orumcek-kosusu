@@ -102,6 +102,10 @@ export function descLength(desc) {
     case 'wagons':
     case 'train':
       return (desc.ramp ? O.rampLength : 0) + desc.cars * O.wagon.length + (desc.cars - 1) * O.wagon.gap;
+    case 'gap':
+    case 'gate':
+    case 'girder':
+      return desc.len;
     default: return 0;
   }
 }
@@ -117,7 +121,25 @@ export function trainSpawnD(meetD, trainSpeed) {
 // Seconds the route needs after an obstacle before the next one (land / fall + react).
 // 'high' (0.6) is also what keeps the slide rhythm fair: standing up after a slide takes
 // CONFIG.slideRecover (0.25) + 0.7 of sliding, and a spammed press is always fired in time.
-const AFTER_TIME = { low: 0.75, car: 0.85, high: 0.6, wagons: 0.9 };
+const AFTER_TIME = { low: 0.75, car: 0.85, high: 0.6, wagons: 0.9, gap: 0.75, gate: 0.6, girder: 0.5 };
+
+// Lanes a row descriptor occupies (11.5): gap and gate span all three; the girder covers the
+// centre lane and one outer lane; everything else sits in its own lane.
+export function descLanes(desc) {
+  if (desc.type === 'gap' || desc.type === 'gate') return [0, 1, 2];
+  if (desc.type === 'girder') return [1, 2 - desc.open];
+  return [desc.lane];
+}
+
+// Signed x of the girder's swing at `tau` seconds to arrival (art only; collision is the parked
+// pose). `open` is the lane left free: it hangs over the open lane at tau = lockTime + period/2.
+export function girderOffset(tau, open) {
+  const G = CONFIG.obstacles.girder;
+  const s = open === 0 ? -1 : 1;
+  return tau <= G.lockTime
+    ? -s * G.amp
+    : -s * G.amp * Math.cos((2 * Math.PI * (tau - G.lockTime)) / G.period);
+}
 
 const CAR_COLORS = 6;
 
@@ -146,6 +168,10 @@ export class PatternGenerator {
     this.route = CENTER_LANE;
     this.laneFree = new Array(LANES).fill(0); // each lane is empty from here on
     this.routeNext = 0;                      // earliest start of the next route obstacle
+    this.nextRowD = CONFIG.patterns.rows.firstAt;
+    this.lastRow = null;
+    this.nextEventD = CONFIG.events.firstAt;
+    this.eventKind = 'venom';
     this.coinFree = new Array(LANES).fill(-Infinity); // last coin per lane (no overlapping rows)
     this.coinMax = new Array(LANES).fill(Infinity);   // no coins beyond this per lane (next obstacle)
     this._placed = new Array(LANES).fill(null);
@@ -173,120 +199,135 @@ export class PatternGenerator {
     const k = endlessK(diff);
     const blockTime = lerp(P.blockTimeEasy, P.blockTimeHard, Math.min(diff, P.difficultyMax));
     const blockLen = v * lerp(blockTime, P.blockTimeEndless, k);
-    const B = A + blockLen;
+    let B = A + blockLen;
     this.cursor = B;
 
+    let route = this.route, routeFree = null;
+    let due = null;
     if (A < P.safeStart) {
       if (A > 12) this._coinRow(out, this.route, A, B - 2, 0);
-      return;
-    }
+    } else {
 
-    // Distance needed to change one lane and get settled.
-    const shiftWin = v * (CONFIG.laneSwitchTime + P.reactionTime) + 2;
-    const afterScale = lerp(1, P.afterTimeHard, k);
+      // Distance needed to change one lane and get settled.
+      const shiftWin = v * (CONFIG.laneSwitchTime + P.reactionTime) + 2;
+      const afterScale = lerp(1, P.afterTimeHard, k);
 
-    // 1. Maybe move the route one lane over (both lanes must be empty now).
-    const oldRoute = this.route;
-    if (rng() < Math.min(0.7, lerp(0.25, 0.45, diff))) {
-      let target = oldRoute + (rng() < 0.5 ? -1 : 1);
-      if (target < 0 || target >= LANES) target = oldRoute * 2 - target;
-      if (this.laneFree[oldRoute] <= A && this.laneFree[target] <= A) {
-        this.route = target;
-        this.routeNext = Math.max(this.routeNext, A + shiftWin);
-      }
-    }
-    const route = this.route;
-    const moved = route !== oldRoute;
-    // zigzag: a diagonal coin line from the old route lane to the new one (both are free)
-    if (moved && rng() < C.zigzagChance) this._coinDiagonal(out, oldRoute, route, A + 1, A + shiftWin - 1);
-
-    // 2. Route lane: one passable obstacle (+ maybe a combo partner in the endless phase).
-    let routeFree = null;
-    const rs = Math.max(A, this.laneFree[route], this.routeNext);
-    if (rs < B - 1 && rng() < Math.min(1, lerp(0.45, 0.8, diff))) {
-      // the endless phase pulls it toward the start of the block (tighter sequences)
-      const d = rs + Math.pow(rng(), 1 + 2 * k) * Math.min(B - 1 - rs, blockLen * 0.5);
-      const kind = pickWeighted(rng, [['low', 3], ['high', 3], ['car', 2.5], ['ramp', 1.6]]);
-      const desc = this._routeObstacle(out, kind, route, d, v, afterScale);
-      if (d - rs > 8) routeFree = [rs, d - 4];
-      if (d - rs > 8 && rng() < C.routeRowChance) this._coinRow(out, route, rs, d - Math.max(2, v * 0.3), 0);
-      this._routeCoins(out, desc, v);
-      // combo: jump -> slide (or slide -> jump) as soon as the spacing allows
-      if (k > 0 && rng() < P.comboChance * k && this.routeNext < B - 1) {
-        const kind2 = desc.type === 'high' ? (rng() < 0.6 ? 'low' : 'car') : 'high';
-        this._routeCoins(out, this._routeObstacle(out, kind2, route, this.routeNext, v, afterScale), v);
-      }
-    } else if (rs < B - 1) {
-      routeFree = [rs, B - 1];
-      if (rng() < C.routeRowChance) this._coinRow(out, route, rs, B - 1, 0);
-    }
-
-    // 3. Other lanes: anything, including blocking cars and oncoming trains.
-    const placed = this._placed;
-    const from = this._from;
-    for (let lane = 0; lane < LANES; lane++) {
-      placed[lane] = null;
-      from[lane] = B;
-      this._coinStop[lane] = Infinity;
-      if (lane === route) continue;
-      let start = Math.max(A, this.laneFree[lane]);
-      if (moved && lane === oldRoute) start = Math.max(start, A + shiftWin); // let the player leave
-      if (start >= B) continue;
-      from[lane] = start;
-      if (rng() > Math.min(1, lerp(0.35, 0.8, diff))) continue;
-
-      const table = [['low', 2], ['high', 2], ['car', 2.5], ['wagons', 2.5 + P.blockWeightHard * k], ['ramp', 1.2]];
-      if (A > P.trainStart) table.push(['train', 1.5 + 2 * diff]);
-      const kind = pickWeighted(rng, table);
-      const d = start + rng() * (B - start) * 0.6;
-
-      if (kind === 'train') {
-        const O = CONFIG.obstacles;
-        const speed = lerp(lerp(O.trainSpeedMin, P.trainSpeedMinHard, k), lerp(O.trainSpeedMax, P.trainSpeedMaxHard, k), rng());
-        // Meet point a bit later: the train closes in faster than the track.
-        const meet = d + speed * P.reactionTime + 2;
-        const desc = { type: 'train', lane, d: meet, cars: 2 + Math.floor(rng() * 3), ramp: false, speed };
-        desc.len = descLength(desc);
-        desc.spawnD = trainSpawnD(meet, speed);
-        out.push(desc);
-        placed[lane] = desc;
-        // The train sweeps [meet, spawnD + len] on its way to the player: keep it empty.
-        this.laneFree[lane] = desc.spawnD + desc.len + 4;
+      due = A >= this.nextEventD ? 'event' : A >= this.nextRowD ? 'row' : null;
+      if (due) {
+        const free = Math.max(A + 1, this.routeNext, ...this.laneFree);
+        if (free > B - 1) {
+          if (rng() < C.routeRowChance) this._coinRow(out, route, Math.max(A, this.laneFree[route]), B - 1, 0);
+        } else {
+          B = Math.max(B, due === 'event' ? this._eventZone(out, free, v, k) : this._row(out, free, v, k, shiftWin, afterScale));
+          this.cursor = B;
+          route = this.route;
+        }
       } else {
-        const desc = this._passable(kind, lane, d);
-        out.push(desc);
-        placed[lane] = desc;
-        this.laneFree[lane] = d + desc.len + 2 + rng() * lerp(6, P.sideGapHard, k);
-        // endless phase: fewer free side lanes — a second obstacle right after the first
-        if (k > 0 && this.laneFree[lane] < B - 2 && rng() < P.sideSecondChance * k) {
-          const kind2 = pickWeighted(rng, table.slice(0, 5)); // no train
-          const d2 = this.laneFree[lane];
-          const desc2 = this._passable(kind2, lane, d2);
-          out.push(desc2);
-          this._coinStop[lane] = d2 - 1;
-          this.laneFree[lane] = d2 + desc2.len + 2 + rng() * lerp(6, P.sideGapHard, k);
+
+        // 1. Maybe move the route one lane over (both lanes must be empty now).
+        const oldRoute = this.route;
+        if (rng() < Math.min(0.7, lerp(0.25, 0.45, diff))) {
+          let target = oldRoute + (rng() < 0.5 ? -1 : 1);
+          if (target < 0 || target >= LANES) target = oldRoute * 2 - target;
+          if (this.laneFree[oldRoute] <= A && this.laneFree[target] <= A) {
+            this.route = target;
+            this.routeNext = Math.max(this.routeNext, A + shiftWin);
+          }
+        }
+        route = this.route;
+        const moved = route !== oldRoute;
+        // zigzag: a diagonal coin line from the old route lane to the new one (both are free)
+        if (moved && rng() < C.zigzagChance) this._coinDiagonal(out, oldRoute, route, A + 1, A + shiftWin - 1);
+
+        // 2. Route lane: one passable obstacle (+ maybe a combo partner in the endless phase).
+        const rs = Math.max(A, this.laneFree[route], this.routeNext);
+        if (rs < B - 1 && rng() < Math.min(1, lerp(0.45, 0.8, diff))) {
+          // the endless phase pulls it toward the start of the block (tighter sequences)
+          const d = rs + Math.pow(rng(), 1 + 2 * k) * Math.min(B - 1 - rs, blockLen * 0.5);
+          const kind = pickWeighted(rng, [['low', 3], ['high', 3], ['car', 2.5], ['ramp', 1.6]]);
+          const desc = this._routeObstacle(out, kind, route, d, v, afterScale);
+          if (d - rs > 8) routeFree = [rs, d - 4];
+          if (d - rs > 8 && rng() < C.routeRowChance) this._coinRow(out, route, rs, d - Math.max(2, v * 0.3), 0);
+          this._routeCoins(out, desc, v);
+          // combo: jump -> slide (or slide -> jump) as soon as the spacing allows
+          if (k > 0 && rng() < P.comboChance * k && this.routeNext < B - 1) {
+            const kind2 = desc.type === 'high' ? (rng() < 0.6 ? 'low' : 'car') : 'high';
+            this._routeCoins(out, this._routeObstacle(out, kind2, route, this.routeNext, v, afterScale), v);
+          }
+        } else if (rs < B - 1) {
+          routeFree = [rs, B - 1];
+          if (rng() < C.routeRowChance) this._coinRow(out, route, rs, B - 1, 0);
+        }
+
+        // 3. Other lanes: anything, including blocking cars and oncoming trains.
+        const placed = this._placed;
+        const from = this._from;
+        for (let lane = 0; lane < LANES; lane++) {
+          placed[lane] = null;
+          from[lane] = B;
+          this._coinStop[lane] = Infinity;
+          if (lane === route) continue;
+          let start = Math.max(A, this.laneFree[lane]);
+          if (moved && lane === oldRoute) start = Math.max(start, A + shiftWin); // let the player leave
+          if (start >= B) continue;
+          from[lane] = start;
+          if (rng() > Math.min(1, lerp(0.35, 0.8, diff))) continue;
+
+          const table = [['low', 2], ['high', 2], ['car', 2.5], ['wagons', 2.5 + P.blockWeightHard * k], ['ramp', 1.2]];
+          if (A > P.trainStart) table.push(['train', 1.5 + 2 * diff]);
+          const kind = pickWeighted(rng, table);
+          const d = start + rng() * (B - start) * 0.6;
+
+          if (kind === 'train') {
+            const O = CONFIG.obstacles;
+            const speed = lerp(lerp(O.trainSpeedMin, P.trainSpeedMinHard, k), lerp(O.trainSpeedMax, P.trainSpeedMaxHard, k), rng());
+            // Meet point a bit later: the train closes in faster than the track.
+            const meet = d + speed * P.reactionTime + 2;
+            const desc = { type: 'train', lane, d: meet, cars: 2 + Math.floor(rng() * 3), ramp: false, speed };
+            desc.len = descLength(desc);
+            desc.spawnD = trainSpawnD(meet, speed);
+            out.push(desc);
+            placed[lane] = desc;
+            // The train sweeps [meet, spawnD + len] on its way to the player: keep it empty.
+            this.laneFree[lane] = desc.spawnD + desc.len + 4;
+          } else {
+            const desc = this._passable(kind, lane, d);
+            out.push(desc);
+            placed[lane] = desc;
+            this.laneFree[lane] = d + desc.len + 2 + rng() * lerp(6, P.sideGapHard, k);
+            // endless phase: fewer free side lanes — a second obstacle right after the first
+            if (k > 0 && this.laneFree[lane] < B - 2 && rng() < P.sideSecondChance * k) {
+              const kind2 = pickWeighted(rng, table.slice(0, 5)); // no train
+              const d2 = this.laneFree[lane];
+              const desc2 = this._passable(kind2, lane, d2);
+              out.push(desc2);
+              this._coinStop[lane] = d2 - 1;
+              this.laneFree[lane] = d2 + desc2.len + 2 + rng() * lerp(6, P.sideGapHard, k);
+            }
+          }
+        }
+
+        // 3b. Coins in a second (sometimes a third) lane.
+        // The lane with the most room for coins gets the second-lane chance (free > passable
+        // obstacle > wagons roof > train), the other one the third-lane chance.
+        const room = (lane) => {
+          const o = placed[lane];
+          if (from[lane] >= B - 1) return -1;
+          return !o ? 3 : o.type === 'train' ? 0 : o.type === 'wagons' && !o.ramp ? 1 : 2;
+        };
+        const flip = rng() < 0.5;
+        const sides = [];
+        for (let lane = 0; lane < LANES; lane++) if (lane !== route) sides.push(lane);
+        sides.sort((a, b) => room(b) - room(a) || (flip ? b - a : a - b));
+        for (let i = 0; i < sides.length; i++) {
+          const lane = sides[i];
+          if (rng() < (i === 0 ? C.sideChance : C.thirdChance) && room(lane) >= 0) this._sideCoins(out, lane, from[lane], placed[lane], B, v);
         }
       }
     }
 
-    // 3b. Coins in a second (sometimes a third) lane.
-    // The lane with the most room for coins gets the second-lane chance (free > passable
-    // obstacle > wagons roof > train), the other one the third-lane chance.
-    const room = (lane) => {
-      const o = placed[lane];
-      if (from[lane] >= B - 1) return -1;
-      return !o ? 3 : o.type === 'train' ? 0 : o.type === 'wagons' && !o.ramp ? 1 : 2;
-    };
-    const flip = rng() < 0.5;
-    const sides = [];
-    for (let lane = 0; lane < LANES; lane++) if (lane !== route) sides.push(lane);
-    sides.sort((a, b) => room(b) - room(a) || (flip ? b - a : a - b));
-    for (let i = 0; i < sides.length; i++) {
-      const lane = sides[i];
-      if (rng() < (i === 0 ? C.sideChance : C.thirdChance) && room(lane) >= 0) this._sideCoins(out, lane, from[lane], placed[lane], B, v);
-    }
-
     // 4. Extras (pickups) from later tasks.
+    if (due || B > this.nextEventD - v * CONFIG.events.pickupClear) routeFree = null;
     if (this.extras.length) {
       const ctx = {
         rng, A, B, speed: v, difficulty: diff, route, routeFree, pickups: 0,
@@ -299,6 +340,61 @@ export class PatternGenerator {
       };
       for (const fn of this.extras) fn(ctx);
     }
+  }
+
+  _row(out, free, v, k, shiftWin, afterScale) {
+    const P = CONFIG.patterns, R = P.rows, rng = this.rng;
+    const table = [['gap', R.weights.gap]];
+    if (free >= R.gateAt) table.push(['gate', R.weights.gate]);
+    if (free >= R.girderAt) table.push(['girder', R.weights.girder]);
+    const type = pickWeighted(rng, table.length > 1 ? table.filter(([n]) => n !== this.lastRow) : table);
+    let end = this._placeRow(out, type, free, v, shiftWin, afterScale);
+    if (type !== 'girder' && k > 0 && rng() < R.comboChance * k) {
+      // Each partner still needs the full C4 run-up, even when endless recovery shrinks.
+      end = this._placeRow(out, type === 'gap' ? 'gate' : 'gap', this.routeNext, v, shiftWin, afterScale);
+    }
+    this.lastRow = type;
+    this.nextRowD = end + lerp(R.gapMin, R.gapMax, rng()) * lerp(1, R.gapEndless, k);
+    return end + 1;
+  }
+
+  _placeRow(out, type, free, v, shiftWin, afterScale) {
+    const P = CONFIG.patterns, O = CONFIG.obstacles;
+    if (type === 'girder') {
+      if (this.route === CENTER_LANE) this.route = this.rng() < 0.5 ? 0 : LANES - 1;
+      const open = this.route;
+      const d = free + 2 * shiftWin;
+      const desc = { type, lane: CENTER_LANE, d, len: O.girder.depth, open };
+      out.push(desc);
+      const after = d + desc.len + v * AFTER_TIME.girder * afterScale + 1.5;
+      for (let lane = 0; lane < LANES; lane++) if (lane !== open) this.laneFree[lane] = after;
+      this.routeNext = Math.max(this.routeNext, after);
+      this._coinRow(out, open, d - v * 0.8, d + desc.len + 4, 0);
+      return d + desc.len;
+    }
+    const d = free + v * P.checkGapTime + 1;
+    const len = type === 'gap' ? clamp(Math.round(v * O.gap.lenTime * 2) / 2, O.gap.lenMin, O.gap.lenMax) : O.gate.depth;
+    out.push({ type, lane: CENTER_LANE, d, len });
+    const after = d + len + v * AFTER_TIME[type] * afterScale + 1.5;
+    for (let lane = 0; lane < LANES; lane++) {
+      this.laneFree[lane] = after;
+      this._routeCoins(out, { type, lane, d, len }, v);
+    }
+    this.routeNext = after;
+    return d + len;
+  }
+
+  _eventZone(out, free, v, k) {
+    const E = CONFIG.events, kind = this.eventKind;
+    const d = free + v * CONFIG.patterns.checkGapTime + 1;
+    const end = d + v * (E[kind].duration + E.tail);
+    out.push({ type: 'event', kind, d, len: end - d });
+    this.laneFree.fill(end + 1);
+    this.routeNext = end + v * CONFIG.patterns.reactionTime;
+    this.eventKind = kind === 'venom' ? 'goblin' : 'venom';
+    this.nextEventD = end + lerp(E.gapMin, E.gapMax, this.rng()) * lerp(1, E.gapEndless, k);
+    this.nextRowD = Math.max(this.nextRowD, end + E.rowClear);
+    return end;
   }
 
   // A passable obstacle on the route at d; moves the route bookkeeping past it.
@@ -393,7 +489,7 @@ export class PatternGenerator {
   _routeCoins(out, desc, v) {
     const C = CONFIG.coins;
     const O = CONFIG.obstacles;
-    if (desc.type === 'low' || desc.type === 'car') {
+    if (desc.type === 'low' || desc.type === 'car' || desc.type === 'gap') {
       // Arc following a jump centred on the obstacle.
       const air = 2 * Math.sqrt(2 * CONFIG.jumpHeight / CONFIG.gravity);
       const half = (v * air) / 2;
@@ -403,7 +499,7 @@ export class PatternGenerator {
         const s = ((i / (n - 1)) * 2 - 1) * 0.85; // -0.85 .. 0.85 of the half arc
         this._coin(out, desc.lane, mid + s * half, C.height + CONFIG.jumpHeight * (1 - s * s));
       }
-    } else if (desc.type === 'high') {
+    } else if (desc.type === 'high' || desc.type === 'gate') {
       // Low row under the bar (slide).
       for (let i = -1; i <= 1; i++) this._coin(out, desc.lane, desc.d + desc.len / 2 + i * C.spacing, 0.35);
     } else if (desc.type === 'wagons' && desc.ramp) {

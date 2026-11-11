@@ -181,7 +181,7 @@ export class IronSpiderPowerup {
       const reach = (v + o.speed) * I.clearTime + hd;       // its own closing speed
       if (o.z < -reach) continue;                           // too far ahead
       const part = o.parts[o.parts.length > 1 && o.parts[0].ramp ? 1 : 0];
-      positions.push(new THREE.Vector3(o.x, (part.y0 + part.y1) / 2, Math.min(o.z, -hd)));
+      positions.push(new THREE.Vector3(o.x, part.pit ? 0 : (part.y0 + part.y1) / 2, Math.min(o.z, -hd)));
       this.obstacles.remove(o);
     }
     this.obstacles.grace(I.graceTime);

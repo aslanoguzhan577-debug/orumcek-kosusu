@@ -20,7 +20,7 @@
 // in at least two lanes.
 
 import { CONFIG } from '../src/config.js';
-import { PatternGenerator, speedAt, difficultyAt, endlessK } from '../src/patterns.js';
+import { PatternGenerator, speedAt, difficultyAt, endlessK, descLanes, girderOffset } from '../src/patterns.js';
 
 const P = CONFIG.patterns;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -81,7 +81,9 @@ const W = windows.length - 1;
 const FREE = 0, JUMP = 1, SLIDE = 2, RAMP = 3, BLOCK = 4;
 
 // pooled instance limits (obstacle-art.js) and what is alive at once (spawn horizon .. release)
-const CAP = { coin: 256, low: 24, high: 24, car: 24, wagon: 64, ramp: 16 };
+const CAP = { coin: 256, low: 24, high: 24, car: 24, wagon: 64, ramp: 16,
+  gapHole: 3, gapEnds: 3, gapPatch: 3, gateFrame: 3, gateShutter: 3,
+  girderBeam: 3, girderJib: 3, girderPad: 6, girderGo: 3 };
 const WCFG = CONFIG.world;
 const HORIZON = WCFG.segmentCount * WCFG.segmentLength - WCFG.backZ + WCFG.segmentLength;
 const RELEASE = CONFIG.obstacles.releaseZ;
@@ -96,6 +98,10 @@ let cover2 = 0, coverN = 0, cover3 = 0;
 
 function checkSeed(seed, withMargin) {
   const gen = new PatternGenerator(seed);
+  // Exercise the same routeFree contract used by every real pickup extra.
+  gen.addExtra((ctx) => {
+    if (ctx.routeFree) ctx.push({ type: 'pickup', lane: ctx.route, d: (ctx.routeFree[0] + ctx.routeFree[1]) / 2, y: 1 });
+  });
   const descs = gen.generateUntil(LENGTH + 200);
   const cells = Math.ceil((LENGTH + 400) / STEP);
   const lanes = [];
@@ -118,14 +124,19 @@ function checkSeed(seed, withMargin) {
   const statics = [];
   const trains = [];
   const coins = [];
+  const rows = [], zones = [], pickups = [];
   const counts = {};
   for (const o of descs) {
     counts[o.type] = (counts[o.type] || 0) + 1;
-    if (o.type !== 'coin' && o.type !== 'pickup' && o.d < LENGTH) perWin[o.type === 'train' ? 'train' : 'obst'][winOf(o.d)]++;
-    if (o.type === 'pickup') continue;
+    if (!['coin', 'pickup', 'event'].includes(o.type) && o.d < LENGTH) perWin[o.type === 'train' ? 'train' : 'obst'][winOf(o.d)]++;
+    if (o.type === 'pickup') { pickups.push(o); continue; }
+    if (o.type === 'event') { zones.push(o); continue; }
     if (o.type === 'coin') coins.push(o);
     else if (o.type === 'train') trains.push(o);
-    else statics.push(o);
+    else {
+      if (['gap', 'gate', 'girder'].includes(o.type)) rows.push(o);
+      for (const lane of descLanes(o)) statics.push({ ...o, lane });
+    }
   }
 
   // Static obstacles never overlap in a lane.
@@ -155,20 +166,50 @@ function checkSeed(seed, withMargin) {
   const hd = CONFIG.playerDepth / 2;
   for (const s of statics) {
     let kind = BLOCK;
-    if (s.type === 'low' || s.type === 'car') kind = JUMP;
-    else if (s.type === 'high') kind = SLIDE;
+    if (s.type === 'low' || s.type === 'car' || s.type === 'gap') kind = JUMP;
+    else if (s.type === 'high' || s.type === 'gate') kind = SLIDE;
     else if (s.type === 'wagons' && s.ramp) kind = RAMP;
-    mark(s.lane, s.d - hd, s.d + s.len + hd, kind);
+    // At 20 FPS collision still tests the previous frame's tail position.
+    const sweptTail = s.type === 'gap' ? speedAt(s.d + s.len) * CONFIG.dtCap : 0;
+    mark(s.lane, s.d - hd, s.d + s.len + hd + sweptTail, kind);
     // solid profile for the coin test
     for (let i = cell(s.d); i <= cell(s.d + s.len); i++) {
       const f = Math.min(s.len, (i + 1) * STEP - s.d); // far end of the cell (highest on a ramp)
       let top = 0;
       if (s.type === 'low') top = O.low.height;
       else if (s.type === 'car') top = f < O.car.hood || f > O.car.length - O.car.trunk ? O.car.hoodHeight : O.car.height;
-      else if (s.type === 'high') highCell[s.lane][i] = 1;
+      else if (s.type === 'high' || s.type === 'gate') highCell[s.lane][i] = s.type === 'gate' ? 2 : 1;
+      else if (s.type === 'gap') top = 0;
+      else if (s.type === 'girder') top = O.girder.top;
       else top = s.ramp && f < O.rampLength ? O.wagon.height * f / O.rampLength : O.wagon.height;
       floorTop[s.lane][i] = Math.max(floorTop[s.lane][i], top);
     }
+  }
+
+  // C3: analytic window plus the actual semi-implicit Euler jump at the slowest supported FPS.
+  for (const row of rows.filter((o) => o.type === 'gap')) {
+    const v = speedAt(row.d - 60), minY = O.gap.pitTop - 0.1;
+    const air = 2 * Math.sqrt(2 * (CONFIG.jumpHeight - minY) / CONFIG.gravity);
+    if (air - (row.len + CONFIG.playerDepth) / v < 0.15) fail(seed, `C3 gap window at ${row.d}`);
+    const dt = CONFIG.dtCap;
+    let y = 0, vy = Math.sqrt(2 * CONFIG.gravity * CONFIG.jumpHeight), clear = 0;
+    while (vy > 0 || y > 0) {
+      vy -= CONFIG.gravity * dt; y += vy * dt;
+      if (y >= minY) clear += dt;
+    }
+    if (clear - dt - (row.len + CONFIG.playerDepth) / v <= 0) fail(seed, `C3 no swept Euler jump window at ${row.d}`);
+  }
+
+  // C7: the art can swing over any lane while distant; its parked pose must agree at contact.
+  for (const open of [0, 2]) {
+    const G = O.girder, sign = open === 0 ? -1 : 1;
+    for (let tau = -0.2; tau <= G.lockTime + 1e-9; tau += 0.01) {
+      const edge = sign * girderOffset(tau, open) + G.length / 2;
+      if (CONFIG.laneWidth - CONFIG.playerWidth / 2 - edge < 0.5) fail(seed, 'C7 girder open-lane clearance');
+    }
+    if (girderOffset(0, open) !== -sign * G.amp || Math.abs(sign * girderOffset(G.lockTime + G.period / 2, open) - G.amp) > 1e-9) fail(seed, 'C7 girder swing/lock');
+    // The beam may overlap the player longitudinally only inside the locked interval.
+    if (hd / speedAt(P.rows.girderAt - O.spawnDistance) > G.lockTime) fail(seed, 'C7 girder contacts before locking');
   }
   for (const t of trains) {
     const v = speedAt(t.d);
@@ -182,9 +223,10 @@ function checkSeed(seed, withMargin) {
   for (const c of coins) {
     for (const l of new Set([Math.floor(c.lane), Math.ceil(c.lane)])) {
       for (let i = cell(c.d - 0.3); i <= cell(c.d + 0.3); i++) {
+        const bar = highCell[l][i] === 2 ? O.gate : O.high;
         const bad = sweep[l][i] ? 'train sweep'
           : c.y - 0.3 < floorTop[l][i] - 0.02 ? 'obstacle'
-          : highCell[l][i] && c.y + 0.3 > O.high.bottom && c.y - 0.3 < O.high.top ? 'high bar' : null;
+          : highCell[l][i] && c.y + 0.3 > bar.bottom && c.y - 0.3 < bar.top ? 'high bar' : null;
         if (bad) {
           fail(seed, `coin lane ${c.lane} d=${c.d.toFixed(1)} y=${c.y.toFixed(2)} inside a ${bad}`);
           i = Infinity;
@@ -222,11 +264,24 @@ function checkSeed(seed, withMargin) {
     };
     for (const c of coins) add('coin', c.d - HORIZON, c.d + RELEASE);
     for (const s of statics) {
+      if (['gap', 'gate', 'girder'].includes(s.type)) continue;
       const span = [s.d - HORIZON, s.d + s.len + RELEASE];
       if (s.type === 'wagons') {
         add('wagon', ...span, s.cars);
         if (s.ramp) add('ramp', ...span);
       } else add(s.type, ...span);
+    }
+    for (const row of rows) {
+      const span = [row.d - HORIZON, row.d + row.len + RELEASE];
+      if (row.type === 'gap') {
+        // Removal can replace a hole at any time: reserve all three kinds through patch release.
+        for (const kind of ['gapHole', 'gapEnds', 'gapPatch']) add(kind, ...span);
+      } else if (row.type === 'gate') {
+        for (const kind of ['gateFrame', 'gateShutter']) add(kind, ...span);
+      } else {
+        for (const kind of ['girderBeam', 'girderJib', 'girderGo']) add(kind, ...span);
+        add('girderPad', ...span, 2);
+      }
     }
     for (const t of trains) {
       const v = speedAt(t.d);
@@ -253,6 +308,32 @@ function checkSeed(seed, withMargin) {
     freeBehind.push(b);
   }
   const freeRun = (lane, i0, i1) => i0 < 0 || freeAhead[lane][i0] > i1 - i0;
+
+  // C4–C6: cells intersecting the obstacle itself are excluded from its empty approach/tail.
+  const empty = (lane, a, b, rule) => {
+    if (a <= b && !freeRun(lane, Math.max(0, Math.ceil(a / STEP)), Math.min(cells - 1, Math.floor(b / STEP)))) fail(seed, `${rule} lane ${lane} [${a.toFixed(1)}, ${b.toFixed(1)}]`);
+  };
+  for (const row of rows) {
+    const v = speedAt(row.d), front = cell(row.d - hd) * STEP - STEP;
+    const tail = (Math.ceil((row.d + row.len + hd + (row.type === 'gap' ? speedAt(row.d + row.len) * CONFIG.dtCap : 0)) / STEP) + 1) * STEP;
+    if (row.type === 'girder') {
+      for (let l = 0; l < LANES; l++) empty(l, row.d - 2 * v * (CONFIG.laneSwitchTime + P.reactionTime), l === row.open ? row.d + row.len + hd : front, 'C6');
+    } else for (let l = 0; l < LANES; l++) {
+      empty(l, row.d - v * P.checkGapTime, front, 'C4');
+      empty(l, tail, row.d + row.len + v * 0.4, 'C5');
+    }
+  }
+  for (let n = 0; n < zones.length; n++) {
+    const z = zones[n], E = CONFIG.events, v = speedAt(z.d), endD = z.d + z.len;
+    for (let l = 0; l < LANES; l++) empty(l, z.d - v * P.checkGapTime, endD, 'C8');
+    if ([...coins, ...pickups, ...statics].some((o) => o.d >= z.d - v * P.checkGapTime && o.d <= endD)) fail(seed, `C8 occupied zone at ${z.d}`);
+    const T = E[z.kind].duration;
+    if (z.len < v * T + 0.5 * CONFIG.acceleration * T * T + speedAt(endD) * E.endMargin) fail(seed, `C9 short zone at ${z.d}`);
+    const prev = zones[n - 1];
+    if ((!prev && z.d < E.firstAt) || (prev && z.d - prev.d - prev.len < E.gapMin * E.gapEndless) || z.kind !== (n % 2 ? 'goblin' : 'venom')) fail(seed, `C10 zone schedule at ${z.d}`);
+    if (pickups.some((o) => o.d >= z.d - v * 7 && o.d <= endD)) fail(seed, `C11 pickup before zone at ${z.d}`);
+    if (rows.some((o) => o.d >= z.d && o.d <= endD + E.rowClear - 1)) fail(seed, `C12 row near zone at ${z.d}`);
+  }
 
   const end = Math.floor(LENGTH / STEP);
   const winCell = windows.map((d) => Math.floor(d / STEP));
@@ -340,9 +421,10 @@ for (let w = 0; w < W; w++) {
 const perKm = {};
 for (const k in totals) perKm[k] = (totals[k] / SEEDS / (LENGTH / 1000)).toFixed(1);
 console.log(`checked ${SEEDS} seeds x ${LENGTH} m (${((Date.now() - t0) / 1000).toFixed(1)} s); per km:`, perKm);
+console.log(`row obstacles/km: ${((totals.gap + totals.gate + totals.girder) / SEEDS / (LENGTH / 1000)).toFixed(1)}; event zones/km: ${perKm.event}`);
 console.log(`coins in >= 2 lanes in ${(100 * cover2 / coverN).toFixed(0)}% of 20 m stretches (3 lanes: ${(100 * cover3 / coverN).toFixed(0)}%)`);
 console.log('most alive at once:', capMax, 'pool:', CAP);
-for (const t of ['low', 'high', 'car', 'wagons', 'train', 'coin']) {
+for (const t of ['low', 'high', 'car', 'wagons', 'train', 'coin', 'gap', 'gate', 'girder', 'event']) {
   if (!totals[t]) fail('-', `type ${t} never generated`);
 }
 if (!process.exitCode) console.log('OK: every seed has a passable route; reaction margin >= ' + P.minReaction + ' s everywhere.');

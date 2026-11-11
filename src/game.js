@@ -30,15 +30,19 @@ const state = {
   wallTime: 0,      // Duvar Koşusu seconds left (powerups/wall.js): > 0 = running on the wall
   wallMetres: 0,    // metres run on a wall this round (missions.js measures it)
   tracerTime: 0,    // Örümcek İzi seconds left (powerups/tracer.js): > 0 = the drone traces the lane
+  eventKind: null,  // road event running now: null | 'venom' | 'goblin' (road-events.js)
+  eventTime: 0,     // seconds left of the running event
+  eventBonusTime: 0, // seconds left of the event reward multiplier
   time: 0,         // seconds of running this round (extra, not in contract)
   intro: false,     // true while the start-of-run clip plays (intro.js)
 };
 
 // Score multiplier (PLAN.md 10): missions.js owns base (1 + finished mission sets, max 30);
-// the power-ups own run (Flaş Fotoğraf), temp (Örümcek İzi) and factor 2 (Bugle Manşeti).
+// the power-ups own run (Flaş Fotoğraf), temp (Örümcek İzi), event (road events, 11.5)
+// and factor 2 (Bugle Manşeti).
 // factor is read off state.bugleTime instead of being written by the bugle: zeroing that
 // at a run start can then never leave a stale x2 behind.
-const mult = { base: 1, run: 0, temp: 0, factor: 1 };
+const mult = { base: 1, run: 0, temp: 0, event: 0, factor: 1 };
 
 // How much higher a normal jump goes while the Örümcek Yayı is on (player.js / sense.js).
 export const jumpScale = () => (state.springTime > 0 ? CONFIG.spring.jumpScale : 1);
@@ -217,7 +221,7 @@ export const game = {
       for (const s of this.systems) if (s.update) s.update(dt);
       // every metre gained this frame (a power-up's distance jump included) is paid at the multiplier
       mult.factor = state.bugleTime > 0 ? 2 : 1;
-      state.multiplier = (mult.base + mult.run + mult.temp) * mult.factor;
+      state.multiplier = (mult.base + mult.run + mult.temp + mult.event) * mult.factor;
       scoreAcc += (state.distance - dist0) * CONFIG.scorePerMeter * state.multiplier;
       state.score = Math.floor(scoreAcc) + state.coins * CONFIG.coinScore;
     }
@@ -230,6 +234,7 @@ export const game = {
     scoreAcc = 0;
     mult.run = 0;
     mult.temp = 0;
+    mult.event = 0;
     mult.factor = 1;
     state.multiplier = mult.base; // base is permanent (missions.js)
     state.time = 0;

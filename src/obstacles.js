@@ -10,7 +10,8 @@
 //   obstacles.hooks.onFrontHit(hit) -> return true to absorb the crash (G10 Iron Spider)
 //   obstacles.hooks.onCrash(hit)    -> what a crash does; default: knock down + game over
 //                                      (G8 may play a "caught" sequence instead)
-//   obstacles.hooks.onSideHit(hit)  -> after a stumble (G8 Venom closes in)
+//   obstacles.hooks.onSideHit(hit)  -> return true to absorb a side hit
+//   obstacles.hooks.onSideStumble(hit) -> after an unabsorbed stumble; wrappers chain it
 //   hit = { kind: 'front'|'side', obstacle, position: THREE.Vector3 }
 // Helpers for G10: obstacles.active (list), obstacles.remove(obstacle),
 //   obstacles.grace(seconds) = no collisions for a moment.
@@ -25,7 +26,7 @@ import { CONFIG } from './config.js';
 import { emit } from './events.js';
 import { game } from './game.js';
 import { laneX } from './world.js';
-import { PatternGenerator, randomSeed } from './patterns.js';
+import { PatternGenerator, randomSeed, descLanes } from './patterns.js';
 import { createObstacleArt } from './obstacle-art.js';
 
 const O = CONFIG.obstacles;
@@ -48,6 +49,21 @@ function highShape() {
     parts: [{ x0: -w, x1: w, y0: O.high.bottom, y1: O.high.top, f0: 0, f1: O.high.depth }],
     visuals: [{ art: 'high', f: 0 }],
   };
+}
+
+function gapShape(len) {
+  const w = O.gap.width / 2;
+  return { parts: [{ x0: -w, x1: w, y0: -1, y1: O.gap.pitTop, f0: 0, f1: len, pit: true }], visuals: [] };
+}
+
+function gateShape() {
+  const g = O.gate, w = g.width / 2;
+  return { parts: [{ x0: -w, x1: w, y0: g.bottom, y1: g.top, f0: 0, f1: g.depth }], visuals: [] };
+}
+
+function girderShape() {
+  const g = O.girder, w = CONFIG.laneWidth / 2;
+  return { parts: [{ x0: -w, x1: w, y0: g.bottom, y1: g.top, f0: 0, f1: g.depth }], visuals: [] };
 }
 
 function carShape() {
@@ -84,12 +100,15 @@ function wagonsShape(cars, ramp) {
 // Shapes are shared between obstacles of the same kind (built once, never per frame).
 const shapeCache = new Map();
 function getShape(desc) {
-  const key = desc.type + '|' + (desc.cars || 0) + '|' + (desc.ramp ? 1 : 0);
+  const key = desc.type + '|' + (desc.cars || 0) + '|' + (desc.ramp ? 1 : 0) + '|' + (desc.type === 'gap' ? desc.len : 0);
   let shape = shapeCache.get(key);
   if (!shape) {
     if (desc.type === 'low') shape = lowShape();
     else if (desc.type === 'high') shape = highShape();
     else if (desc.type === 'car') shape = carShape();
+    else if (desc.type === 'gap') shape = gapShape(desc.len);
+    else if (desc.type === 'gate') shape = gateShape();
+    else if (desc.type === 'girder') shape = girderShape();
     else shape = wagonsShape(desc.cars, desc.ramp);
     shape.halfWidth = Math.max(...shape.parts.map((p) => Math.max(-p.x0, p.x1)));
     shapeCache.set(key, shape);
@@ -117,6 +136,7 @@ export class Obstacles {
     this.active = [];        // obstacles in play
     this._pool = [];         // released obstacle objects for reuse
     this.pendingTrains = []; // oncoming train descriptors waiting to appear
+    this.patches = [];
     this.coins = [];         // coins in play
     this._coinPool = [];
     this.pickupKinds = {};   // kind -> { create, onCollect, pool }
@@ -130,6 +150,7 @@ export class Obstacles {
       onFrontHit: () => false,
       onSideHit: () => false,
       onSideStumble: () => {},
+      onEventZone: () => {},
       onCrash: () => {
         this.player.setOverride('caught', Infinity);
         this.player.controlsLocked = true;
@@ -154,6 +175,7 @@ export class Obstacles {
     for (const c of this.coins) this._coinPool.push(c);
     this.coins.length = 0;
     this.pendingTrains.length = 0;
+    this.patches.length = 0;
     for (let i = this.pickups.length - 1; i >= 0; i--) this._releasePickup(i);
     this._sideHitTimer = 0;
     this._graceTimer = 0;
@@ -185,6 +207,18 @@ export class Obstacles {
       this.pendingTrains.push(desc);
     } else if (desc.type === 'pickup') {
       this._addPickup(desc.kind, laneX(desc.lane), desc.y, -(desc.d - ground));
+    } else if (desc.type === 'event') {
+      this.hooks.onEventZone(desc);
+    } else if (desc.type === 'gap' || desc.type === 'gate' || desc.type === 'girder') {
+      const group = [];
+      const lanes = descLanes(desc);
+      for (const lane of lanes) {
+        const o = this._addObstacle({ ...desc, lane }, -(desc.d - ground), 0);
+        o.group = group;
+        o.open = desc.open;
+        group.push(o);
+      }
+      group[0].owner = true;
     } else {
       this._addObstacle(desc, -(desc.d - ground), 0);
     }
@@ -204,6 +238,9 @@ export class Obstacles {
     o.parts = shape.parts;
     o.visuals = shape.visuals;
     o.halfWidth = shape.halfWidth;
+    o.group = null;
+    o.owner = o.warned = o.passed = o.hit = false;
+    o.open = undefined;
     this.active.push(o);
     return o;
   }
@@ -252,6 +289,7 @@ export class Obstacles {
   // knockback (G8) while the world is halted.
   shift(dz) {
     for (const o of this.active) o.z += dz;
+    for (const patch of this.patches) patch.z += dz;
     for (const c of this.coins) c.z += dz;
     for (const pk of this.pickups) {
       pk.z += dz;
@@ -264,9 +302,24 @@ export class Obstacles {
     this._graceTimer = Math.max(this._graceTimer, seconds);
   }
 
+  get graced() { return this._graceTimer > 0; }
+
+  eventHit(x) {
+    if (this.graced) return false;
+    this._hit('side', { type: 'event', x, z: 0, dz: 0, length: 0, speed: 0, parts: [], halfWidth: 1 });
+    return true;
+  }
+
   remove(o) {
     const i = this.active.indexOf(o);
     if (i >= 0) {
+      if (o.type === 'gap' && o.z < 1e5 && !o.group.patched) {
+        o.group.patched = true;
+        this.patches.push({ z: o.z, len: o.length });
+        emit('gapPatch', { position: new THREE.Vector3(0, 0, o.z) });
+      }
+      // Mates stay indexed until release: hero clears iterate active backwards.
+      if (o.group) for (const m of o.group) if (m !== o) m.z = 1e6;
       this.active.splice(i, 1);
       this._pool.push(o);
     }
@@ -286,10 +339,26 @@ export class Obstacles {
       const o = this.active[i];
       o.dz = (v + o.speed) * dt;
       o.z += o.dz;
+      if (o.owner && o.z < 1e5) {
+        const tau = -o.z / Math.max(v, 1);
+        if (!o.warned && tau <= O.rowWarnTime) {
+          o.warned = true;
+          emit('rowWarn', { type: o.type, open: o.open, position: { x: 0, y: 1, z: o.z } });
+        }
+        if (!o.passed && o.z - o.dz - o.length > CONFIG.playerDepth / 2) {
+          o.passed = true;
+          if (!o.group.some((m) => m.hit)) emit('rowPass', { type: o.type, position: { x: this.player.x, y: this.player.y, z: 0 } });
+        }
+      }
       if (o.z - o.length > backZ) {
         this.active.splice(i, 1);
         this._pool.push(o);
       }
+    }
+    for (let i = this.patches.length - 1; i >= 0; i--) {
+      const patch = this.patches[i];
+      patch.z += v * dt;
+      if (patch.z - patch.len > backZ) this.patches.splice(i, 1);
     }
     for (let i = this.coins.length - 1; i >= 0; i--) {
       const c = this.coins[i];
@@ -349,6 +418,7 @@ export class Obstacles {
       const fMax = o.z + hd;
       if (fMax < 0 || fMin > o.length) continue;
       for (const part of o.parts) {
+        if (part.pit) continue;
         if (fMax < part.f0 || fMin > part.f1) continue;
         if (p.x + hw < o.x + part.x0 || p.x - hw > o.x + part.x1) continue;
         let top = part.y1;
@@ -384,6 +454,7 @@ export class Obstacles {
       // (closing speed up to ~40 m/s; at 30 fps that is more than bar + player depth)
       if (fMax < 0 || pfMin > o.length) continue;
       for (const part of o.parts) {
+        if (part.pit && game.heroSpecials?.active && game.heroSpecials.mode === 'cap') continue;
         const ax0 = o.x + part.x0, ax1 = o.x + part.x1;
         if (fMax <= part.f0 || pfMin >= part.f1 || x1 <= ax0 || x0 >= ax1) continue;
         const top = part.ramp ? rampTop(part, Math.min(fMax, part.f1)) : part.y1;
@@ -403,6 +474,7 @@ export class Obstacles {
           const tx = Math.min(x1 - ax0, ax1 - x0) / Math.max(dxAbs, 1e-6);
           kind = tz <= tx ? 'front' : 'side';
         } else if (ySep && py1 <= part.y0) kind = 'front'; // jumped up into a bar
+        else if (part.pit && py0 >= prevTop) kind = 'front'; // fell into the pit
         else continue; // already inside last frame, or landing from above (floor handles it)
 
         this._hit(kind, o);
@@ -412,6 +484,7 @@ export class Obstacles {
   }
 
   _hit(kind, o) {
+    o.hit = true;
     const p = this.player;
     const hit = { kind, obstacle: o, position: this._hitPos.set(p.x, p.y + 0.8, -CONFIG.playerDepth / 2) };
     if (kind === 'side') {
@@ -453,8 +526,10 @@ export class Obstacles {
     const art = this.art;
     art.begin();
     for (const o of this.active) {
+      if (o.owner && o.z < 1e5) art.addRow(o.type, o.z, o.length, o.open, -o.z / Math.max(game.state.speed, 1));
       for (const vis of o.visuals) art.add(vis.art, o.x, 0, o.z - vis.f, o.color);
     }
+    for (const patch of this.patches) art.addPatch(patch.z, patch.len);
     for (const c of this.coins) art.addCoin(c.x, c.y, c.z);
     if (this.extraCoins) for (const c of this.extraCoins) art.addCoin(c.x, c.y, c.z); // magnet flights
     art.end(this._time);
