@@ -22,7 +22,7 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 | `src/obstacle-art.js` | instanced obstacle and coin art, nine row/patch kinds | 40 `ShapeBuilder` (`rx/ry/rz`); 281-398 row recipes; 474 `createObstacleArt`; 481-498 kinds; 505 `addRow`; 523 `addPatch` |
 | `src/event-logic.js` | pure event row/timing/reward maths | 8 rAt; 9 floorW; 11 warnAt; 12 restAt; 13 doubleChance; 16 nextRow; 34 nearestSafe; 43 rewardFor |
 | `src/patterns.js` | pure seeded track generator | 49 `createRng`; 66-121 speed/difficulty/length; 128 `descLanes`; 136 `girderOffset`; 157 class; 192 `_block`; 330-342 extras; 345 `_row`; 361 `_placeRow`; 387 `_eventZone` |
-| `src/road-events.js` | manual Venom event director, lifecycle, hits/sense/rewards; optional art injected | 11 constructor; 24 reset; 39 calm; 45 start; 64 update; 87 volley; 140 sense; 153 reward; 162 end; 173 hide |
+| `src/road-events.js` | manual Venom event director, lifecycle, hits/sense/rewards; optional art injected | 11 constructor; 23 reset; 37 calm; 43 start; 62 update; 85 volley; 139 sense; 152 reward; 161 end; 172 hide |
 | `src/chaser.js` | Venom chase/hunt, stumble, catch cam | 43 class; 57-59 hooks; 76 reset; 131 hunt; 139 endHunt; 149 stumble; 172 catch; 235 update |
 | `src/intro.js` | start-of-run clip and its camera | 28 class; 37-47 phases; 67 `begin`; 80-134 update/emit |
 | `src/camera.js` | follow rig, kick, dolly, shot blend | 24 class; 50-75 camera controls; 114 snap; 132 update |
@@ -48,8 +48,8 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 | File | Role | Key lines |
 |---|---|---|
 | `src/powerups/web.js` | web cartridge + zip/glide | 109 save read; 175 `web` event |
-| `src/powerups/ironspider.js` | Iron Spider suit, inventory, save, saves | 39-50 storage; 124 `ironOn`; 188 `ironSave` |
-| `src/powerups/hero-specials.js` | 8 hero modes, shared activation/absorb | 34 `HERO_SKINS`; 248 class; 300-308 configs; 336 activate; 819 absorb |
+| `src/powerups/ironspider.js` | Iron Spider suit, inventory, save, saves | 39-50 storage; 124 `ironOn`; 184 deck-level pit save position; 188 `ironSave` |
+| `src/powerups/hero-specials.js` | 8 hero modes, shared activation/absorb | 34 `HERO_SKINS`; 248 class; 300-308 configs; 336 activate; 674 Cap exit grace; 820 absorb |
 | `src/powerups/skillHelloKitty.js` | Hello Kitty flying heart | 129 class; 208-209 start; 338-339 end |
 | `src/powerups/skillBatman.js` | Batman glide/cloak | 125 class; 273-274 start; 487-488 end |
 | `src/powerups/skillSpiderman2002.js` | Raimi web slingshot | 19 icon; 221 anticipation; 337-338 launch |
@@ -94,7 +94,7 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 | `tools/serve.py` | local no-cache server on port 5173 | 5-12 |
 | `tools/check-patterns.mjs` | fairness/solvability invariant test | 1-20 contract; 22-23 imports |
 | `tools/check-quality.mjs` | adaptive-resolution assertion script | 1-23 |
-| `tools/test-skills.mjs` | missions, powers, audio; 11.5 generation, pure event maths, real collider/sense/chaser/director loop and recipe assertions | 76 generator; 104 pure events; 1146 colliders; 1281 sense at 120/60/30/20 FPS; 1321 recipes; 1389 director; audio import near EOF |
+| `tools/test-skills.mjs` | missions, powers, audio; 11.5 generation, pure event maths, real collider/sense/chaser/director loop and recipe assertions | 76 generator; 104 pure events; 1146 colliders; 1281 Cap exit; 1306 Iron Spider gap sparks; 1323 sense at 120/60/30/20 FPS; 1363 recipes; 1431 director; 1564 slam allocation guard; audio import near EOF |
 | `tools/test-audio.mjs` | fake `AudioContext` lifecycle + music/stinger/leak soak; imported by `test-skills.mjs`, also runnable alone | 24-79 fake context; 81-95 pump + cap asserts; 97-202 behaviour asserts |
 | `tools/test-ui-hud-qa.mjs` | DOM-mocked HUD/market QA for 8 heroes | 1-2 |
 | `tools/test-hero-specials-qa.mjs` | simulation QA of 8 specials | 1-2 |
@@ -149,7 +149,7 @@ Audio auto-listens to **every** `SOUNDS` key except `start` and `i_*` (`audio.js
 | `pause` | game.js:134 | `{}` | audio.js:574; missions.js:196 |
 | `resume` | game.js:140 | `{}` | audio.js:581; main.js:191 |
 | `menu` | game.js:117 (`toMenu`) | none | audio.js:117 (clears `paused`, resumes context); tools/test-skills.mjs:988. missions.js:198's comment "toMenu emits no event" is stale |
-| `gameover` | game.js:147 | `{score, coins, distance}` | audio auto (SOUNDS `gameover`, skipped while music is on: audio.js:548); music.js:487 (closing phrase); missions.js:195; shop.js:219; vfxCore.js:456; ui.js:606; road-events.js:18 (abort/reset) |
+| `gameover` | game.js:147 | `{score, coins, distance}` | audio auto (SOUNDS `gameover`, skipped while music is on: audio.js:548); music.js:487 (closing phrase); missions.js:195; shop.js:219; vfxCore.js:456; ui.js:606; road-events.js:17 (abort/reset) |
 | `newRecord` | ui.js:608 (only when the run beat the best) | `{score}` | music.js:495 (record fanfare) |
 | `intro` | intro.js:75 start, :116 end (`skipped?`), :132 each phase | `{phase}` / `{phase:'end',skipped}` | audio.js:596; fx.js:1322; main.js:192 |
 | `lane` | player.js:129 | `{dir, lane}` | audio auto; fx.js? no `lane` handler; missions COUNTED (missions.js:166) |
@@ -160,14 +160,14 @@ Audio auto-listens to **every** `SOUNDS` key except `start` and `i_*` (`audio.js
 | `stumble` | obstacles.js:496 | `{position}` | audio auto; fx.js:829; missions.js:194 (resets no-stumble run) |
 | `crash` | obstacles.js:502 | `{position}` | audio auto; fx.js:842 |
 | `coin` | obstacles.js:519; magnet.js:126 | `{position}` | audio auto; fx.js:671; missions COUNTED (163) |
-| `eventStart` | road-events.js:61 | `{kind,duration}` | later tasks 8/12/13/14 |
-| `strikeWarn` | road-events.js:97 | `{lanes,warn}` | later art/FX/audio |
-| `strikeSlam` | road-events.js:108 | `{lanes}` | later art/FX/audio |
-| `strikeHit` | road-events.js:117 | `{position}` | later FX/audio; shared side-hit also emits stumble |
-| `eventDodge` | road-events.js:128 | `{kind,position}` | later FX/missions/audio |
-| `eventReward` | road-events.js:158 | `{kind,coins,mult,clean,position}` | silent run-coin deposit; later FX/HUD/audio |
-| `eventEnd` | road-events.js:170 | `{kind,clean,hits,dodged,aborted}` | later FX/missions/audio |
-| `eventBonusOff` | road-events.js:73 | `{}` | event multiplier expires; later HUD/audio |
+| `eventStart` | road-events.js:59 | `{kind,duration}` | later tasks 8/12/13/14 |
+| `strikeWarn` | road-events.js:95 | `{lanes,warn}` | later art/FX/audio |
+| `strikeSlam` | road-events.js:106 | `{lanes}` | later art/FX/audio |
+| `strikeHit` | road-events.js:116 | `{position}` | later FX/audio; shared side-hit also emits stumble |
+| `eventDodge` | road-events.js:127 | `{kind,position}` | later FX/missions/audio |
+| `eventReward` | road-events.js:157 | `{kind,coins,mult,clean,position}` | silent run-coin deposit; later FX/HUD/audio |
+| `eventEnd` | road-events.js:169 | `{kind,clean,hits,dodged,aborted}` | later FX/missions/audio |
+| `eventBonusOff` | road-events.js:71 | `{}` | event multiplier expires; later HUD/audio |
 | `rowWarn` | obstacles.js:346 | `{type, open, position}` | none yet (task 12/14) |
 | `rowPass` | obstacles.js:350 | `{type, position}` | none yet (task 12/13/14) |
 | `gapPatch` | obstacles.js:319 | `{position}` | none yet (task 12/14) |
@@ -206,13 +206,13 @@ Audio auto-listens to **every** `SOUNDS` key except `start` and `i_*` (`audio.js
 | `tracerStep` | tracer.js:148 | `{temp, position}` | fx.js:1274; missions COUNTED (170) |
 | `flashBoost` | flash.js:48 | `{bonus}` | fx.js:1108; ui.js:437 |
 | `specialOn` | hero-specials.js:360, 381, 399, 419, 427; skillBatman.js:274; skillHelloKitty.js:209; skillBlackPanther.js:150 | `{mode, duration, label?}` | no listener found |
-| `specialOff` | hero-specials.js:912; skillBatman.js:488; skillHelloKitty.js:339; skillSpiderman2002.js:390; skillBlackPanther.js:288 | `{mode?, expired?}` | no listener found |
+| `specialOff` | hero-specials.js:913; skillBatman.js:488; skillHelloKitty.js:339; skillSpiderman2002.js:390; skillBlackPanther.js:288 | `{mode?, expired?}` | no listener found |
 | `hulkRoar` | hero-specials.js:359 | `{}` | audio auto |
 | `capShieldSurf` | hero-specials.js:380 | `{}` | audio auto |
 | `milesVenomBlast` | hero-specials.js:398 | `{}` | audio auto |
 | `hulkSmash` | hero-specials.js:537, 571 (`sfx`) | `{position, quiet}` | audio auto; fx.js:964 |
-| `capShieldGong` | hero-specials.js:856 (`sfx`) | `{position, quiet}` | audio auto; fx.js:975 |
-| `venomBlastNova` | hero-specials.js:863; skillIronMan.js:235 (`sfx`) | `{position, quiet}` | audio auto; fx.js:985 |
+| `capShieldGong` | hero-specials.js:857 (`sfx`) | `{position, quiet}` | audio auto; fx.js:975 |
+| `venomBlastNova` | hero-specials.js:864; skillIronMan.js:235 (`sfx`) | `{position, quiet}` | audio auto; fx.js:985 |
 | `slingshotAnticipation` | skillSpiderman2002.js:221 | `{charges}` | no listener found |
 | `slingshotLaunch` | skillSpiderman2002.js:338 | `{vy, speedBoost}` | no listener found |
 | `kittyFlyStart` | skillHelloKitty.js:208 | `{duration}` | no listener found |
@@ -276,7 +276,7 @@ no road event starts on its own before task 13 — `game.roadEvents.start('venom
 | Train spawn | `_spawnTrains` called every `beforePlayer` (376) |
 | Floor | `_floorUnder` checks overlap/top/stepUp; ramps rise with speed; `pit` parts never supply a floor (411-434) |
 | Collision gate | `_graceTimer > 0` disables collision; `grace(seconds)`, `graced`; `eventHit(x)` enters shared side-hit path unless graced (301-310, 437-438) |
-| Pit collision | feet below `gap.pitTop`, entering or falling from above = front hit; active Cap shield surf explicitly ignores pits (455, 477) |
+| Pit collision | feet below `gap.pitTop`, entering or falling from above = front hit; active Cap shield surf explicitly ignores pits (457, 477); exit grants 0.1 s collision grace while hover drops (hero-specials.js:675) |
 | Swept test | player current and previous x/y, swept z span `[pfMin, fMax]` so thin bars cannot tunnel (439-483) |
 | Hit side | front/side decided by separation and crossing time; jump-up-into-bar and fall-into-pit count front (462-478) |
 | One hit | returns after the first hit per frame (480-481) |
@@ -359,8 +359,8 @@ pose starts at 8.8 s; reward/end happen at 10 s (S.2); an early zone boundary fi
 new slam. Pause/hit-stop freeze dt; restart/menu/gameover clear event state and reward clocks.
 
 Art is optional and injected; the director imports no art module and reset/end hide supplied
-objects. Task 8 must add warnings/tendrils and camera dolly ownership; task 9 adds Goblin logic;
-task 13 connects zone scheduling. The gameover listener aborts without reward and resets (18-21).
+objects. Task 8 must add warnings/tendrils and camera dolly ownership (cameraRig/venom.dolly are absent until then); task 9 adds Goblin logic;
+task 13 connects zone scheduling. The gameover listener aborts without reward and resets (17-20). Slam collision scans the deadly mask directly (110-111); array/position helpers run only for discrete event payloads (149-150). Pending zone storage is deferred to task 13. Task 9 must replace the Venom-only start guard, timer/dispatch and hunt lifecycle together (43-59, 76-82, 161-170).
 
 ## 8 Power-up recipe
 
@@ -417,7 +417,7 @@ Hero specials are **not pickups**: they are activated with a web charge on a her
 | Iron Man | `ironman` | 2.2 s | unibeam |
 | Black Panther | `panther` | 5.5 s | vibranium shock |
 
-Durations and labels: `hero-specials.js:300-308`; `HERO_SKINS` at 34; activation/absorb at 336-438 and 819-880.
+Durations and labels: `hero-specials.js:300-308`; `HERO_SKINS` at 34; activation/absorb at 336-438 and 820-881.
 
 ## 9 UI
 
