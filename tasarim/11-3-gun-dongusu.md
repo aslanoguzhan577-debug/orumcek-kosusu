@@ -1,6 +1,6 @@
 # 11.3 Day cycle, the tunnel curtain, readability
 
-Source: `proto/11-3-kit.js` (`PHASE`, `PHASE_KEYS`, `DISC_KEYS`, `TUNNEL`, `RIM`, `tunnelAt`, `cityAt`, `tick`). The DAY, GOLDEN, SUNSET (after two corrections) and tunnel-rhythm values were judged in the game camera; NIGHT, DAWN, the tunnel light floor, coin glow and rim are **not seen**.
+Source: `proto/11-3-kit.js` (`PHASE`, `PHASE_KEYS`, `DISC_KEYS`, `TUNNEL`, `tunnelAt`, `cityAt`, `tick`). The DAY, GOLDEN, SUNSET (after two corrections) and tunnel-rhythm values were judged in the game camera; NIGHT, DAWN, the tunnel light floor, coin glow and own-colour obstacle body emission are **not seen**.
 
 ## 1 One system, one function per frame
 
@@ -18,10 +18,10 @@ Source: `proto/11-3-kit.js` (`PHASE`, `PHASE_KEYS`, `DISC_KEYS`, `TUNNEL`, `RIM`
 | board materials `color` (names, ads, Bugle) | grey `p.sign` |
 | water `color`, `map.offset.y` | `p.water`, `(distance / 100) % 1` |
 | coin material `emissiveIntensity` | `mix(p.coin, 3, t)` |
-| obstacle outline materials `color` | `mix(ink, 0xffb020, mix(p.rim, 1, t))` |
+| obstacle body material `emissive` | `material.color × (0.18 × mix(p.nightBlend, 1, t))`; outline always ink |
 | sky uniforms | §3 |
 
-Track, obstacle bodies, pickups, characters, Venom: **never written**. They only receive the two lights.
+Track, pickups, characters, Venom: **never written** (except the wet-track sheen). Obstacle bodies keep their colour and receive only the own-colour emission above; outlines always stay ink.
 
 ## 2 Phase table
 
@@ -54,9 +54,9 @@ The light warms 200 m before the gate; the sunset arrives as the bridge opens; S
 | stars / sky dots | 0 / 1 | 0 / 1 | 0.15 / 0.8 | 1 / 0 | 0.1 / 0.8 |
 | water | `2f86cc` | `e0955c` | `d8556a` | `1a2a6a` | `c890b0` |
 | coin emissive intensity | 1 | 1.2 | 1.5 | 2.2 | 1.2 |
-| rim (outline ink to amber) | 0 | 0 | 0.25 | 0.8 | 0.1 |
+| nightBlend (body emission blend; k = 0.18 × nightBlend) | 0 | 0 | 0.25 | 1 | 0.1 |
 
-Tunnel overrides, blended by `t`: fog `0a0b16`, hemi sky `bfe8ff`, hemi 1.15, sun 1.0, coin 3, rim 1.
+Tunnel overrides, blended by `t`: fog `0a0b16`, hemi sky `bfe8ff`, hemi 1.15, sun 1.0, coin 3, body emission k 0.18; outline always ink.
 
 "Windows go dark one by one" at dawn costs nothing: the facade hook lights a window when `hash(window cell) < uWinOn`, so as `winOn` falls 0.85 to 0.25 over 5000-5300 m each window switches off at its own moment.
 
@@ -103,7 +103,7 @@ Inside, light comes from the shell itself (unlit material, vertex colours `0b0e2
 | R4 | Fog never eats the reaction margin. | fogNear ≥ 42 m, fogFar ≥ 155 m. At the top speed 39 m/s, 42 m is 1.08 s: more than the generator's 0.5 s reaction time plus the 0.14 s lane switch. |
 | R5 | Fog colour is the sky's low band, so far obstacles fade into the horizon, never into a wall colour. | `fog` per phase above |
 | R6 | Coins and pickups glow where it is dark. | coin emissive ×2.2 at night, ×3 in the tunnel; pickup art already carries its own emissive parts |
-| R7 | Obstacles get a rim at night. | outline colour ink to `ffb020`: 80 % at night, 100 % in the tunnel, 25 % at sunset |
+| R7 | Obstacles stay readable at night. | outline always ink; body emissive = own colour × k, k 0 by day, 0.18 in the tunnel and at full night, linear by the day/tunnel blend |
 | R8 | The hero light: characters never go dark. | they are lit by the floor of R2 and keep their own toon rim; nothing else is needed (the stage-light principle, seen working at sunset) |
 | R9 | Nothing scenic near the lanes. | empty box `\|x\| < 4.6 m`, `y < 9.5 m`; lowest lantern tip 9.9 m, gate beam underside 10.6 m, tunnel roof over the outer lane 9.8 m |
 | R10 | Red and yellow belong to danger. | lanterns are red but small (0.6 m), in strings, above 9.9 m; no scenery uses red/white or yellow/black stripes except the tunnel mouth band, which is a real "duck your head" landmark and sits on a wall |
