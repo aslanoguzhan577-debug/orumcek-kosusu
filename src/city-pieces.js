@@ -1,14 +1,16 @@
 // city-pieces.js ? approved district recipes, built once behind the loader.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { ANCHOR_COUNTS } from './city-logic.js';
+import { ANCHOR_COUNTS, lanternLift } from './city-logic.js';
+import { TRACK } from './world.js';
 import { rng } from './city-tex.js';
+import { CONFIG } from './config.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const SY = -11, INK = 0x1c1016;
 const _c = new THREE.Color();
 const shade = (y) => (y < 0 ? lerp(0.62, 0.9, THREE.MathUtils.clamp((y - SY) / -SY, 0, 1)) : 0.9 + 0.1 * Math.min(1, y / 20));
-function fin(L, g, color, cx, cy, cz, rx = 0, ry = 0, rz = 0) {
+export function fin(L, g, color, cx, cy, cz, rx = 0, ry = 0, rz = 0) {
   if (rx) g.rotateX(rx); if (ry) g.rotateY(ry); if (rz) g.rotateZ(rz);
   g.translate(cx, cy, cz); g.deleteAttribute('uv');
   const p = g.attributes.position, a = new Float32Array(p.count * 3);
@@ -17,19 +19,50 @@ function fin(L, g, color, cx, cy, cz, rx = 0, ry = 0, rz = 0) {
   g.setAttribute('color', new THREE.BufferAttribute(a, 3));
   L.push(g);
 }
-const pBox = (L, cx, cy, cz, sx, sy, sz, col, rx, ry, rz) => fin(L, new THREE.BoxGeometry(sx, sy, sz, 1, 1, Math.max(1, Math.round(sz / 5))), col, cx, cy, cz, rx, ry, rz);
-const pCyl = (L, cx, cy, cz, rT, rB, h, seg, col, rx, ry, rz) => fin(L, new THREE.CylinderGeometry(rT, rB, h, seg, 1), col, cx, cy, cz, rx, ry, rz);
+export const pBox = (L, cx, cy, cz, sx, sy, sz, col, rx, ry, rz) => fin(L, new THREE.BoxGeometry(sx, sy, sz, 1, 1, Math.max(1, Math.round(sz / 5))), col, cx, cy, cz, rx, ry, rz);
+export const pCyl = (L, cx, cy, cz, rT, rB, h, seg, col, rx, ry, rz) => fin(L, new THREE.CylinderGeometry(rT, rB, h, seg, 1), col, cx, cy, cz, rx, ry, rz);
 const pSph = (L, cx, cy, cz, r, sy, col) => fin(L, new THREE.SphereGeometry(r, 8, 6).scale(1, sy, 1), col, cx, cy, cz);
 const glowList = () => { const L = []; L.flat = true; return L; };   // unlit pieces: no height shade
 // textured quad facing +z before ry; rect = [px, py, pw, ph] in an atlas of W x H pixels
 function sQuad(L, w, h, x, y, z, ry, rect, W = 1024, H = 1024) {
   L.push({ w, h, x, y, z, ry, rect, W, H });
 }
-const merge = (L) => (L.length ? mergeGeometries(L.map((g) => (g.index ? g.toNonIndexed() : g))) : null);
+export const merge = (L) => (L.length ? mergeGeometries(L.map((g) => (g.index ? g.toNonIndexed() : g))) : null);
+
+export function birdGeometry(up) {
+  const P = [];
+  P.flat = true;
+  pBox(P, 0, 0.14, 0, 0.16, 0.16, 0.34, 0xffffff);
+  pBox(P, 0, 0.26, -0.2, 0.12, 0.12, 0.12, 0xffffff);
+  pBox(P, 0, 0.24, -0.28, 0.04, 0.04, 0.06, 0xf2a53a);
+  for (const s of [-1, 1]) pBox(P, s * (up ? 0.17 : 0.21), up ? 0.30 : 0.11, 0, 0.3, 0.03, 0.2, 0xffffff, 0, 0, s * (up ? -0.9 : 0.5));
+  return merge(P);
+}
+
+export const puffGeometry = () => new THREE.IcosahedronGeometry(1, 0);
+
+export function blimp() {
+  const P = [];
+  fin(P, new THREE.SphereGeometry(1, 14, 10).scale(4.2, 4.2, 13), 0xf4f1e6, 0, 0, 0);
+  fin(P, new THREE.SphereGeometry(1, 14, 6, 0, Math.PI * 2, 1.2, 0.75).scale(4.28, 4.28, 13.2), 0xd8262c, 0, 0, 0);
+  for (const rz of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) fin(P, new THREE.BoxGeometry(0.25, 4.6, 4.2), 0xd8262c, Math.sin(-rz) * 3.2, Math.cos(rz) * 3.2, 10.6, 0, 0, rz);
+  pBox(P, 0, -4.7, -1, 1.8, 1.5, 5.5, 0x12161f);
+  pBox(P, 0, -4.6, -1, 1.85, 0.5, 4.6, 0xffe9b0);
+  pBox(P, 4.25, -0.4, 0, 0.3, 3.9, 12.8, 0x12161f);
+  return { plain: merge(P) };
+}
+
+export function blimpBanner() {
+  const quads = [[7, 2.625], [1.75, -1.75], [1.75, -3.5], [1.75, -5.25]];
+  const geometry = mergeGeometries(quads.map(([w, z]) => new THREE.PlaneGeometry(w, 3.5).rotateY(Math.PI / 2).translate(4.46, -0.4, z)));
+  const uv = geometry.getAttribute('uv'), cells = [12, 10, 1, 11];
+  for (let q = 0; q < 4; q++) for (let v = 0; v < 4; v++) uv.setXY(q * 4 + v, (cells[q] + (v % 2) * (q === 0 ? 4 : 1)) / 16, v < 2 ? 1 : 0);
+  return geometry;
+}
 const kit = (o) => {
   const r = { anchors: {} };
   for (const k in o) {
-    if (k === 'tabela' || k === 'ads' || k === 'bugle') r.anchors[k] = o[k];
+    if (k === 'tabela' || k === 'ads' || k === 'bugle' || k === 'glyph' || k === 'clamps' || k === 'banner') r.anchors[k] = o[k];
     else { const g = merge(o[k]); if (g) r[k] = g; }
   }
   return r;
@@ -47,8 +80,9 @@ function lantern(P, G, x, y, z, r = 0.3) {    // y = centre of the paper body
 // one string across the street: two straight ink lines from the facades (x +-7.5, y 12.6) to the
 // middle (y 11.0), 9 lanterns 1.5 m apart hanging 0.42 m under the line. Lowest point 9.9 > CLEAR_Y.
 function lanternString(P, G, z, n = 4) {
-  for (const s of [-1, 1]) pBox(P, s * 3.75, 11.8, z, 7.67, 0.04, 0.04, INK, 0, 0, s * 0.21);
-  for (let i = -n; i <= n; i++) lantern(P, G, i * 1.5, 11.0 + 1.6 * Math.abs(i * 1.5) / 7.5 - 0.42, z);
+  const lift = lanternLift();
+  for (const s of [-1, 1]) pBox(P, s * 3.75, 11.8 + lift, z, 7.67, 0.04, 0.04, INK, 0, 0, s * 0.21);
+  for (let i = -n; i <= n; i++) lantern(P, G, i * 1.5, 11.0 + lift + 1.6 * Math.abs(i * 1.5) / 7.5 - 0.42, z);
 }
 // Ejder Kapısı (paifang), placed at the near edge of the first Chinatown segment (z = +10)
 function gate() {
@@ -75,16 +109,26 @@ function gate() {
   return kit({ plain: P, glow: G, tabela: S });
 }
 // street dressing of one Chinatown segment (v = 0 / 1)
-function ctDress(v) {
-  const P = [], G = glowList(), S = [];
+function ctDress(v, bannerZ = [-10], festival = false) {
+  const P = [], G = glowList(), S = [], H = [], B = [];
   lanternString(P, G, v ? -6 : -4);
   lanternString(P, G, v ? 4 : 6);
+  if (festival) lanternString(P, G, 0, 4);
+  const width = TRACK.halfWidth * 2 + 1, sag = CONFIG.city.chinatown.ropeSag;
+  for (const z of bannerZ) {
+    B.push({ z });
+    for (const s of [-1, 1]) pBox(P, s * width / 4, 11 + lanternLift() + sag / 2, z,
+      Math.hypot(width / 2, sag), 0.04, 0.04, CONFIG.city.chinatown.ropeColor, 0, 0, s * Math.atan2(sag, width / 2));
+  }
   const COL = [PAPER, GOLD, 0x1f6f6b, LAQ];
   for (let i = 0; i < 4; i++) {                                    // hanging vertical signs on brackets, readable from the track
     const s = i % 2 ? 1 : -1, z = -8 + i * 5 + v * 1.5, y = 5.2 + (i % 3) * 0.9;
     pBox(P, s * 6.9, y + 2.0, z, 1.9, 0.08, 0.08, INK);
     pBox(G, s * 6.3, y, z, 0.95, 3.6, 0.16, COL[(i + v) % 4]);
-    for (let k = -1; k <= 1; k++) for (const f of [-1, 1]) pBox(G, s * 6.3, y + k * 1.1, z + f * 0.09, 0.6, 0.6, 0.02, (i + v) % 4 === 1 ? LAQ : GOLD);
+    for (let k = -1; k <= 1; k++) for (const f of [-1, 1]) H.push({
+      x: s * 6.3, y: y + k * 1.1, z: z + f * 0.11, w: 0.6, h: 0.6, ry: f < 0 ? Math.PI : 0,
+      sign: i, cell: k + 1, cells: 3,
+    });
   }
   for (const [s, z, i] of [[-1, 2.5, v * 2], [1, -3.5, v * 2 + 1]]) {      // shop name boards, face the track
     pBox(P, s * 7.02, 2.2, z, 0.12, 1.0, 6.3, INK);
@@ -93,28 +137,29 @@ function ctDress(v) {
   const s = v ? 1 : -1;                                             // laundry line along one facade
   pBox(P, s * 6.6, 7.9, 0, 0.03, 0.03, 9, INK);
   [0xf7f1e4, 0xe8473a, 0x3ebd7a, 0xf2b632, 0x2f80ed].forEach((c, i) => pBox(P, s * 6.6, 7.5, -3.6 + i * 1.8, 0.04, 0.75, 0.95, c));
-  return kit({ plain: P, glow: G, tabela: S });
-}
-
-function ctFest() {
-  const base = ctDress(1), P = [], G = glowList();
-  lanternString(P, G, 0, 4);
-  const extra = kit({ plain: P, glow: G });
-  return { ...base, plain: merge([base.plain, extra.plain]), glow: merge([base.glow, extra.glow]) };
+  return kit({ plain: P, glow: G, tabela: S, glyph: H, banner: B });
 }
 
 const STEEL = 0x3b4352, GIRD = 0x5a6472, STONE = 0xc9b79c;
 // main cable height over the 800 m bridge; towers stand at 200 m and 600 m
-export const cableY = (m) => (m <= 200 ? 3 + 27 * (m / 200) ** 2 : m >= 600 ? 3 + 27 * ((800 - m) / 200) ** 2 : 6 + 24 * (2 * (m - 200) / 400 - 1) ** 2);
+export const cableY = (m) => (m <= 200 ? 3 + (CONFIG.city.bridge.towerTop - 3) * (m / 200) ** 2 : m >= 600 ? 3 + (CONFIG.city.bridge.towerTop - 3) * ((800 - m) / 200) ** 2 : 6 + (CONFIG.city.bridge.towerTop - 6) * (2 * (m - 200) / 400 - 1) ** 2);
 function cableSeg(k) {                         // segment k of 40: near edge at 20 k, far edge at 20 k + 20
-  const P = [], G = glowList();
+  const P = [], G = glowList(), clamps = [];
+  const { railX, railTop } = CONFIG.city.bridge;
   const yA = cableY(20 * k), yB = cableY(20 * k + 20);
   for (const s of [-1, 1]) {
-    pBox(P, s * 5.0, (yA + yB) / 2, 0, 0.45, 0.45, Math.hypot(20, yB - yA) + 0.3, STEEL, Math.atan2(yB - yA, 20));
+    pBox(P, s * 5.0, (yA + yB) / 2, 0, 0.45, 0.45, Math.hypot(20, yB - yA), STEEL, Math.atan2(yB - yA, 20));
     for (let j = 0; j < 8; j++) {                                  // suspenders every 2.5 m: the zoetrope
       const z = 8.75 - 2.5 * j, y = yA + (yB - yA) * (10 - z) / 20;
-      if (y > 1.6) pBox(P, s * 5.0, (y + 1.0) / 2, z, 0.07, y - 1.0, 0.07, STEEL);
+      if (y > 1.6) {
+        pBox(P, s * railX, (y + railTop) / 2, z, 0.07, y - railTop, 0.07, STEEL);
+        clamps.push({ x: s * railX, y: railTop, z, w: 1, h: 1, ry: 0 });
+        pBox(P, s * railX, (railTop - 0.12 - 0.08) / 2, z, 0.08, railTop - 0.12 + 0.08, 0.08, GIRD);
+      }
     }
+    // The prototype ended the hangers over empty air; this edge walk connects them to the deck.
+    pBox(P, s * railX, railTop - 0.06, 0, 0.12, 0.12, 20, STEEL);
+    pBox(P, s * 4.4, -0.2, 0, 1.5, 0.24, 20, GIRD);
     pBox(P, s * 4.6, -0.6, 0, 0.3, 1.4, 20, GIRD);                // edge girder
     pBox(P, s * 4.6, -3.4, 0, 0.25, 0.25, 20, GIRD);              // lower chord
     for (let j = 0; j < 4; j++) pBox(P, s * 4.6, -2.0, -7.5 + 5 * j, 0.18, 0.18, 5.7, GIRD, (j % 2 ? 1 : -1) * 0.5);
@@ -124,7 +169,7 @@ function cableSeg(k) {                         // segment k of 40: near edge at 
     }
   }
   for (const z of [-5, 5]) pBox(P, 0, -1.7, z, 9.4, 0.5, 0.5, 0x4c5562);   // cross beams under the deck
-  return kit({ plain: P, glow: G });
+  return kit({ plain: P, glow: G, clamps });
 }
 // stone tower with one pointed arch over the three lanes; placed at the near edge (z = +10)
 function tower() {
@@ -254,6 +299,43 @@ function mouth() {
   return kit({ plain: P, glow: G, tabela: S });
 }
 
+const FRAME = 0x2a2a33, TUBE = [0xff2fa8, 0x22e6ff, 0xffe23a, 0x8cff3a];
+// board w x h centred at (x, y, z), turned ry; lists: P frame, G neon tube border, S picture
+function board(P, G, S, x, y, z, ry, w, h, rect, i = 0, W, H) {
+  const cs = Math.cos(ry), sn = Math.sin(ry);
+  const at = (lx, ly, lz) => [x + lx * cs + lz * sn, y + ly, z - lx * sn + lz * cs];
+  let p = at(0, 0, -0.2); pBox(P, p[0], p[1], p[2], w + 0.5, h + 0.5, 0.3, FRAME, 0, ry);
+  for (const [lx, ly, sx, sy] of [[0, h / 2 + 0.12, w + 0.3, 0.12], [0, -h / 2 - 0.12, w + 0.3, 0.12], [w / 2 + 0.12, 0, 0.12, h + 0.3], [-w / 2 - 0.12, 0, 0.12, h + 0.3]]) {
+    p = at(lx, ly, 0); pBox(G, p[0], p[1], p[2], sx, sy, 0.12, TUBE[i % 4], 0, ry);
+  }
+  p = at(0, 0, 0.02); sQuad(S, w, h, p[0], p[1], p[2], ry, rect, W, H);
+}
+const adRect = (i) => [(i % 2) * 512, 512 + Math.floor(i / 2) * 256, 512, 256];
+// billboard arch right after the tunnel: the hero Bugle board; placed at z = 0 of the first Neon segment
+function gantry() {
+  const P = [], G = glowList(), S = [], B = [];
+  for (const s of [-1, 1]) {
+    pBox(P, s * 9.6, 0.4, 0, 0.9, 22.8, 0.9, FRAME);
+    pBox(P, s * 7.4, 9.4, 0, 5.2, 0.25, 0.25, FRAME, 0, 0, s * 0.75);
+  }
+  pBox(P, 0, 11.5, 0, 20.1, 0.7, 0.9, FRAME);
+  board(P, G, B, 0, 16.2, 0.3, 0, 16, 8, [0, 768, 512, 256], 0, 2048, 1024);              // Bugle slot "GECEYİ GÖRDÜ", bottom edge 12.2
+  for (let i = -8; i <= 8; i++) for (const y of [11.95, 20.45]) pBox(G, i, y, 0.45, 0.3, 0.3, 0.3, i % 2 ? 0xffe23a : 0xff2fa8);   // bulb rows
+  pBox(P, 0, 22.3, 0, 12.6, 3.3, 0.3, FRAME);
+  sQuad(S, 12, 3, 0, 22.3, 0.17, 0, nameRect(3));
+  return kit({ plain: P, glow: G, tabela: S, bugle: B });
+}
+// boards of one Neon segment (v = 0 .. 2): two tiers, both sides, turned 0.35 rad to the track
+function neonDress(v) {
+  const P = [], G = glowList(), A = [], B = [];
+  const spots = [[-1, 6, 11.6], [1, -4, 11.6], [-1, -6, 16.6], [1, 4, 16.6]];
+  spots.forEach(([s, z, y], i) => {
+    const bugle = (i + v) % 3 === 0;
+    board(P, G, bugle ? B : A, s * 9.6, y, z, -s * 0.35, 8, 4, bugle ? [0, 768, 512, 256] : adRect((i + v) % 4), i + v, bugle ? 2048 : 1024, 1024);
+    pBox(P, s * 11, y, z - 1.2, 6, 0.3, 0.3, FRAME);               // strut back to the facade
+  });
+  return kit({ plain: P, glow: G, ads: A, bugle: B });
+}
 function midtownSign() {                       // dawn gantry: back in Midtown
   const P = [], S = [];
   for (const s of [-1, 1]) pBox(P, s * 6.2, 0.5, 0, 0.5, 23, 0.5, 0x4c5562);
@@ -265,7 +347,9 @@ function midtownSign() {                       // dawn gantry: back in Midtown
 
 export function createCityPieces() {
   const pieces = { tower: tower(), vapur: vapur(), midtownSign: midtownSign(),
-    ct0: ctDress(0), ct1: ctDress(1), ctFest: ctFest(), gate: gate(),
+    ct0: ctDress(0), ct1: ctDress(1), ctEnd: ctDress(1, []),
+    ctFest: ctDress(1, [-3], true), ctFestOdd: ctDress(1, [2, -11], true), ctFestEnd: ctDress(1, [2], true), gate: gate(),
+    gantry: gantry(), neon0: neonDress(0), neon1: neonDress(1), neon2: neonDress(2),
     shell: shell(), station0: station(4), station1: station(8), station2: station(5), mouth: mouth() };
   for (let k = 0; k < 40; k++) pieces[`cable${k}`] = cableSeg(k);
   for (const name in pieces) {

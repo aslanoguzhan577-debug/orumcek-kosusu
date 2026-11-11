@@ -21,6 +21,7 @@
 
 import { CONFIG } from '../src/config.js';
 import { PatternGenerator, speedAt, difficultyAt, endlessK, descLanes, girderOffset } from '../src/patterns.js';
+import { districtAt, ROW_HOME } from '../src/city-logic.js';
 
 const P = CONFIG.patterns;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -314,6 +315,7 @@ function checkSeed(seed, withMargin) {
     if (a <= b && !freeRun(lane, Math.max(0, Math.ceil(a / STEP)), Math.min(cells - 1, Math.floor(b / STEP)))) fail(seed, `${rule} lane ${lane} [${a.toFixed(1)}, ${b.toFixed(1)}]`);
   };
   for (const row of rows) {
+    if (!ROW_HOME[row.type].includes(districtAt(row.d)) || !ROW_HOME[row.type].includes(districtAt(row.d + row.len))) fail(seed, `district row at ${row.d}`);
     const v = speedAt(row.d), front = cell(row.d - hd) * STEP - STEP;
     const tail = (Math.ceil((row.d + row.len + hd + (row.type === 'gap' ? speedAt(row.d + row.len) * CONFIG.dtCap : 0)) / STEP) + 1) * STEP;
     if (row.type === 'girder') {
@@ -330,7 +332,11 @@ function checkSeed(seed, withMargin) {
     const T = E[z.kind].duration;
     if (z.len < v * T + 0.5 * CONFIG.acceleration * T * T + speedAt(endD) * E.endMargin) fail(seed, `C9 short zone at ${z.d}`);
     const prev = zones[n - 1];
-    if ((!prev && z.d < E.firstAt) || (prev && z.d - prev.d - prev.len < E.gapMin * E.gapEndless) || z.kind !== (n % 2 ? 'goblin' : 'venom')) fail(seed, `C10 zone schedule at ${z.d}`);
+    if ((!prev && z.d < E.firstAt) || (prev && z.d - prev.d - prev.len < E.gapMin * E.gapEndless) || z.kind !== (districtAt(z.d) === 'neon' ? 'goblin' : 'venom')) fail(seed, `C10 zone schedule at ${z.d}`);
+    const districts = CONFIG.city.districts, tunnel = districts.findIndex(([id]) => id === 'tunnel');
+    for (let base = Math.floor(z.d / CONFIG.city.loop) * CONFIG.city.loop; base <= endD; base += CONFIG.city.loop) {
+      if (z.d < base + districts[tunnel + 1][1] && endD > base + districts[tunnel][1]) fail(seed, `tunnel zone at ${z.d}`);
+    }
     if (pickups.some((o) => o.d >= z.d - v * 7 && o.d <= endD)) fail(seed, `C11 pickup before zone at ${z.d}`);
     if (rows.some((o) => o.d >= z.d && o.d <= endD + E.rowClear - 1)) fail(seed, `C12 row near zone at ${z.d}`);
   }

@@ -38,6 +38,7 @@
 // pickups = how many pickups earlier extras pushed in this block.
 
 import { CONFIG } from './config.js';
+import { districtAt, loopMetre, ROW_HOME } from './city-logic.js';
 
 const LANES = CONFIG.laneCount;
 const CENTER_LANE = Math.floor(LANES / 2);
@@ -171,7 +172,6 @@ export class PatternGenerator {
     this.nextRowD = CONFIG.patterns.rows.firstAt;
     this.lastRow = null;
     this.nextEventD = CONFIG.events.firstAt;
-    this.eventKind = 'venom';
     this.coinFree = new Array(LANES).fill(-Infinity); // last coin per lane (no overlapping rows)
     this.coinMax = new Array(LANES).fill(Infinity);   // no coins beyond this per lane (next obstacle)
     this._placed = new Array(LANES).fill(null);
@@ -213,16 +213,20 @@ export class PatternGenerator {
       const afterScale = lerp(1, P.afterTimeHard, k);
 
       due = A >= this.nextEventD ? 'event' : A >= this.nextRowD ? 'row' : null;
+      let ordinary = !due;
       if (due) {
         const free = Math.max(A + 1, this.routeNext, ...this.laneFree);
         if (free > B - 1) {
           if (rng() < C.routeRowChance) this._coinRow(out, route, Math.max(A, this.laneFree[route]), B - 1, 0);
         } else {
-          B = Math.max(B, due === 'event' ? this._eventZone(out, free, v, k) : this._row(out, free, v, k, shiftWin, afterScale));
+          const end = due === 'event' ? this._eventZone(out, free, v, k) : this._row(out, free, v, k, shiftWin, afterScale);
+          ordinary = end === null;
+          B = Math.max(B, end ?? B);
           this.cursor = B;
           route = this.route;
         }
-      } else {
+      }
+      if (ordinary) {
 
         // 1. Maybe move the route one lane over (both lanes must be empty now).
         const oldRoute = this.route;
@@ -344,14 +348,22 @@ export class PatternGenerator {
 
   _row(out, free, v, k, shiftWin, afterScale) {
     const P = CONFIG.patterns, R = P.rows, rng = this.rng;
-    const table = [['gap', R.weights.gap]];
-    if (free >= R.gateAt) table.push(['gate', R.weights.gate]);
-    if (free >= R.girderAt) table.push(['girder', R.weights.girder]);
-    const type = pickWeighted(rng, table.length > 1 ? table.filter(([n]) => n !== this.lastRow) : table);
+    const fits = (type, at) => {
+      const d = at + (type === 'girder' ? 2 * shiftWin : v * P.checkGapTime + 1);
+      const len = type === 'gap' ? clamp(Math.round(v * CONFIG.obstacles.gap.lenTime * 2) / 2, CONFIG.obstacles.gap.lenMin, CONFIG.obstacles.gap.lenMax) : CONFIG.obstacles[type].depth;
+      return (type !== 'gate' || at >= R.gateAt) && (type !== 'girder' || at >= R.girderAt)
+        && ROW_HOME[type].includes(districtAt(d)) && ROW_HOME[type].includes(districtAt(d + len));
+    };
+    const homes = ['gap', 'gate', 'girder'].filter((type) => fits(type, free));
+    const fresh = homes.filter((type) => type !== this.lastRow);
+    const table = (fresh.length ? fresh : homes).map((type) => [type, R.weights[type]]);
+    if (!table.length) { rng(); return null; }
+    const type = pickWeighted(rng, table);
     let end = this._placeRow(out, type, free, v, shiftWin, afterScale);
     if (type !== 'girder' && k > 0 && rng() < R.comboChance * k) {
       // Each partner still needs the full C4 run-up, even when endless recovery shrinks.
-      end = this._placeRow(out, type === 'gap' ? 'gate' : 'gap', this.routeNext, v, shiftWin, afterScale);
+      const partner = type === 'gap' ? 'gate' : 'gap';
+      if (fits(partner, this.routeNext)) end = this._placeRow(out, partner, this.routeNext, v, shiftWin, afterScale);
     }
     this.lastRow = type;
     this.nextRowD = end + lerp(R.gapMin, R.gapMax, rng()) * lerp(1, R.gapEndless, k);
@@ -385,13 +397,17 @@ export class PatternGenerator {
   }
 
   _eventZone(out, free, v, k) {
-    const E = CONFIG.events, kind = this.eventKind;
+    const E = CONFIG.events;
     const d = free + v * CONFIG.patterns.checkGapTime + 1;
+    const kind = districtAt(d) === 'neon' ? 'goblin' : 'venom';
     const end = d + v * (E[kind].duration + E.tail);
+    const districts = CONFIG.city.districts, tunnel = districts.findIndex(([id]) => id === 'tunnel');
+    for (let base = d - loopMetre(d); base <= end; base += CONFIG.city.loop) {
+      if (d < base + districts[tunnel + 1][1] && end > base + districts[tunnel][1]) return null;
+    }
     out.push({ type: 'event', kind, d, len: end - d });
     this.laneFree.fill(end + 1);
     this.routeNext = end + v * CONFIG.patterns.reactionTime;
-    this.eventKind = kind === 'venom' ? 'goblin' : 'venom';
     this.nextEventD = end + lerp(E.gapMin, E.gapMax, this.rng()) * lerp(1, E.gapEndless, k);
     this.nextRowD = Math.max(this.nextRowD, end + E.rowClear);
     return end;

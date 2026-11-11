@@ -3,6 +3,8 @@
 // jump, land, slide, lane {dir}, coin {position}, stumble, crash {position}, caught,
 // pickup {type}, web {from, to}, ironOn, ironOff, ironSave {positions}, venomNear, venomFar.
 // districtEnter {id, lap}: city announces each district 60 m before its border.
+// recordPass {score}: city emits once when a run exceeds an existing best.
+// flock {position}: one scenic pigeon burst, silent until a later sound stage.
 //
 // Listen:  events.addEventListener('jump', (e) => { ... e.detail ... });
 

@@ -25,12 +25,15 @@ import { CONFIG } from './config.js';
 import { toonMaterial } from './models/toon.js';
 import { TRACK } from './world.js';
 import { emit, events } from './events.js';
-import { createAnnouncer, districtInfo, districtAt, dressFor, segCentre, loopMetre, loopOf } from './city-logic.js';
+import { createAnnouncer, districtInfo, districtAt, dayPhaseAt, dressFor, segCentre, loopMetre, loopOf, loopFlavor } from './city-logic.js';
+import { buildSlots, bugleDeck, heroSlot, recordPassed } from './bugle-logic.js';
 import { createCityPieces } from './city-pieces.js';
 import { createBoards } from './city-boards.js';
+import { createChinatown } from './city-chinatown.js';
 import { createDayCycle } from './daycycle.js';
+import { createCityLife } from './city-life.js';
 import { drawMidtownAtlas, drawMidtownGlow, drawChinatownAtlas, drawChinatownGlow, drawNeonAtlas, drawNeonGlow,
-  drawTunnelAtlas, drawWater, drawTabela, drawSkylineMask, drawShore, facadeHook, SKY_VERT, BRIDGE_SKY_FRAG } from './city-tex.js';
+  drawTunnelAtlas, drawWater, drawTabela, paintBugle, drawBlimpGlyphs, drawSkylineMask, drawShore, drawChineseAtlas, drawHorizontalBanner, drawVerticalBanner, facadeHook, SKY_VERT, BRIDGE_SKY_FRAG } from './city-tex.js';
 
 // Existing chunk dimensions; district/day numbers live in CONFIG.city.
 const CITY = {
@@ -275,6 +278,7 @@ const STY = {
 };
 
 function makeBuilding(F, P, anchors, s, type, zA, zB, front, rng) {
+  F.buildings.push({ side: s, front, zA, zB, base: SY });
   const sty = STY[type];
   const depth = CITY.depth;
   const w = zB - zA;
@@ -404,6 +408,7 @@ function layoutSide(F, P, anchors, s, rng, gap) {
 function buildVariant(index) {
   const rng = mulberry32(7000 + index * 7919);
   const F = new Facade();
+  F.buildings = [];
   const P = [], anchors = [];
   const gap = CITY.crossStreetVariants.includes(index) ? { c: (rng() - 0.5) * 6, w: 7.5 } : null;
 
@@ -440,7 +445,8 @@ function buildVariant(index) {
   plain.computeBoundingSphere();
   for (const g of P) g.dispose();
   const mirroredAnchors = anchors.map((a) => ({ ...a, x: -a.x, ry: -a.ry }));
-  return { facade: F.build(), plain, anchors, mirroredAnchors };
+  const buildings = F.buildings, mirroredBuildings = buildings.map((b) => ({ ...b, side: -b.side }));
+  return { facade: F.build(), plain, anchors, mirroredAnchors, buildings, mirroredBuildings };
 }
 
 // ---------- distant skyline: approved gradient, discs and two RGB masks ----------
@@ -491,11 +497,27 @@ export function initCity(game) {
     shore: tex(1024, 64, drawShore, [1, 1], false),
     water: tex(512, 512, drawWater, [9, 9]),
     tabela: tex(1024, 1024, drawTabela, null, true, scale),
+    bugle: tex(2048, 1024, () => {}),
+    blimp: tex(1024, 128, drawBlimpGlyphs),
+    chinese: tex(1024, 256, drawChineseAtlas),
   };
+  const bannerCanvas = document.createElement('canvas'); bannerCanvas.width = 1024; bannerCanvas.height = 128;
+  drawHorizontalBanner(bannerCanvas.getContext('2d'), atlases.chinese.image, TRACK.halfWidth * 2 + 1);
+  const chineseSheet = document.createElement('canvas'); chineseSheet.width = 1024; chineseSheet.height = 896;
+  const chineseContext = chineseSheet.getContext('2d');
+  chineseContext.drawImage(atlases.chinese.image, 0, 0); chineseContext.drawImage(bannerCanvas, 0, 256);
+  const verticalCanvas = document.createElement('canvas'); verticalCanvas.width = 128; verticalCanvas.height = 512;
+  for (let i = 0; i < 4; i++) {
+    drawVerticalBanner(verticalCanvas.getContext('2d'), atlases.chinese.image, i);
+    chineseContext.drawImage(verticalCanvas, i * 128, 384);
+  }
+  atlases.chinese.image = chineseSheet; atlases.chinese.generateMipmaps = false; atlases.chinese.minFilter = THREE.LinearFilter;
   const anisotropy = Math.min(4, game.renderer.capabilities.getMaxAnisotropy());
   for (const t of [atlases.midtown, atlases.chinatown, atlases.neon, atlases.tunnel]) t.anisotropy = anisotropy;
   atlases.shore.generateMipmaps = false; atlases.shore.minFilter = THREE.LinearFilter;
-  const U = { uHalftone: { value: 1 }, uDotTint: { value: new THREE.Color() }, uBaseTone: { value: 0 }, uSunLum: { value: 1 }, uWinOn: { value: 0 } };
+  atlases.bugle.generateMipmaps = false; atlases.bugle.minFilter = THREE.LinearFilter;
+  atlases.blimp.generateMipmaps = false; atlases.blimp.minFilter = THREE.LinearFilter;
+  const U = { uWinOn: { value: 0 } };
   const facadeMat = (day, glow) => {
     const m = toonMaterial(0xffffff, { map: day, emissiveMap: glow, emissive: 0xffffff, emissiveIntensity: 0, vertexColors: true });
     m.onBeforeCompile = facadeHook(U);
@@ -507,10 +529,68 @@ export function initCity(game) {
   const materials = { plain: plainMat, glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
     tunnel: new THREE.MeshBasicMaterial({ map: atlases.tunnel, vertexColors: true }) };
   const pieces = createCityPieces();
-  const boards = { tabela: createBoards(atlases.tabela, CONFIG.city.boards.tabela) };
-  scene.add(boards.tabela.mesh);
+  const clampSize = CONFIG.city.bridge.clamp;
+  const bridgeClamps = createBoards(null, CONFIG.world.segmentCount * 16,
+    new THREE.BoxGeometry(clampSize, clampSize, clampSize), new THREE.MeshBasicMaterial({ color: 0x222222 }));
+  const clampRect = [0, 0, 1, 1];
+  scene.add(bridgeClamps.mesh);
+  const boards = { tabela: createBoards(atlases.tabela, CONFIG.city.boards.tabela),
+    ads: createBoards(atlases.neon, CONFIG.city.boards.ads), bugle: createBoards(atlases.bugle, CONFIG.city.boards.bugle) };
+  for (const kind in boards) scene.add(boards[kind].mesh);
+  const bugleRects = Array.from({ length: 16 }, (_, i) => [(i % 4) * 512, Math.floor(i / 4) * 256, 512, 256]);
+  let signature = '', best = 0, boardNumber = 0, stumbleD = -1, prevScore = 0, recordSent = false, repaintTime = 0;
+  const ctx = { score: 0, best: 0, mult: 1, d: 0, stumbleD: -1, night: false, loop: 1, dawn: false };
+  // Cache every chooser state at load; the unchanged catalogue allocates its decks.
+  const decks = [];
+  for (const score of [0, 15500, 19500, 19950, 20001]) for (let flags = 0; flags < 16; flags++) {
+    decks.push(bugleDeck({ score, best: 20000, mult: flags & 2 ? 5 : 1, d: 0,
+      stumbleD: flags & 1 ? 0 : -1, night: !!(flags & 4), loop: flags & 8 ? 2 : 1, dawn: false }));
+  }
+  const currentDeck = () => {
+    const left = ctx.best - ctx.score;
+    const tier = ctx.best <= 0 ? 0 : left < 0 ? 4 : left <= 100 ? 3 : ctx.best >= 2000 && left <= 1000 ? 2 : ctx.best >= 10000 && left <= 5000 ? 1 : 0;
+    const flags = (ctx.stumbleD >= 0 && ctx.d - ctx.stumbleD <= CONFIG.city.stumbleNews ? 1 : 0) |
+      (ctx.mult >= 5 ? 2 : 0) | (ctx.night ? 4 : 0) | (ctx.loop >= 2 || ctx.dawn ? 8 : 0);
+    return decks[tier * 16 + flags];
+  };
+  const refreshBugle = () => {
+    let name = 'ÖRÜMCEK', skin = 'spider', list = [];
+    try {
+      name = (localStorage.getItem('spidey.name') || name).replace(/\s+/g, ' ').trim().slice(0, 12).toLocaleUpperCase('tr-TR') || 'ÖRÜMCEK';
+      skin = localStorage.getItem('spidey.skin') || skin;
+      const saved = JSON.parse(localStorage.getItem('spidey.scores') || '[]');
+      if (Array.isArray(saved)) list = saved.filter((e) => e && Number.isFinite(e.s))
+        .map((e) => ({ n: String(e.n || '').slice(0, 12).toLocaleUpperCase('tr-TR'), s: Math.floor(e.s) })).sort((a, b) => b.s - a.s).slice(0, 5);
+    } catch (e) { /* private mode or malformed scores: keep the existing save untouched */ }
+    const nextBest = list.length ? Math.max(0, list[0].s) : 0, mult = game.mult.base;
+    const next = `${name}|${skin}|${nextBest}|${list.length}|${mult}`;
+    if (next === signature) return;
+    best = nextBest; signature = next;
+    paintBugle(atlases.bugle.image.getContext('2d'), buildSlots({ name, best, mult, skin, runs: list.length }), name, best, list);
+    atlases.bugle.needsUpdate = true;
+  };
+  const updateNewsContext = () => {
+    const d = world.distance + cityShift;
+    ctx.score = Math.floor(game.state.score); ctx.best = best; ctx.mult = game.state.multiplier;
+    ctx.d = world.distance; ctx.stumbleD = stumbleD;
+    ctx.night = dayPhaseAt(d) === 'night'; ctx.loop = loopOf(d); ctx.dawn = districtAt(d) === 'dawn';
+  };
+  const takeBugle = (seg, anchor) => {
+    const deck = currentDeck(), slot = anchor.hero ? heroSlot(ctx) : deck[boardNumber % deck.length];
+    boardNumber++;
+    boards.bugle.take(seg, anchor, bugleRects[slot], 2048, 1024);
+  };
+  const resetNews = () => { boardNumber = 0; stumbleD = -1; prevScore = 0; recordSent = false; repaintTime = 0; };
+  const onStumble = () => { if (game.state.mode === 'running') stumbleD = world.distance; };
+  const updateIdle = (dt) => {
+    if (game.state.mode === 'running') return;
+    repaintTime += dt;
+    if (repaintTime < CONFIG.city.repaintEvery) return;
+    repaintTime = 0; refreshBugle();
+  };
+  refreshBugle();
   const portals = {};
-  for (const name of ['tower', 'vapur', 'midtownSign', 'gate', 'mouth']) {
+  for (const name of ['tower', 'vapur', 'midtownSign', 'gate', 'mouth', 'gantry']) {
     const group = portals[name] = new THREE.Group();
     for (const kind of ['plain', 'glow', 'tunnel']) {
       if (!pieces[name][kind]) continue;
@@ -522,13 +602,18 @@ export function initCity(game) {
   // Cache district recipes and transformed portal anchors before recycling can run.
   const planAt = (d) => {
     const [id, k] = districtInfo(d), plan = dressFor(id, k, loopOf(d));
-    const dress = pieces[plan.dress], portal = plan.portal && pieces[plan.portal[0]];
+    const lastCt = (CONFIG.city.districts[2][1] - CONFIG.city.districts[1][1]) / SEG_L - 1;
+    let dressName = plan.dress;
+    if (id === 'chinatown' && k === lastCt) dressName = plan.dress === 'ctFest' ? 'ctFestEnd' : 'ctEnd';
+    else if (plan.dress === 'ctFest' && k % 2) dressName = 'ctFestOdd';
+    const dress = pieces[dressName], portal = plan.portal && pieces[plan.portal[0]];
     const anchors = { tabela: [], ads: [], bugle: [] };
     for (const kind in anchors) {
       if (dress?.anchors?.[kind]) anchors[kind].push(...dress.anchors[kind]);
       if (portal?.anchors[kind]) {
         const [, z, ry] = plan.portal, co = Math.cos(ry), si = Math.sin(ry);
         for (const a of portal.anchors[kind]) anchors[kind].push({ ...a,
+          hero: kind === 'bugle' && plan.portal[0] === 'gantry',
           x: a.x * co + a.z * si, z: -a.x * si + a.z * co + z, ry: a.ry + ry });
       }
     }
@@ -536,6 +621,7 @@ export function initCity(game) {
   };
   const centreOffset = loopMetre(segCentre(0)) % SEG_L;
   const plans = Array.from({ length: CONFIG.city.loop / SEG_L }, (_, i) => planAt(i * SEG_L + centreOffset));
+  const festivalPlans = Array.from({ length: plans.length }, (_, i) => planAt(CONFIG.city.loop + i * SEG_L + centreOffset));
   const beforeStart = planAt(-1);
 
   const variants = [];
@@ -571,12 +657,17 @@ export function initCity(game) {
       c = seg.city = { group, facade, plain, dressPlain, dressGlow, shellMesh, portal: null };
     }
     const spec = specFor(seg.serial);
+    c.variant = spec.v;
     c.facade.geometry = variants[spec.v].facade;
     c.plain.geometry = variants[spec.v].plain;
     c.group.scale.x = spec.flip ? -1 : 1;
     c.anchors = spec.flip ? variants[spec.v].mirroredAnchors : variants[spec.v].anchors;
+    c.buildings = spec.flip ? variants[spec.v].mirroredBuildings : variants[spec.v].buildings;
     const d = segCentre(seg.serial) + cityShift;
-    const plan = d < 0 ? beforeStart : plans[Math.floor(loopMetre(d) / SEG_L)];
+    const plan = d < 0 ? beforeStart : (loopFlavor(loopOf(d)).festival ? festivalPlans : plans)[Math.floor(loopMetre(d) / SEG_L)];
+    c.plan = plan;
+    bridgeClamps.release(seg);
+    for (const a of plan.dress?.anchors?.clamps || []) bridgeClamps.take(seg, a, clampRect, 1, 1);
     c.group.visible = plan.chunk;
     c.facade.material = facades[plan.facade] || facades.midtown;
     c.dressPlain.visible = !!plan.dress?.plain;
@@ -587,7 +678,11 @@ export function initCity(game) {
     if (c.shellMesh.visible) c.shellMesh.geometry = plan.dress.tunnel;
     for (const kind in boards) {
       boards[kind].release(seg);
-      for (const a of plan.anchors[kind]) boards[kind].take(seg, a);
+      if (kind === 'bugle') {
+        updateNewsContext();
+        for (const a of plan.anchors.bugle) takeBugle(seg, a);
+        if (plan.chunk && plan.facade === 'midtown') for (const a of c.anchors) takeBugle(seg, a);
+      } else for (const a of plan.anchors[kind]) boards[kind].take(seg, a);
     }
     if (c.portal?.parent === seg.group) c.portal.visible = false;
     c.portal = null;
@@ -600,6 +695,8 @@ export function initCity(game) {
 
   for (const seg of world.segments) assign(seg);
   const off = world.onRecycle((seg) => assign(seg));
+  const chinatown = createChinatown(game, atlases.chinese, pieces, cityShift, variants, textures);
+  const life = createCityLife(game, atlases.blimp, cityShift);
 
   const skyline = makeSkyline(atlases);
   const waterMat = new THREE.MeshBasicMaterial({ map: atlases.water, fog: true });
@@ -609,36 +706,60 @@ export function initCity(game) {
   const dayCycle = createDayCycle({ scene,
     hemi: scene.children.find((o) => o.isHemisphereLight), sun: scene.children.find((o) => o.isDirectionalLight),
     sky: skyline.material, tinted: [...Object.values(facades), plainMat], uniforms: U,
-    coin: game.obstacles.art.coinMaterial, rims: game.obstacles.art.rims,
-    glow: [materials.glow], boards: [boards.tabela.mesh.material], water: waterMat,
+    coin: game.obstacles.art.coinMaterial,
+    obstacle: game.obstacles.art.obstacleMaterial,
+    glow: [materials.glow], boards: Object.values(boards).map((pool) => pool.mesh.material), water: waterMat, track: world.trackMaterial,
   });
   const announcer = createAnnouncer(emit);
-  const updateScenery = (d) => {
+  const updateScenery = (d, dt = 0) => {
     dayCycle.update(d);
+    chinatown.update(d, game.state.time);
+    life.update(dt, d);
+    bridgeClamps.update();
+    for (const seg of world.segments) {
+      const c = seg.city;
+      c.dressPlain.visible = !!c.plan.dress?.plain;
+      c.dressGlow.visible = !!c.plan.dress?.glow;
+    }
     water.visible = districtAt(d - 60) === 'bridge' || districtAt(d) === 'bridge' || districtAt(d + 120) === 'bridge';
     for (const kind in boards) boards[kind].update();
   };
-  const reset = () => { updateScenery(0); announcer.reset(); };
+  const reset = (d = 0) => {
+    resetNews();
+    life.reset();
+    for (const seg of world.segments) assign(seg);
+    updateScenery(d); announcer.reset();
+  };
+  const onStart = () => { refreshBugle(); reset(cityShift); };
   const onGameOver = () => {
+    reset();
+    life.reset();
     for (const seg of world.segments) {
       const c = seg.city;
       for (const kind in boards) boards[kind].release(seg);
+      bridgeClamps.release(seg);
       c.group.visible = true; c.facade.material = facades.midtown;
       c.dressPlain.visible = c.dressGlow.visible = c.shellMesh.visible = false;
       c.portal = null;
     }
     for (const name in portals) portals[name].visible = false;
-    reset();
+    bridgeClamps.update();
   };
   const system = game.addSystem({
-    update() {
+    update(dt) {
       if (game.state.mode !== 'running' || game.halted) return;
       const d = world.distance + cityShift;
-      updateScenery(d); announcer.update(d);
+      updateScenery(d, dt); announcer.update(d);
+      const score = Math.floor(game.state.score);
+      if (!recordSent && recordPassed(prevScore, score, best)) { recordSent = true; emit('recordPass', { score }); }
+      prevScore = score;
     },
     reset,
   });
   events.addEventListener('gameover', onGameOver);
+  events.addEventListener('menu', onGameOver);
+  events.addEventListener('start', onStart);
+  events.addEventListener('stumble', onStumble);
   updateScenery(cityShift);
 
   return {
@@ -649,10 +770,18 @@ export function initCity(game) {
     cityShift,
     skyline,
     variants,
-    pieces, materials, boards, portals,
+    pieces, materials, boards, portals, chinatown, bridgeClamps, life,
+    updateIdle,
     dispose() {
+      dayCycle.update(0);
+      chinatown.dispose();
+      life.dispose();
+      scene.remove(bridgeClamps.mesh);
       off();
       events.removeEventListener('gameover', onGameOver);
+      events.removeEventListener('menu', onGameOver);
+      events.removeEventListener('start', onStart);
+      events.removeEventListener('stumble', onStumble);
       const i = game.systems.indexOf(system);
       if (i >= 0) game.systems.splice(i, 1);
       scene.remove(skyline, water);

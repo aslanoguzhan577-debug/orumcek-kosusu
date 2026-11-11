@@ -502,6 +502,7 @@ export function createObstacleArt(scene) {
   return {
     kinds,
     coinMaterial,
+    obstacleMaterial: material,
     rims: [{ m: outlineMaterial, base: OUTLINE_COLOR }],
 
     addRow(type, z, len, open, tau) {

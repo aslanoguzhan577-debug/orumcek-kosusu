@@ -341,10 +341,8 @@ function neonCell(g, x0, y0, i, r) {
   for (let cy = 0; cy <= 3; cy++) g.fillRect(x0 + 4, y0 + 10 + cy * 80, 249, 5);
   const band = ['#ff2fa8', '#22e6ff', '#ffe23a', '#7b3cff', '#8cff3a', '#22e6ff', '#ff2fa8', '#ffe23a'][i];
   if (i % 2 === 0) { g.fillStyle = band; g.fillRect(x0, y0 + 248, 256, 8); }
-  if (i === 3 || i === 6) { // LED ticker cell: dotted strip
+  if (i === 3 || i === 6) {
     g.fillStyle = '#14162a'; g.fillRect(x0 + 6, y0 + 92, 244, 72);
-    g.fillStyle = band;
-    for (let x = 0; x < 30; x++) for (let y = 0; y < 7; y++) if (r() < 0.45) g.fillRect(x0 + 12 + x * 8, y0 + 100 + y * 9, 5, 6);
   }
   g.fillStyle = 'rgba(255,255,255,0.35)';
   g.beginPath(); g.moveTo(x0, y0 + 60); g.lineTo(x0 + 80, y0); g.lineTo(x0 + 110, y0); g.lineTo(x0, y0 + 110); g.fill();
@@ -364,12 +362,6 @@ export function drawAd(g, x0, y0, W, H, ad, r, glow = false) {
     g.fillStyle = ad.bg; g.globalAlpha = 0.35; g.fillRect(x0, y0, W, H); g.globalAlpha = 1;
   } else {
     g.fillStyle = ad.bg; g.fillRect(x0, y0, W, H);
-    // halftone corner (bottom right), 8 px pitch scaled to W
-    const p = W / 64; g.fillStyle = 'rgba(0,0,0,0.18)';
-    for (let y = 0; y < H; y += p) for (let x = 0; x < W; x += p) {
-      const k = Math.max(0, (x / W) + (y / H) - 0.9) * 1.6;
-      if (k > 0.05) { g.beginPath(); g.arc(x0 + x + ((y / p) % 2 ? p / 2 : 0), y0 + y, Math.min(k, 0.5) * p * 0.9, 0, 7); g.fill(); }
-    }
   }
   adIcon(g, ad.ic, x0 + H * 0.5, y0 + H * 0.5, H * 0.7, ad.fg);
   g.textAlign = 'left'; g.textBaseline = 'middle'; g.lineJoin = 'round';
@@ -410,13 +402,10 @@ export function drawNeonGlow(g) {
 // 3 tile wall, 4 tile wall + mosaic name tablet left half, 5 right half, 6 tile + "42" mosaic,
 // 7 tile + METRO arrow. Glow atlas 512 x 256: only the niche lamp and the tablets' frame.
 export function drawTunnelAtlas(g) {
-  const r = rng(4404);
   for (let i = 0; i < 8; i++) {
     const x0 = (i % 4) * 256, y0 = Math.floor(i / 4) * 256;
     if (i < 3) {
       g.fillStyle = '#ffffff'; g.fillRect(x0, y0, 256, 256);
-      g.fillStyle = 'rgba(0,0,0,0.10)';
-      for (let k = 0; k < 40; k++) g.fillRect(x0 + r() * 256, y0 + r() * 256, 2 + r() * 10, 2 + r() * 3);
       g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(x0, y0 + 124, 256, 6);  // form-work joint
       g.fillRect(x0 + 126, y0, 6, 256);
       if (i === 1) for (let k = 0; k < 3; k++) inkRect(g, x0, y0 + 40 + k * 14, 256, 6, '#6b6f78', 2);
@@ -535,40 +524,20 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
-// ===================================================================== HALFTONE + NIGHT WINDOWS
+// ===================================================================== NIGHT WINDOWS
 // Facade materials (toonMaterial(0xffffff, { map, emissiveMap, emissive: 0xffffff, vertexColors }))
 // get this hook. U = the ONE shared uniforms object of daycycle.js.
 export function facadeHook(U) {
   return function (shader) {
-    shader.uniforms.uHalftone = U.uHalftone;
-    shader.uniforms.uDotTint = U.uDotTint;
-    shader.uniforms.uBaseTone = U.uBaseTone;
-    shader.uniforms.uSunLum = U.uSunLum;
     shader.uniforms.uWinOn = U.uWinOn;
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
-uniform float uHalftone; uniform vec3 uDotTint; uniform float uBaseTone; uniform float uSunLum; uniform float uWinOn;
+uniform float uWinOn;
 float htHash( vec2 p ) { return fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ); }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 #ifdef USE_EMISSIVEMAP
   totalEmissiveRadiance *= emissiveColor.a < 0.75 ? 1.0 : step( htHash( floor( vEmissiveMapUv * 4.0 ) ), uWinOn );
-#endif`)
-      .replace('#include <opaque_fragment>', `{
-  vec3 htBase = outgoingLight - totalEmissiveRadiance;
-  const vec3 LUM = vec3( 0.299, 0.587, 0.114 );
-  float htLit = dot( reflectedLight.directDiffuse, LUM ) / max( dot( diffuseColor.rgb, LUM ) * uSunLum, 1e-4 );
-  float tone = max( clamp( 1.0 - htLit, 0.0, 1.0 ), uBaseTone ) * uHalftone;
-  vec2 q = vMapUv * 32.0;                                   // 8 dots per window bay
-  q = vec2( q.x + q.y, q.y - q.x ) * 0.70710678;             // 45 degree screen
-  float d = length( fract( q ) - 0.5 );
-  float r = 0.66 * sqrt( tone );
-  float aa = fwidth( d ) * 0.75 + 1e-4;
-  float dotM = 1.0 - smoothstep( r - aa, r + aa, d );
-  float px = fwidth( q.x ) + fwidth( q.y );                 // dot cells per pixel
-  float cover = mix( dotM, min( 3.14159 * r * r, 1.0 ), smoothstep( 0.35, 0.8, px ) );
-  outgoingLight = mix( htBase, htBase * uDotTint, cover ) + totalEmissiveRadiance;
-}
-#include <opaque_fragment>`);
+#endif`);
   };
 }
 
@@ -685,6 +654,18 @@ export function drawRecordBoard(g, x0, y0, W, H, name, best) {
   g.restore();
 }
 
+export function paintBugle(g, slots, name, best, list) {
+  for (let i = 0; i < slots.length; i++) {
+    const x = (i % 4) * 512, y = Math.floor(i / 4) * 256, slot = slots[i];
+    if (slot.type === 'wanted') drawRecordBoard(g, x, y, 512, 256, name, best);
+    else if (slot.type === 'top5') drawTopFive(g, x, y, 512, 256, list, name);
+    else {
+      const [kicker, headline, sub, photo] = slot.row;
+      drawBuglePage(g, x, y, 512, 256, { kicker, headline, sub, photo });
+    }
+  }
+}
+
 export function drawDistrictSign(g, x0, y0, W, H, text, sub, c1, c2) { // gate / arch name boards
   g.fillStyle = '#14162a'; g.fillRect(x0, y0, W, H);
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
@@ -749,3 +730,97 @@ const BRIDGE_SKY_FRAG = SKY_FRAG
   col = mix(col, uFar, m.r);`);
 
 export { BRIDGE_SKY_FRAG };
+// 10 x 10 brush paths; r = rectangle, q = outward quadratic stroke.
+export const CHINESE_STROKES = [
+  [[1,4,9,4], [5,1,1,9,'q'], [5,4,9,9,'q']],
+  [[1.5,2,8.5,2], [5,0.5,5,4.5], [3,4.5,7,4.5], [2.5,6,7.5,9.5,'r']],
+  [[2,3,8,7,'r'], [5,0.5,5,9.5]],
+  [[5,1,5,8], [1.5,4,1.5,8], [8.5,4,8.5,8], [1.5,8,8.5,8]],
+  [[2.5,1,7.5,9,'r'], [2.5,5,7.5,5]],
+  [[2,1.5,8,1.5], [2.5,5,7.5,5], [1,8.5,9,8.5], [5,1.5,5,8.5]],
+  [[2,3,3,4.5], [8,3,7,4.5], [5,1,1.5,9.5,'q'], [5,5,9,9.5,'q']],
+  [[1,3.5,9,3.5], [5,0.5,5,9.5], [5,3.5,1,8.5], [5,3.5,9,8.5]],
+];
+
+export function drawChineseAtlas(g) {
+  for (let row = 0; row < 2; row++) for (let cell = 0; cell < 8; cell++) {
+    g.save(); g.translate(cell * 128, row * 128);
+    g.fillStyle = row ? '#f6c445' : '#c8102e'; g.fillRect(0, 0, 128, 128);
+    g.translate(128 * 0.1, 128 * 0.1); g.scale(128 * 0.08, 128 * 0.08);
+    g.strokeStyle = row ? '#c8102e' : '#f6c445';
+    g.lineCap = g.lineJoin = 'round'; g.lineWidth = 1.1;
+    for (const [x0, y0, x1, y1, kind] of CHINESE_STROKES[cell]) {
+      g.beginPath(); g.moveTo(x0, y0);
+      if (kind === 'r') { g.lineTo(x1, y0); g.lineTo(x1, y1); g.lineTo(x0, y1); g.closePath(); }
+      else if (kind === 'q') {
+        const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, len = Math.hypot(x1 - x0, y1 - y0);
+        let nx = -(y1 - y0) / len, ny = (x1 - x0) / len;
+        if (nx * (mx - 5) + ny * (my - 5) < 0) { nx = -nx; ny = -ny; }
+        g.quadraticCurveTo(mx + 0.6 * nx, my + 0.6 * ny, x1, y1);
+      } else g.lineTo(x1, y1);
+      g.stroke();
+    }
+    g.restore();
+  }
+}
+
+export function drawHorizontalBanner(g, glyphs, width) {
+  const height = 0.9, sag = 0.25, full = height + sag;
+  g.clearRect(0, 0, 1024, 128); g.save(); g.scale(1024 / width, 128 / full);
+  const top = (x) => sag * (1 - Math.abs(2 * x / width - 1));
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(width / 2, sag); g.lineTo(width, 0); g.lineTo(width, height);
+  for (let i = 4; i >= 0; i--) {
+    const middle = (i + 0.5) * width / 5, edge = i * width / 5;
+    g.lineTo(middle, top(middle) + height - 0.2); g.lineTo(edge, top(edge) + height);
+  }
+  g.closePath(); g.clip();
+  g.fillStyle = '#c8102e'; g.fillRect(0, 0, width, full);
+  g.strokeStyle = '#f6c445'; g.lineWidth = 0.12; g.stroke();   // the clip keeps 0,06 m of it, as designed
+  const size = height * 0.7 / 0.8, advance = height * 0.7 * 1.5;
+  for (let i = 0; i < 4; i++) {
+    const x = width / 2 + (i - 1.5) * advance - size / 2;
+    g.drawImage(glyphs, (i % 2) * 128, 0, 128, 128, x, sag + (height - size) / 2, size, size);
+  }
+  g.restore();
+}
+
+const verticalRng = rng(3303);
+export const VERTICAL_CHARACTERS = Array.from({ length: 4 }, () => {
+  const row = [];
+  for (let i = 0; i < 3; i++) {
+    let next = Math.floor(verticalRng() * 8);
+    if (next === row[i - 1]) next = (next + 1) % 8;
+    row.push(next);
+  }
+  return row;
+});
+export function drawVerticalBanner(g, glyphs, pattern) {
+  g.fillStyle = '#c8102e'; g.fillRect(0, 0, 128, 512);
+  for (let i = 0; i < 3; i++) g.drawImage(glyphs, VERTICAL_CHARACTERS[pattern][i] * 128, 0, 128, 128, 0, 64 + i * 128, 128, 128);
+}
+
+export function drawBlimpGlyphs(g) {
+  g.fillStyle = '#12161f'; g.fillRect(0, 0, 1024, 128);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = "104px 'Bangers'"; g.lineWidth = 10; g.strokeStyle = '#d8262c'; g.fillStyle = '#ffd23a';
+  for (let c = 0; c <= 10; c++) {
+    const text = c === 10 ? 'x' : String(c);
+    g.strokeText(text, c * 64 + 32, 64); g.fillText(text, c * 64 + 32, 64);
+  }
+  g.font = "58px 'Bangers'"; g.fillStyle = '#ffffff'; g.fillText('ÇARPAN', 896, 64);
+  g.fillStyle = '#ffd23a';
+  for (let x = 0; x < 1024; x += 14) { g.fillRect(x, 0, 6, 6); g.fillRect(x, 122, 6, 6); }
+}
+
+export function drawDragonScales(g) {
+  g.fillStyle = '#d62828'; g.fillRect(0, 0, 256, 256);
+  for (let row = 0; row < 16; row++) for (let col = -1; col < 9; col++) {
+    const x = col * 32 + (row % 2) * 16, y = row * 16;
+    g.beginPath(); g.arc(x, y, 16, 0, Math.PI); g.closePath();
+    g.fillStyle = '#f6c445'; g.fill(); g.strokeStyle = '#7a1010'; g.lineWidth = 1; g.stroke();
+    g.beginPath(); g.arc(x, y + 2, 12, 0, Math.PI); g.closePath(); g.fillStyle = '#f08c00'; g.fill();
+  }
+  g.fillStyle = '#d62828'; g.fillRect(0, 256 * 0.88, 256, 256 * 0.12);
+  g.strokeStyle = '#ffd23f'; g.lineWidth = 2;
+  for (let x = 0; x < 256; x += 4) { g.beginPath(); g.moveTo(x, 256 * 0.88); g.lineTo(x, 256); g.stroke(); }
+}

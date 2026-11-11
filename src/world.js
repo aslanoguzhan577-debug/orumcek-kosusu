@@ -37,6 +37,8 @@ export const TRACK = {
   bedTop: BED_TOP,
   deckBottom: BED_TOP - DECK_THICK,
 };
+TRACK.fenceOuter = TRACK.halfWidth + 0.15 + 0.4 / 2;
+TRACK.fenceTop = BED_TOP + WALL_H;
 
 // long pieces get cuts every ~4 m so the curved world (curve.js) can bend them smoothly
 function box(w, h, d, x, y, z) {
@@ -105,6 +107,7 @@ export class World {
 
     const geo = buildTrackGeometries();
     const mat = toonMaterial(0xffffff, { vertexColors: true });
+    this.trackMaterial = mat;
 
     for (let i = 0; i < CONFIG.world.segmentCount; i++) {
       const group = new THREE.Group();

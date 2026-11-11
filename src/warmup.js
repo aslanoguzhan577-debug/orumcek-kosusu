@@ -63,6 +63,16 @@ export async function warmUp(game, textures = []) {
     for (const pool of Object.values(game.city?.boards || {})) {
       boardCounts.push([pool.mesh, pool.mesh.count]); pool.mesh.count = Math.max(1, pool.mesh.count);
     }
+    for (const mesh of game.city?.chinatown.meshes || []) {
+      boardCounts.push([mesh, mesh.count]); mesh.count = Math.max(1, mesh.count);
+    }
+    for (const mesh of game.city?.life.meshes || []) {
+      if (mesh.isInstancedMesh) { boardCounts.push([mesh, mesh.count]); mesh.count = Math.max(1, mesh.count); }
+    }
+    if (game.city?.bridgeClamps) {
+      const mesh = game.city.bridgeClamps.mesh;
+      boardCounts.push([mesh, mesh.count]); mesh.count = Math.max(1, mesh.count);
+    }
     scene.traverse((o) => {
       if (!o.visible || o.frustumCulled) saved.push([o, o.visible, o.frustumCulled]);
       o.visible = true;

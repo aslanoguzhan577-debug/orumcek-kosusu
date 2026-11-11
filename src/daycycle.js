@@ -1,14 +1,16 @@
 // src/daycycle.js — distance-driven light and scenery updates; gameplay keeps its own palette.
 import { CONFIG } from './config.js';
-import { phaseAt, tunnelAt, discAt, cityAt, mixHex } from './city-logic.js';
+import { phaseAt, tunnelAt, discAt, cityAt, mixHex, weatherAt, loopOf, loopMetre } from './city-logic.js';
 
-export function createDayCycle({ scene, hemi, sun, sky, tinted, coin, rims, glow = [], boards = [], water, uniforms }) {
+export function createDayCycle({ scene, hemi, sun, sky, tinted, coin, obstacle, glow = [], boards = [], water, uniforms, track }) {
   const p = { sunPos: [0, 0, 0] }, disc = [0, 0, 0, 0];
   const T = CONFIG.city.tunnelLook, u = sky.uniforms;
+  const weather = { kind: null, k: 0 }, trackBase = track?.emissive.clone(), trackIntensity = track?.emissiveIntensity;
   const lerp = (a, b, t) => a + (b - a) * t;
   return {
     update(d) {
       phaseAt(d, p); discAt(d, disc);
+      weatherAt(loopOf(d), loopMetre(d), weather);
       const t = tunnelAt(d);
       const fog = mixHex(p.fog, T.fog, t);
       scene.background.setHex(fog); scene.fog.color.setHex(fog);
@@ -17,14 +19,18 @@ export function createDayCycle({ scene, hemi, sun, sky, tinted, coin, rims, glow
       hemi.intensity = lerp(p.hemiI, T.hemiI, t);
       sun.color.setHex(p.sun); sun.intensity = lerp(p.sunI, T.sunI, t);
       sun.position.set(p.sunPos[0], p.sunPos[1], p.sunPos[2]);
-      if (uniforms) {
-        uniforms.uHalftone.value = p.halftone; uniforms.uDotTint.value.setHex(p.dotTint);
-        uniforms.uBaseTone.value = p.baseTone; uniforms.uWinOn.value = p.winOn;
-        uniforms.uSunLum.value = p.sunI * (0.299 * sun.color.r + 0.587 * sun.color.g + 0.114 * sun.color.b) / Math.PI;
+      if (uniforms) uniforms.uWinOn.value = p.winOn;
+      for (const m of tinted) {
+        m.color.setHex(p.tint);
+        m.emissiveIntensity = p.glow * (m.emissiveMap && weather.kind === 'rain' ? 1 + CONFIG.city.life.rain.glow * weather.k : 1);
       }
-      for (const m of tinted) { m.color.setHex(p.tint); m.emissiveIntensity = p.glow; }
+      if (track) {
+        const wet = weather.kind && weather.k > 0 ? CONFIG.city.life[weather.kind] : null;
+        if (wet) { track.emissive.setHex(wet.sheen); track.emissiveIntensity = wet.intensity * weather.k; }
+        else { track.emissive.copy(trackBase); track.emissiveIntensity = trackIntensity; }
+      }
       if (coin) coin.emissiveIntensity = lerp(p.coin, T.coin, t);
-      for (const r of rims) r.m.color.setHex(mixHex(r.base, CONFIG.city.rim, lerp(p.rim, T.rim, t)));
+      if (obstacle) obstacle.emissive.copy(obstacle.color).multiplyScalar(CONFIG.city.obstacleGlow * lerp(p.nightBlend, 1, t));
       for (const m of glow) m.color.setScalar(lerp(0.8, 1, p.lamp));
       for (const m of boards) m.color.setScalar(p.sign);
       if (water) { water.color.setHex(p.water); water.map.offset.y = (d / 100) % 1; }

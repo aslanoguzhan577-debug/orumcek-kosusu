@@ -214,6 +214,7 @@ renderer.setAnimationLoop((now) => {
   last = now;
 
   game.update(dt);
+  game.city.updateIdle(dt);
   // curved world: fades out in the catch cam (it looks back across the track)
   curve.update(world.distance, game.state.speed, 1 - cameraRig.shotBlend);
   chaser.root.rotation.z = -curve.bank * CONFIG.curve.lean;

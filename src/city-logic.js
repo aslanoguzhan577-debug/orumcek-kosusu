@@ -2,16 +2,48 @@
 import { CONFIG } from './config.js';
 
 const C = CONFIG.city;
+export const lanternLift = () => Math.max(0, CONFIG.swing.height + CONFIG.swing.arcRise + CONFIG.playerHeight + 1 - (11 - C.chinatown.bannerHeight));
 export const ANCHOR_COUNTS = {
-  ct0: 2, ct1: 2, ctFest: 2,
+  ct0: 2, ct1: 2, ctEnd: 2, ctFest: 2, ctFestOdd: 2, ctFestEnd: 2,
   neon0: { ads: 2, bugle: 2 }, neon1: { ads: 3, bugle: 1 }, neon2: { ads: 3, bugle: 1 },
   gate: 1, mouth: 1, gantry: { tabela: 1, bugle: 1 }, midtownSign: 1,
 };
 const lerp = (a, b, t) => a + (b - a) * t;
-const colours = new Set(['skyTop', 'skyMid', 'horizon', 'fog', 'far', 'near', 'win', 'hemiSky', 'hemiGround', 'sun', 'tint', 'dotTint', 'water']);
+const colours = new Set(['skyTop', 'skyMid', 'horizon', 'fog', 'far', 'near', 'win', 'hemiSky', 'hemiGround', 'sun', 'tint', 'water']);
 export const loopMetre = (d) => ((d % C.loop) + C.loop) % C.loop;
 export const loopOf = (d) => Math.floor(Math.max(0, d) / C.loop) + 1;
 export const segCentre = (serial) => serial * 20 - 86;
+export const ROW_HOME = { gap: ['bridge'], gate: ['tunnel'], girder: ['midtown', 'neon', 'dawn'] };
+export const cityHash = (n) => { const h = Math.sin(n * 127.1) * 43758.5453; return h - Math.floor(h); };
+const flavors = [
+  { weather: null, festival: false }, { weather: null, festival: true },
+  { weather: 'rain', festival: false }, { weather: 'rain', festival: true },
+  { weather: 'snow', festival: false }, { weather: 'snow', festival: true },
+];
+export function loopFlavor(loop) {
+  const h = cityHash(loop), weather = loop <= 1 ? 0 : loop === 2 ? 2 : loop === 3 ? 4 : h < 0.5 ? 2 : h < 0.75 ? 4 : 0;
+  return flavors[weather + (loop >= 2 && loop % 2 === 0 ? 1 : 0)];
+}
+export function weatherAt(loop, s, out = { kind: null, k: 0 }) {
+  const r = C.weather;
+  out.kind = loopFlavor(loop).weather;
+  out.k = smoothstep(r[0], r[1], s) * (1 - smoothstep(r[2], r[3], s));
+  return out;
+}
+export const celebrationKind = (phaseId, tunnelFactor) => tunnelFactor >= 0.1 ? 'wait' : phaseId === 'night' ? 'fireworks' : 'tape';
+
+export function flockAt(d) {
+  const F = C.life.flock;
+  for (let b = Math.floor(Math.max(0, d) / F.block); ; b++) {
+    if (cityHash(b * 7.3) >= F.chance) continue;
+    const at = F.block * b + F.offset + F.spread * cityHash(b * 3.1), s = loopMetre(at), id = districtAt(at);
+    if (at < Math.max(F.first, d) || (id !== 'midtown' && id !== 'chinatown' && id !== 'dawn')) continue;
+    let border = s < F.border || C.loop - s < F.border;
+    for (const r of C.districts) if (Math.abs(s - r[1]) < F.border) border = true;
+    if (border) continue;
+    return at;
+  }
+}
 
 export function districtInfo(d) {
   if (d < 0) return ['midtown', -1, 0];
@@ -82,7 +114,7 @@ export function dressFor(id, k, loop) {
   const o = { chunk: true, facade: 'midtown', dress: null, portal: null };
   if (id === 'chinatown') {
     o.facade = 'chinatown';
-    o.dress = `ct${k % 2}`;
+    o.dress = loopFlavor(loop).festival ? 'ctFest' : `ct${k % 2}`;
     if (k === 0) o.portal = ['gate', 10, 0];
   } else if (id === 'bridge') {
     o.chunk = false; o.facade = null; o.dress = `cable${k}`;
