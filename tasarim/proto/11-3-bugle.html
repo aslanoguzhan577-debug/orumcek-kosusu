@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>11.3 Daily Bugle panoları</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bangers&family=Baloo+2:wght@600;800&display=swap">
+<style>
+  body { margin: 0; padding: 10px; background: #1b1a4a; color: #fff; font: 600 14px 'Baloo 2', system-ui, sans-serif; }
+  h1 { font: 34px Bangers, sans-serif; letter-spacing: .04em; color: #ffd23a; margin: 4px 0; }
+  h2 { font: 24px Bangers, sans-serif; letter-spacing: .04em; color: #22e6ff; margin: 18px 0 2px; }
+  p { margin: 2px 0 8px; opacity: .85; }
+  .row { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  canvas { width: 100%; height: auto; display: block; border: 3px solid #ff2fa8; box-shadow: 0 0 14px #ff2fa8aa; }
+  input, select { font: inherit; padding: 6px; border-radius: 6px; border: 2px solid #12161f; width: 9em; }
+</style>
+</head>
+<body>
+<h1>DAILY BUGLE PANOLARI</h1>
+<p>Şehirdeki panolar oyuncudan bahseder. Adı değiştir, hepsi yeniden basılır.
+  <input id="name" maxlength="12"> çarpan <select id="mult"><option>5</option><option>8</option><option selected>12</option></select></p>
+<div id="out"></div>
+<script type="module">
+// Every headline of tasarim/11-3-bugle.md drawn with the real board painter (sehir-tex.js).
+import * as T from './sehir-tex.js';
+import { HEADLINES, buildSlots, SLOT } from './11-3-mansetler.js';
+await document.fonts.load("64px 'Bangers'", 'ÖĞÜŞİ'); await document.fonts.load("800 16px 'Baloo 2'", 'ÖĞÜŞİ');
+const out = document.getElementById('out'), nameEl = document.getElementById('name'), multEl = document.getElementById('mult');
+let list = [], skin = 'spider';
+try { list = JSON.parse(localStorage.getItem('spidey.scores') || '[]'); nameEl.value = localStorage.getItem('spidey.name') || ''; skin = localStorage.getItem('spidey.skin') || skin; } catch (e) { /* defaults: private mode or broken save */ }
+if (!Array.isArray(list)) list = [];
+if (!nameEl.value) nameEl.value = 'OĞUZ';
+if (!list.length) list = [{ n: 'OĞUZ', s: 48210 }, { n: 'MERT', s: 31400 }, { n: 'ECE', s: 27755 }, { n: 'CAN', s: 9300 }, { n: 'ELİF', s: 8100 }];
+const TITLES = { generic: ['Her zaman', 'Sakin koşuda sırayla döner.'], chase: ['Rekor kovalaması', 'Rekora 5.000 / 1.000 / 100 puan kala.'], broken: ['Rekor kırıldı', 'Koşu sırasında rekor geçildiği an, havai fişekle birlikte.'],
+  first: ['İlk koşu', 'Henüz rekor yokken ARANIYOR panosunun yerine.'], stumble: ['Sendeleme', 'Sendeledikten sonraki 600 m.'], mult: ['Yüksek çarpan', 'Görev çarpanı 5 ve üstüyse.'],
+  night: ['Gece', 'Neon Meydan: tünel çıkışındaki dev pano bunlardan biridir.'], loop: ['Şafak ve ikinci gün', '5,2 km sonrası.'], skin: ['Karaktere özel', 'Seçili karaktere göre bir tane.'] };
+function draw() {
+  out.innerHTML = '';
+  const name = nameEl.value.toLocaleUpperCase('tr-TR'), best = list.reduce((m, e) => Math.max(m, e.s || 0), 0), mult = +multEl.value;
+  const fill = (t) => t.replaceAll('{N}', name).replaceAll('{X}', mult);
+  const sec = (title, note) => { const h = document.createElement('h2'); h.textContent = title; out.appendChild(h); const p = document.createElement('p'); p.textContent = note; out.appendChild(p); const r = document.createElement('div'); r.className = 'row'; out.appendChild(r); return r; };
+  const cv = (row, paint) => { const c = document.createElement('canvas'); c.width = 512; c.height = 256; paint(c.getContext('2d')); row.appendChild(c); };
+  let r = sec('Skor panoları', 'Rekor panosu ve yerel ilk 5 (kayıtlı skorlardan).');
+  cv(r, (g) => T.drawRecordBoard(g, 0, 0, 512, 256, name, best));
+  cv(r, (g) => T.drawTopFive(g, 0, 0, 512, 256, list, name));
+  for (const key of Object.keys(TITLES)) {
+    r = sec(...TITLES[key]);
+    const rows = Array.isArray(HEADLINES[key]) ? HEADLINES[key] : Object.values(HEADLINES[key]);
+    for (const [kicker, headline, sub, photo] of rows) cv(r, (g) => T.drawBuglePage(g, 0, 0, 512, 256, { kicker, headline: fill(headline), sub: fill(sub), photo }));
+  }
+  r = sec('Bu koşunun atlası (16 yuva)', 'Koşu başlamadan basılır; koşu sırasında panolar yalnızca yuva değiştirir.');
+  const slots = buildSlots({ name, best, mult, skin, runs: list.length });
+  slots.forEach((s, i) => cv(r, (g) => {
+    if (s.type === 'wanted') T.drawRecordBoard(g, 0, 0, 512, 256, name, best);
+    else if (s.type === 'top5') T.drawTopFive(g, 0, 0, 512, 256, list, name);
+    else T.drawBuglePage(g, 0, 0, 512, 256, { kicker: s.row[0], headline: s.row[1], sub: s.row[2], photo: s.row[3] });
+    g.fillStyle = '#ff2fa8'; g.fillRect(0, 0, 100, 26); g.fillStyle = '#fff'; g.font = "800 16px 'Baloo 2'"; g.textAlign = 'left'; g.textBaseline = 'top'; g.fillText(Object.keys(SLOT).find((k) => SLOT[k] === i) || i, 4, 4);
+  }));
+}
+nameEl.oninput = draw; multEl.onchange = draw;
+draw();
+</script>
+</body>
+</html>

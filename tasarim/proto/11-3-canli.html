@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>11.3 Şehir Yaşıyor — canlı prototip</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; overflow: hidden; font: 600 13px system-ui, sans-serif; color: #fff; }
+  iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: #12161fd9; border-top: 3px solid #ffd23a; }
+  #bar.min { background: none; border: 0; pointer-events: none; }
+  #bar.min > :not(#tog) { display: none; }
+  #row { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 4px; }
+  button { font: inherit; color: #12161f; background: #ffd23a; border: 2px solid #12161f; border-radius: 6px; padding: 5px 7px; }
+  button.on { background: #ff2fa8; color: #fff; }
+  #tog { pointer-events: auto; float: right; margin-left: 6px; }
+  input[type=range] { width: 100%; }
+  #lbl { display: block; margin: 2px 0; }
+</style>
+</head>
+<body>
+<iframe id="g" src="../../index.html"></iframe>
+<div id="bar">
+  <button id="tog">GİZLE</button>
+  <span id="lbl">yükleniyor…</span>
+  <div id="row"></div>
+  <input id="sl" type="range" min="0" max="12000" step="20" value="0">
+</div>
+<script type="module">
+// Prototype host: the real game in a frame + the 11.3 look (tasarim/proto/11-3-kit.js).
+// Play normally, or jump along the day with the buttons / the slider. Nothing is saved by this page.
+const frame = document.getElementById('g'), lbl = document.getElementById('lbl'), sl = document.getElementById('sl'), row = document.getElementById('row'), bar = document.getElementById('bar');
+await new Promise((r) => (frame.contentDocument && frame.contentDocument.readyState === 'complete' ? r() : frame.addEventListener('load', r, { once: true })));
+const w = frame.contentWindow;
+for (let i = 0; i < 300 && !(w.game && w.game.ready); i++) await new Promise((r) => setTimeout(r, 100));
+// absolute URL built here: an import() evaluated inside the frame would resolve against index.html
+const kit = await w.eval(`import(${JSON.stringify(new URL('11-3-kit.js', location.href).href)})`);
+kit.apply();
+window.kit = kit; window.gw = w;
+const STOPS = [['MIDTOWN', 0], ['KAPI', 1440], ['CHINATOWN', 1900], ['KÖPRÜ', 2480], ['GÜN BATIMI', 3000], ['TÜNEL', 3280], ['İSTASYON', 3440], ['ÇIKIŞ', 3620], ['NEON', 4200], ['ŞAFAK', 5140], ['SABAH', 5600]];
+for (const [name, m] of STOPS) {
+  const b = document.createElement('button'); b.textContent = name;
+  b.onclick = () => { kit.goto(m); sl.value = m; };
+  row.appendChild(b);
+}
+const tour = document.createElement('button'); tour.textContent = 'TUR';
+let touring = 0;
+tour.onclick = () => {
+  if (touring) { clearInterval(touring); touring = 0; tour.classList.remove('on'); return; }
+  tour.classList.add('on');
+  if (w.game.state.mode !== 'running') w.game.start();
+  w.game.obstacles.grace(1e9);               // watch mode: no collisions
+  let i = 0;
+  const next = () => { const m = STOPS[i++ % STOPS.length][1]; kit.goto(m); sl.value = m; };
+  next(); touring = setInterval(next, 7000);
+};
+row.appendChild(tour);
+sl.oninput = () => kit.goto(+sl.value);
+document.getElementById('tog').onclick = (e) => { bar.classList.toggle('min'); e.target.textContent = bar.classList.contains('min') ? 'AYAR' : 'GİZLE'; };
+const TR = { midtown: 'Midtown', chinatown: 'Chinatown', bridge: 'Köprü', tunnel: 'Metro tüneli', neon: 'Neon Meydan', dawn: 'Midtown (şafak)' };
+setInterval(() => { const d = kit.dist(); lbl.textContent = `${Math.round(d)} m · ${TR[kit.districtInfo(d)[0]]} · tur ${Math.floor(Math.max(0, d) / kit.LOOP) + 1}`; }, 250);
+</script>
+</body>
+</html>

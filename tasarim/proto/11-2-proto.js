@@ -1,3 +1,10 @@
+// Prototype-only fixtures: no persistent gift claims or game events.
+const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let giftUsed = false;
+function iconArt(key) {
+  const names = {'🧲':'magnet','🕸️':'web','🕷️':'spider','⚡':'bolt','✓':'check','〰':'sense','↑':'arrow','↗':'jet','🎭':'mask','↝':'tracer','👊':'fist','🛡️':'shield','♥':'heart','🦇':'bat','📰':'bugle','×2':'bugle'};
+  return '<svg class="svg-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-' + (names[key] || key) + '"/></svg>';
+}
 // Approval fixtures only. No imports, purchases, game access or persistent writes.
 const root = document.querySelector('#ui.prototype');
 const select = (query) => root.querySelector(query);
@@ -10,27 +17,14 @@ all('[data-toggle-sound]').forEach(button => button.addEventListener('click', ()
   button.setAttribute('aria-pressed', String(on));
   button.textContent = `${button.dataset.toggleSound}: ${on ? 'AÇIK' : 'KAPALI'}`;
 }));
-const missionVeil = select('#mission-veil');
-select('[data-open-missions]')?.addEventListener('click', event => {
-  missionVeil.hidden = false;
-  event.currentTarget.setAttribute('aria-expanded', 'true');
-  select('#mission-title').focus();
-});
-function closeMissions() {
-  if (!missionVeil) return;
-  missionVeil.hidden = true;
-  const opener = select('[data-open-missions]');
-  opener.setAttribute('aria-expanded', 'false');
-  opener.focus();
-}
-select('[data-close-missions]')?.addEventListener('click', closeMissions);
-missionVeil?.addEventListener('click', event => { if (event.target === missionVeil) closeMissions(); });
 all('[data-skin]').forEach(button => button.addEventListener('click', () => {
   all('[data-skin]').forEach(token => token.setAttribute('aria-pressed', String(token === button)));
   select('#stage-name').textContent = button.dataset.name;
   select('#stage-ability').textContent = button.dataset.ability;
   select('#stage-description').textContent = button.dataset.description;
-  select('#stage-gift').textContent = button.dataset.costume ? 'Kostüm · ortak ağ' : 'İlk koşuna 1 hediye şarj!';
+  select('#stage-gift').textContent = button.dataset.costume ? 'Kostüm · ortak ağ · hediye verilmez' : 'İlk koşuna 1 hediye şarj!';
+  select('#gift-used').hidden = button.dataset.costume || !giftUsed;
+  select('#stage-gift').hidden = !button.dataset.costume && giftUsed;
   select('.hero-stage > .toy').dataset.hero = button.dataset.skin;
   button.classList.remove('popping');
   void button.offsetWidth;
@@ -154,7 +148,7 @@ function showCaption(heading, text, icon = '🧲', tab = 'İLK KEZ!') {
   captionNode.hidden = false;
   select('.caption-copy b').textContent = heading + ' ';
   select('.caption-copy span').textContent = text;
-  select('.caption-icon').textContent = icon;
+  select('.caption-icon').innerHTML = iconArt(icon);
   select('.caption-tab').textContent = tab;
   captionNode.classList.remove('enter');
   captionNode.classList.remove('leave');
@@ -174,12 +168,14 @@ function playQueue() {
       captionNode.hidden = true;
       if (queue.length) captionTimer = setTimeout(playQueue, 120);
       else if (status) status.textContent = 'Sıra boş · Tekrar deneyebilirsin.';
-    }, 160);
-  }, 2720);
+    }, reduceMotion() ? 100 : 160);
+  }, (reduceMotion() ? 100 : 220) + 2500);
 }
 all('[data-caption-demo]').forEach(button => button.addEventListener('click', () => {
   const kind = button.dataset.captionDemo;
-  queue = kind === 'queue' ? [
+  queue = kind === 'district' ? [['MIDTOWN!', 'Mahalle bizim, koşu senin.', 'city', 'YENİ BÖLGE!']]
+    : kind === 'narrator' ? [['GÖREV TAMAM!', 'Üç rozete doğru bir adım daha.', '✓', 'ANLATICI']]
+    : kind === 'queue' ? [
     ['MIKNATIS!', 'Altınlar artık sana koşuyor.', '🧲'],
     ['BİR ROZET CEPTE!', 'Üç görevi bitir, çarpanın büyüsün.', '✓']
   ] : kind === 'safety' ? [['VENOM HAMLESİ!', 'Kırmızı şeritten hemen çık!', '🕷️']]
@@ -189,11 +185,15 @@ all('[data-caption-demo]').forEach(button => button.addEventListener('click', ()
 const ability = select('.action-dock .ability');
 all('[data-pill-state]').forEach(button => button.addEventListener('click', () => {
   const state = button.dataset.pillState;
-  ability.classList.remove('ready', 'empty', 'active', 'blocked');
-  ability.classList.add(state);
-  select('.ability-count').textContent = state === 'empty' ? '0 / 1' : state === 'active' ? 'AKTİF · 5 sn' : state === 'blocked' ? 'BİRAZDAN' : '1 / 1 · DOKUN';
+  ability.classList.remove('ready', 'empty', 'active', 'blocked', 'costume');
+  ability.classList.add(state === 'costume' ? 'active' : state);
+  ability.classList.toggle('costume', state === 'costume');
+  ability.querySelector('b').textContent = state === 'costume' ? 'AĞ' : 'VENOM GÜCÜ';
+  ability.querySelector('.glyph').innerHTML = iconArt(state === 'costume' ? 'web' : '⚡');
+  ability.style.setProperty('--p', '.6');
+  select('.ability-count').textContent = state === 'costume' ? 'AĞDA' : state === 'empty' ? '0 / 1' : state === 'active' ? 'AKTİF · 5 sn' : state === 'blocked' ? 'BİRAZDAN' : '1 / 1 · DOKUN';
   const gift = select('.gift-sticker');
-  if (gift) gift.hidden = state !== 'ready';
+  if (gift) gift.hidden = state !== 'ready' || giftUsed;
   ability.setAttribute('aria-label', state === 'empty' ? 'Şarj yok. Doldurmayı öğren.' : 'Kahraman gücü görünüm örneği');
 }));
 ability?.addEventListener('click', () => {
@@ -203,18 +203,54 @@ ability?.addEventListener('click', () => {
     showCaption('ŞARJ YOK!', 'Yoldan kartuş kap; markette 75 altın.', '🕸️', 'ŞARJ LAZIM!');
   } else if (ability.classList.contains('ready')) {
     ability.classList.remove('ready'); ability.classList.add('active');
+    ability.style.setProperty('--p', '.4');
     select('.ability-count').textContent = 'AKTİF · 5 sn';
     const gift = select('.gift-sticker'); if (gift) gift.hidden = true;
     showCaption('VENOM PATLAMASI!', 'Miles elektrikle yolu açar.', '⚡');
   }
 });
+// Width-adaptive slots; informational tokens are not tap targets.
+function powerPlan(width, count) {
+  const capacity = Math.max(2, Math.min(8, Math.floor((width + 8) / 40)));
+  const visible = count > capacity ? capacity - 1 : count;
+  return { visible, hidden: count - visible };
+}
+let expandedPowers = false, overflowIndex = 0, hiddenPowers = [];
+const powerNodes = all('.powers > .power:not(#fixture-overflow)');
+function drawPowers() {
+  const row = select('.powers'); if (!row) return;
+  const count = expandedPowers ? 9 : 8;
+  const plan = powerPlan(row.clientWidth, count);
+  powerNodes.forEach((node, i) => { node.hidden = i >= plan.visible; });
+  hiddenPowers = powerNodes.slice(plan.visible, count);
+  overflowIndex = 0;
+  select('#fixture-overflow').hidden = plan.hidden === 0;
+  paintOverflow();
+  const status = select('#pause-powers');
+  if (status) status.textContent = 'Aktif güçler: ' + powerNodes.slice(0, count).map(node => node.getAttribute('aria-label')).join(' · ');
+}
+function paintOverflow() {
+  if (!hiddenPowers.length) return;
+  const node = hiddenPowers[overflowIndex % hiddenPowers.length], overflow = select('#fixture-overflow');
+  overflow.querySelector('.glyph').innerHTML = node.querySelector('.glyph').innerHTML;
+  overflow.querySelector('small').textContent = '+' + hiddenPowers.length;
+  overflow.style.setProperty('--p', node.style.getPropertyValue('--p'));
+  overflow.setAttribute('aria-label', hiddenPowers.length + ' güç daha: ' + hiddenPowers.map(item => item.getAttribute('aria-label')).join(', '));
+}
 select('[data-overflow]')?.addEventListener('click', event => {
-  const on = event.currentTarget.getAttribute('aria-pressed') !== 'true';
-  event.currentTarget.setAttribute('aria-pressed', String(on));
-  select('#fixture-tracer').hidden = on;
-  select('#fixture-overflow').hidden = !on;
-  event.currentTarget.textContent = on ? '8 GÜCE DÖN' : '9 GÜCÜ GÖR';
+  expandedPowers = !expandedPowers;
+  event.currentTarget.setAttribute('aria-pressed', String(expandedPowers));
+  event.currentTarget.textContent = expandedPowers ? '8 GÜCE DÖN' : '9 GÜCÜ GÖR';
+  drawPowers();
 });
+if (select('.powers')) {
+  drawPowers();
+  window.addEventListener('resize', drawPowers);
+  setInterval(() => {
+    if (document.hidden || reduceMotion() || !select('#pause-veil')?.hidden) return;
+    overflowIndex++; paintOverflow();
+  }, 1500);
+}
 const pauseVeil = select('#pause-veil');
 select('[data-pause-demo]')?.addEventListener('click', () => {
   pauseVeil.hidden = false;
@@ -225,7 +261,7 @@ select('[data-resume-demo]')?.addEventListener('click', () => {
   select('[data-pause-demo]').focus();
 });
 root.addEventListener('keydown', event => {
-  const veil = [missionVeil, pauseVeil].find(node => node && !node.hidden);
+  const veil = [pauseVeil].find(node => node && !node.hidden);
   if (event.key === 'Tab' && veil) {
     const controls = [...veil.querySelectorAll('button:not(:disabled), input, [tabindex="0"]')];
     const first = controls[0], last = controls[controls.length - 1];
@@ -236,6 +272,14 @@ root.addEventListener('keydown', event => {
     }
   }
   if (event.key !== 'Escape') return;
-  if (missionVeil && !missionVeil.hidden) closeMissions();
   if (pauseVeil && !pauseVeil.hidden) { pauseVeil.hidden = true; select('[data-pause-demo]').focus(); }
 });
+
+all('[data-gift-used]').forEach(button => button.addEventListener('click', () => {
+  giftUsed = !giftUsed;
+  button.textContent = giftUsed ? 'HEDİYE AÇ' : 'HEDİYE';
+  const strip = select('#gift-used'); if (strip) strip.hidden = !giftUsed || ['spider', 'gwen', 'mcu'].includes(select('.hero-stage > .toy')?.dataset.hero);
+  const gift = select('.gift-sticker'); if (gift) gift.hidden = giftUsed;
+  const label = select('.demo-label'); if (label) label.hidden = giftUsed;
+  const stageGift = select('#stage-gift'); if (stageGift) stageGift.hidden = giftUsed;
+}));

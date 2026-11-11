@@ -12,16 +12,18 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 | `index.html` | page, import map, loader, HUD, all screens | 30-37 import map; 40-50 loader; 51 canvas; 55 `#ui`; 163 menu `data-music`/`data-sfx` row; 230 pause `data-music`/`data-sfx` row; 270 module entry |
 | `style.css` | page frame only (full-screen canvas, no zoom/selection) | 1-30 |
 | `ui.css` | every `#ui` component and comic theme | 25 `.lbl`; 38 `.btn`; 67 `.card`; 83 `.screen`; 265 `.hud`; 559 `.hud-timers`; 560 `.pgauge`; 959 toasts |
-| `src/main.js` | renderer, scene, skins, system wiring, frame loop | 53-66 renderer/camera; 68-78 skins; 83-167 systems; 181-188 input; 204-232 loop |
-| `src/game.js` | run state, flow, per-frame update contract | 14-35 state; 41 mult; 49 API; 65 `naturalSpeed`; 113 `emit('menu')`; 178-224 update; 226-252 reset |
-| `src/config.js` | all tunables | 4 `CONFIG`; 6-37 core; 148-430 systems |
+| `src/main.js` | renderer, scene, skins, system wiring, frame loop | 54-67 renderer/camera; 70-79 skins; 84-171 systems (163-165 RoadEvents); 185-192 input; 208-236 loop |
+| `src/game.js` | run state, flow, per-frame update contract | 14-38 state (33-35 event fields); 45 mult (incl. `event`); 53 API; 69 `naturalSpeed`; 117 `emit('menu')`; 182-227 update; 230-258 reset |
+| `src/config.js` | all tunables | 4 `CONFIG`; 6-37 core; 147-470 systems (372-395 `events`) |
 | `src/events.js` | single `EventTarget` bus | 2-4 name contract (incl. `menu`, `newRecord {score}`); 8 bus; 10-12 `emit` |
 | `src/player.js` | lanes, jump, gravity, slide, hitbox, model state | 39 class; 107-119 actions; 214-300 update |
 | `src/world.js` | endless track segments and recycle callbacks | 24 `laneX`; 98 class; 131 `onRecycle`; 147 `update`; 199 blob shadow |
-| `src/obstacles.js` | obstacle/coin/pickup system, floor and collisions | 107 class; 129-138 hooks; 227-249 pickups; 342 floor; 367 collide |
-| `src/obstacle-art.js` | instanced obstacle and coin art | 38 `ShapeBuilder`; 346 `createObstacleArt`; 352-360 kinds |
-| `src/patterns.js` | pure seeded track generator | 49 `createRng`; 66-115 speed/difficulty/length; 135 class; 166 `_block`; 289-301 extras |
-| `src/chaser.js` | Venom chase, stumble, catch cam | 43 class; 57-59 hooks; 128 stumble; 150 catch; 213 state machine |
+| `src/obstacles.js` | obstacle/coin/pickup system, row groups, pits, patches, event hits | 126 class; 149-160 hooks; 264 pickups; 305 event hits; 411 floor; 437 collide; 525 draw |
+| `src/obstacle-art.js` | instanced obstacle and coin art, nine row/patch kinds | 40 `ShapeBuilder` (`rx/ry/rz`); 281-398 row recipes; 474 `createObstacleArt`; 481-498 kinds; 505 `addRow`; 523 `addPatch` |
+| `src/event-logic.js` | pure event row/timing/reward maths | 8 rAt; 9 floorW; 11 warnAt; 12 restAt; 13 doubleChance; 16 nextRow; 34 nearestSafe; 43 rewardFor |
+| `src/patterns.js` | pure seeded track generator | 49 `createRng`; 66-121 speed/difficulty/length; 128 `descLanes`; 136 `girderOffset`; 157 class; 192 `_block`; 330-342 extras; 345 `_row`; 361 `_placeRow`; 387 `_eventZone` |
+| `src/road-events.js` | manual Venom event director, lifecycle, hits/sense/rewards; optional art injected | 11 constructor; 24 reset; 39 calm; 45 start; 64 update; 87 volley; 140 sense; 153 reward; 162 end; 173 hide |
+| `src/chaser.js` | Venom chase/hunt, stumble, catch cam | 43 class; 57-59 hooks; 76 reset; 131 hunt; 139 endHunt; 149 stumble; 172 catch; 235 update |
 | `src/intro.js` | start-of-run clip and its camera | 28 class; 37-47 phases; 67 `begin`; 80-134 update/emit |
 | `src/camera.js` | follow rig, kick, dolly, shot blend | 24 class; 50-75 camera controls; 114 snap; 132 update |
 | `src/input.js` | keyboard/swipe/tap/double-tap to actions | 19-29 `KEYMAP`; 37 `createInput`; 121-133 listeners |
@@ -53,7 +55,7 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 | `src/powerups/skillSpiderman2002.js` | Raimi web slingshot | 19 icon; 221 anticipation; 337-338 launch |
 | `src/powerups/skillIronMan.js` | Iron Man unibeam | 100 class; 220-221 start; 327 end |
 | `src/powerups/skillBlackPanther.js` | Panther kinetic release | 70 class; 149-150 shockwave; 288 end |
-| `src/powerups/sense.js` | spider-sense auto-dodge | 226-253 timer; 337 dodge |
+| `src/powerups/sense.js` | spider-sense auto-dodge, pits/gates/girders and two-lane escapes | 131 simulation (actual Euler step + swept tail); 203 walls; 226-255 timer; 300 lane search; 329 two-lane fallback; 349 dodge |
 | `src/powerups/magnet.js` | coin magnet | 27 class; 35-43 register; 85-117 pull |
 | `src/powerups/bugle.js` | x2 score front page | 41-71 on/off |
 | `src/powerups/spring.js` | high-jump shoes | 42-72 on/off |
@@ -92,12 +94,12 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 | `tools/serve.py` | local no-cache server on port 5173 | 5-12 |
 | `tools/check-patterns.mjs` | fairness/solvability invariant test | 1-20 contract; 22-23 imports |
 | `tools/check-quality.mjs` | adaptive-resolution assertion script | 1-23 |
-| `tools/test-skills.mjs` | missions, multiplier, new powers, swing, audio maths/settings, then imports `test-audio.mjs` | 1-3; audio asserts 976-1053; import 1055 |
+| `tools/test-skills.mjs` | missions, powers, audio; 11.5 generation, pure event maths, real collider/sense/chaser/director loop and recipe assertions | 76 generator; 104 pure events; 1146 colliders; 1281 sense at 120/60/30/20 FPS; 1321 recipes; 1389 director; audio import near EOF |
 | `tools/test-audio.mjs` | fake `AudioContext` lifecycle + music/stinger/leak soak; imported by `test-skills.mjs`, also runnable alone | 24-79 fake context; 81-95 pump + cap asserts; 97-202 behaviour asserts |
 | `tools/test-ui-hud-qa.mjs` | DOM-mocked HUD/market QA for 8 heroes | 1-2 |
 | `tools/test-hero-specials-qa.mjs` | simulation QA of 8 specials | 1-2 |
 | `tools/test-qa-deep-audit.mjs` | regression suite for 3 hero fixes | 1-2 |
-| `tools/stub-hooks.mjs` | node resolver stubs for `three`, world, curve, pickup art | 1-6; 8-57 |
+| `tools/stub-hooks.mjs` | node resolver stubs for `three`, world, curve, pickup/obstacle art | 1-6; 8-67 |
 | `PLAN.md` | product plan; section list only used here | 30-82 sections 1-9; 177-211 §10; 213-266 §11 |
 | `README.md` | run notes | not mapped |
 | `AGENTS.md` | lazy-senior working rules | not mapped |
@@ -107,38 +109,33 @@ Paths are relative to the repository root. Turkish UI strings are quoted as-is.
 ## 2 Boot and frame order
 
 1. `index.html` loads Google fonts and `style.css` + `ui.css` (13-15), then the import map for `three@0.170.0` (30-37), then `src/main.js` as a module (270).
-2. `main.js` imports config/events/game/world/player/systems/models/UI in dependency order (4-51). `audio.js`, `shop.js`, `missions.js`, `ui.js` are side-effect imports (48-51).
-3. Renderer + adaptive quality + SRGB output (54-58); scene background/fog from `CONFIG.render` (60-62); lights (63); camera + rig (65-66).
-4. World created (69). Every skin is built once and the saved one is chosen from `spidey.skin` (72-75). All non-active model roots are hidden children of `player.root` (76-78).
-5. Blob shadow (80-81); `game.init({world, player})` (83).
-6. Systems are added in this exact order: obstacles (85), chaser (89), web (92), Iron Spider (97), sense (138), magnet (141), bugle (144), spring (147), swing (150), decoy (154), wall (157), tracer (160), flash (163), repulsor (166). Hero specials live inside `web` (94).
-7. Collision/action hooks are installed after Iron Spider: `obstacles.hooks.onFrontHit` / `onSideHit` (101-112), `chaser.hooks.absorbCatch` (113-118), `player.hooks.onDoubleAction` (119-125).
-8. Skin switching (126-136), intro object (176), city (177), fx (178), `window.game` (179).
-9. Input created and reset on start/resume/intro end (182-188). Resize handler (191-200), initial camera snap (201).
-10. `warmUp(...)` runs behind the loader (234-235); `game.ready` is set by `warmup.js`, and `ui.js` removes `#loading` only then (ui.js:877-889).
+2. `main.js` imports config/events/game/world/player/systems/models/UI (4-52); side-effect imports are at 49-52.
+3. Renderer/quality/output (55-59); scene/fog/lights (61-64); camera/rig (66-67).
+4. World (70); all skins built once and saved skin selected (73-76); player and hidden skin roots (77-79).
+5. Shadow (81-82); `game.init` (84).
+6. System order: obstacles (85), chaser (89), web (92), Iron Spider (98), sense (138), magnet (141),
+   bugle (144), spring (147), swing (150), decoy (154), wall (157), tracer (160), RoadEvents (163),
+   flash (166), repulsor (169). Hero specials belong to web.
+7. Front/side absorb hooks (102-113), catch absorb (114-119), double action (120-126); decoy chains
+   the chaser's side-stumble hook and RoadEvents never replaces it.
+8. Skin switching (127-137); road event director is exposed as `game.roadEvents` (165).
+   It receives no event art yet, and installs no zone hook (manual Venom only until task 13).
+9. Scene/camera/rig assigned (176-179), intro/city/fx (180-182), `window.game` (183).
+10. Input reset on start/resume/intro end (186-192); resize (195-204); initial camera snap (205).
+11. Warm-up (239) compiles/uploads behind the loader as before.
 
-Frame loop (`main.js:204-232`):
+Frame loop (`main.js:208-236`): dt capped at CONFIG.dtCap (210); quality tick (212);
+game update (215); curve/chaser bank (217-218); camera unless paused (219); xray (220);
+shadow (223-233); render (235).
 
-| Step | Line | Action |
-|---|---|---|
-| dt | 206 | `clamp(frameDelta, 0, CONFIG.dtCap)`, `dtCap = 1/20` (config.js:145) |
-| quality | 208 | tick only when ready, not paused, tab visible |
-| game | 211 | `game.update(dt)` |
-| curve | 213 | bend follows `world.distance` / speed / shot blend |
-| chaser lean | 214 | root banks with `curve.bank * CONFIG.curve.lean` |
-| camera | 215 | skipped while paused |
-| xray | 216 | off during intro/catch/shot |
-| shadow | 219-229 | floor + scale/fade; flyers use their own `surfaceY` |
-| render | 231 | one `renderer.render` |
+`game.update` order (`game.js:182-227`):
 
-`game.update` order (`game.js:178-224`):
+1. paused returns (182); hit-stop consumes time and returns (183-186); intro drives clip and returns (187-190).
+2. While running and not `halted`: advance time, natural speed, speed override/fade, distance, `world.update`, then every system `beforePlayer(dt)` (194-215).
+3. `player.update(dt, running)` always (217).
+4. While running: every system `update(dt)` (220), compute `mult.factor` from `bugleTime`, `state.multiplier` incl. `mult.event`, then distance score + coin score (222-225).
 
-1. paused returns (178); hit-stop consumes time and returns (179-182); intro drives clip and returns (183-186).
-2. While running and not `halted`: advance time, natural speed, speed override/fade, distance, `world.update`, then every system `beforePlayer(dt)` (190-211).
-3. `player.update(dt, running)` always (213).
-4. While running: every system `update(dt)` (216), compute `mult.factor` from `bugleTime`, `state.multiplier`, then distance score + coin score (218-221).
-
-`_resetRun` order (`game.js:226-252`): score/coins/distance/speed/multipliers/time/webCharges/flags, then `world.reset()`, `player.reset()`, every system `reset()`, intro reset. `ironCount` is persistent inventory and is deliberately not reset (246).
+`_resetRun` order (`game.js:230-258`): score/coins/distance/speed/multipliers (`run`/`temp`/`event`/`factor`)/time/webCharges/flags, then `world.reset()`, `player.reset()`, every system `reset()`, intro reset. `ironCount` is persistent inventory and is deliberately not reset (252).
 
 ## 3 Event bus
 
@@ -148,34 +145,45 @@ Audio auto-listens to **every** `SOUNDS` key except `start` and `i_*` (`audio.js
 
 | Event | Emit site(s) | Detail | Listeners |
 |---|---|---|---|
-| `start` | game.js:97 (first), :104 (restart) | `{restart}` | audio.js:564; chaser.js:59; shop.js:204; vfxCore.js:457; ui.js:612; main.js:183 |
-| `pause` | game.js:130 | `{}` | audio.js:574; missions.js:196 |
-| `resume` | game.js:136 | `{}` | audio.js:581; main.js:187 |
-| `menu` | game.js:113 (`toMenu`) | none | audio.js:117 (clears `paused`, resumes context); tools/test-skills.mjs:988. missions.js:198's comment "toMenu emits no event" is stale |
-| `gameover` | game.js:143 | `{score, coins, distance}` | audio auto (SOUNDS `gameover`, skipped while music is on: audio.js:548); music.js:487 (closing phrase); missions.js:195; shop.js:219; vfxCore.js:456; ui.js:606 |
+| `start` | game.js:101 (first), :108 (restart) | `{restart}` | audio.js:564; chaser.js:59; shop.js:204; vfxCore.js:457; ui.js:612; main.js:187 |
+| `pause` | game.js:134 | `{}` | audio.js:574; missions.js:196 |
+| `resume` | game.js:140 | `{}` | audio.js:581; main.js:191 |
+| `menu` | game.js:117 (`toMenu`) | none | audio.js:117 (clears `paused`, resumes context); tools/test-skills.mjs:988. missions.js:198's comment "toMenu emits no event" is stale |
+| `gameover` | game.js:147 | `{score, coins, distance}` | audio auto (SOUNDS `gameover`, skipped while music is on: audio.js:548); music.js:487 (closing phrase); missions.js:195; shop.js:219; vfxCore.js:456; ui.js:606; road-events.js:18 (abort/reset) |
 | `newRecord` | ui.js:608 (only when the run beat the best) | `{score}` | music.js:495 (record fanfare) |
-| `intro` | intro.js:75 start, :116 end (`skipped?`), :132 each phase | `{phase}` / `{phase:'end',skipped}` | audio.js:596; fx.js:1322; main.js:188 |
+| `intro` | intro.js:75 start, :116 end (`skipped?`), :132 each phase | `{phase}` / `{phase:'end',skipped}` | audio.js:596; fx.js:1322; main.js:192 |
 | `lane` | player.js:129 | `{dir, lane}` | audio auto; fx.js? no `lane` handler; missions COUNTED (missions.js:166) |
 | `jump` | player.js:151; skillSpiderman2002.js:337 | `{}` | audio auto; fx.js:700; missions COUNTED (163-164) |
 | `land` | player.js:246; skillSpiderman2002.js:256 | `{}` | audio auto; fx.js:771 |
 | `slide` | player.js:206 | `{}` | audio auto; fx.js:801; missions COUNTED (165) |
-| `pickup` | obstacles.js:336 | `{type, position}` | fx.js:864; music.js:465 (crash stinger + duck); missions.js:177 (also type missions `magnet`, `bugle`) |
-| `stumble` | obstacles.js:423 | `{position}` | audio auto; fx.js:829; missions.js:194 (resets no-stumble run) |
-| `crash` | obstacles.js:429 | `{position}` | audio auto; fx.js:842 |
-| `coin` | obstacles.js:446; magnet.js:126 | `{position}` | audio auto; fx.js:671; missions COUNTED (163) |
+| `pickup` | obstacles.js:405 | `{type, position}` | fx.js:864; music.js:465 (crash stinger + duck); missions.js:177 (also type missions `magnet`, `bugle`) |
+| `stumble` | obstacles.js:496 | `{position}` | audio auto; fx.js:829; missions.js:194 (resets no-stumble run) |
+| `crash` | obstacles.js:502 | `{position}` | audio auto; fx.js:842 |
+| `coin` | obstacles.js:519; magnet.js:126 | `{position}` | audio auto; fx.js:671; missions COUNTED (163) |
+| `eventStart` | road-events.js:61 | `{kind,duration}` | later tasks 8/12/13/14 |
+| `strikeWarn` | road-events.js:97 | `{lanes,warn}` | later art/FX/audio |
+| `strikeSlam` | road-events.js:108 | `{lanes}` | later art/FX/audio |
+| `strikeHit` | road-events.js:117 | `{position}` | later FX/audio; shared side-hit also emits stumble |
+| `eventDodge` | road-events.js:128 | `{kind,position}` | later FX/missions/audio |
+| `eventReward` | road-events.js:158 | `{kind,coins,mult,clean,position}` | silent run-coin deposit; later FX/HUD/audio |
+| `eventEnd` | road-events.js:170 | `{kind,clean,hits,dodged,aborted}` | later FX/missions/audio |
+| `eventBonusOff` | road-events.js:73 | `{}` | event multiplier expires; later HUD/audio |
+| `rowWarn` | obstacles.js:346 | `{type, open, position}` | none yet (task 12/14) |
+| `rowPass` | obstacles.js:350 | `{type, position}` | none yet (task 12/13/14) |
+| `gapPatch` | obstacles.js:319 | `{position}` | none yet (task 12/14) |
 | `web` | web.js:175; sfx in skillSpiderman2002.js:220 | `{from, to}`; quiet variant may carry `{from:number,to:0}` | audio auto; fx.js:885 (quiet skipped) |
-| `venomNear` | chaser.js:155, :231 | `{}` | audio auto; fx.js:1303; music.js:455 (tension in) |
-| `venomFar` | chaser.js:144, :236 | `{}` | audio auto; fx.js:1304; music.js:461 (tension out) |
-| `caught` | chaser.js:253 | `{}` | audio auto; fx.js:859; music.js:405 (bar break + duck) |
+| `venomNear` | chaser.js:177, :253 | `{}` | audio auto; fx.js:1303; music.js:455 (tension in) |
+| `venomFar` | chaser.js:166, :258 | `{}` | audio auto; fx.js:1304; music.js:461 (tension out) |
+| `caught` | chaser.js:275 | `{}` | audio auto; fx.js:859; music.js:405 (bar break + duck) |
 | `missionDone` | missions.js:147 | `{id, text}` | ui.js:435; music.js:472 (bell run, coalesced) |
 | `missionSet` | missions.js:151 | set object incl. `multiplier` | ui.js:436; music.js:481 (set chord) |
 | `ironOn` | ironspider.js:124; skillIronMan.js:220 (`sfx`) | `{}` / `{position,quiet}` | audio auto; fx.js:917 |
 | `ironOff` | ironspider.js:166; skillIronMan.js:326 (`sfx`) | `{}` / `{quiet}` | audio auto; fx.js:928 |
 | `ironSave` | ironspider.js:188 | `{positions}` | audio auto; fx.js:940 |
 | `ironGrab` | ironspider.js:153 | `{position}` | fx.js:755 |
-| `senseOn` | sense.js:233 | `{}` | audio auto; fx.js:1016 |
-| `senseOff` | sense.js:253, :226 reset | `{}` / `{reset:true}` | audio auto; fx.js:1023 |
-| `senseDodge` | sense.js:337 | `{action, position}` | audio auto; fx.js:1028; missions COUNTED (171) |
+| `senseOn` | sense.js:234 | `{}` | audio auto; fx.js:1016 |
+| `senseOff` | sense.js:254, :227 reset | `{}` / `{reset:true}` | audio auto; fx.js:1023 |
+| `senseDodge` | sense.js:355 | `{action, position}` | audio auto; fx.js:1028; missions COUNTED (171) |
 | `magnetOn` | magnet.js:57 | `{}` | audio auto; fx.js:1054 |
 | `magnetOff` | magnet.js:81, :50 reset | `{}` / `{reset:true}` | audio auto; fx.js:1055 |
 | `magnetCoin` | magnet.js:115 | `{position}` | fx.js:1056 |
@@ -249,32 +257,43 @@ Extension points documented at `player.js:5-24`: `onAirUp`, `onDoubleAction`, `f
 
 ## 5 Obstacles and collisions
 
-`Obstacles` owns pools and all collision outcomes (`obstacles.js:107-147`).
+`Obstacles` owns pools and all collision outcomes (`obstacles.js:126-170`). The generator emits the
+`gap` / `gate` / `girder` rows and the `event` zones (`patterns.js:345`, `387`); rows collide and draw
+normally, a zone only calls `hooks.onEventZone`, still the default no-op (`obstacles.js:153`, `211`), so
+no road event starts on its own before task 13 — `game.roadEvents.start('venom')` is the only entry.
 
 | Concern | Facts |
 |---|---|
-| Generator | `PatternGenerator(1)`; optional fixed `CONFIG.seed` (113-115) |
-| Pools | obstacles `_pool`, coins `_coinPool`, pickup pools per kind, pending trains (117-123) |
-| Hooks | `onFrontHit`, `onSideHit`, `onSideStumble`, `onCrash` (129-138) |
-| Default crash | lock controls, `caught` pose, `game.gameOver()` (133-137) |
-| Generation trigger | `world.onRecycle` computes far distance and generates (141-144) |
-| Movement | obstacles move `(runSpeed + ownSpeed) * dt`; coins/pickups move at run speed; release behind `CONFIG.obstacles.releaseZ` (278-306) |
-| Train spawn | `_spawnTrains` called every `beforePlayer` (307) |
-| Floor | `_floorUnder` checks lane overlap, swept z span, part top, `stepUp`; ramps rise with speed (342-365) |
-| Collision gate | `_graceTimer > 0` disables collision (368); `grace(seconds)` sets it (263-265) |
-| Swept test | player current and previous x/y, swept z span `[pfMin, fMax]` so thin bars cannot tunnel (369-411) |
-| Hit side | front/side decided by separation and crossing time; jump-up-into-bar counts front (397-406) |
-| One hit | returns after the first hit per frame (408-409) |
-| Side hit | absorbed hook first; cooldown `sideHitCooldown`; bounce, `stumble` pose, emit `stumble`, then `onSideStumble`/`onSideHit` (417-426) |
-| Front hit | `onFrontHit` may absorb; else emit `crash`, call `onCrash` (428-430) |
-| Pickup registration | `registerPickup(kind, {create, onCollect})` stores a pool (227-229) |
-| Pickup placement | pooled art root, visible, world position (231-242); release returns to pool (244-249) |
-| Pickup collect | box ~1 m tall, origin at bottom (`s = 0.55`), x/y/z overlap, then `onCollect()`, emit `pickup`, release (324-339) |
+| Generator | `PatternGenerator(1)`; optional fixed `CONFIG.seed` (132-134) |
+| Pools | obstacles `_pool`, coins `_coinPool`, pickup pools per kind, pending trains; scrolling `patches` cleared by reset (136-145, 176-180) |
+| Hooks | `onFrontHit`/`onSideHit` absorb; `onSideStumble` reacts after stumble (chain wrappers); `onCrash`; `onEventZone(desc)` default no-op (149-160, 211) |
+| Row groups | `gap`/`gate`: 3 lane colliders; `girder`: centre + covered outer lane; `descLanes` once at spawn, shared `group`, one `owner`; pool reuse resets row flags (212-244) |
+| Row removal | requested collider spliced immediately, mates sent to `z = 1e6` for next-frame release; gap leaves one patch and emits `gapPatch` (313-325) |
+| Row events | owner emits `rowWarn {type,open,position}` at tau <= 2.4; `rowPass {type,position}` after the swept far face clears (`z - dz - length`), only if no group member hit (342-351) |
+| Default crash | lock controls, `caught` pose, `game.gameOver()` (154-158) |
+| Generation trigger | `world.onRecycle` computes far distance and generates (162-165) |
+| Movement | obstacles move `(runSpeed + ownSpeed) * dt`; coins/pickups/patches move at run speed; release behind `CONFIG.obstacles.releaseZ` (331-378) |
+| Train spawn | `_spawnTrains` called every `beforePlayer` (376) |
+| Floor | `_floorUnder` checks overlap/top/stepUp; ramps rise with speed; `pit` parts never supply a floor (411-434) |
+| Collision gate | `_graceTimer > 0` disables collision; `grace(seconds)`, `graced`; `eventHit(x)` enters shared side-hit path unless graced (301-310, 437-438) |
+| Pit collision | feet below `gap.pitTop`, entering or falling from above = front hit; active Cap shield surf explicitly ignores pits (455, 477) |
+| Swept test | player current and previous x/y, swept z span `[pfMin, fMax]` so thin bars cannot tunnel (439-483) |
+| Hit side | front/side decided by separation and crossing time; jump-up-into-bar and fall-into-pit count front (462-478) |
+| One hit | returns after the first hit per frame (480-481) |
+| Side hit | absorbed hook first; cooldown `sideHitCooldown`; bounce, `stumble` pose, emit `stumble`, then `onSideStumble`/`onSideHit` (490-499) |
+| Front hit | `onFrontHit` may absorb; else emit `crash`, call `onCrash` (501-503) |
+| Pickup registration | `registerPickup(kind, {create, onCollect})` stores a pool (264-266) |
+| Pickup placement | pooled art root, visible, world position (268-279); release returns to pool (281-286) |
+| Pickup collect | box ~1 m tall, origin at bottom (`s = 0.55`), x/y/z overlap, then `onCollect()`, emit `pickup`, release (393-407) |
 | Extra coins | `obstacles.extraCoins` is drawn with normal coins (magnet.js:33) |
-| Coin collect | box `coins.pickupSize`, increments `state.coins`, emits `coin` (433-450) |
-| Draw | art `begin/add/addCoin/end(time)` (452+) |
+| Coin collect | box `coins.pickupSize`, increments `state.coins`, emits `coin` (506-522) |
+| Draw | art `begin/add/addRow/addPatch/addCoin/end(time)`; owner draws once, removed mates skipped (525-537); rows animate by tau, patches retain hole + ends |
 
-Obstacle descriptors are plain objects made by `patterns.js` (6-13). Collision reads `o.parts` with per-part `x0/x1`, `f0/f1`, `y0/y1`, optional `ramp` (`obstacles.js:351-361`, 386-396).
+Obstacle descriptors are plain objects made by `patterns.js` (the header comment at 6-13 lists only the
+pre-11.5 kinds). Collision reads `o.parts` with per-part `x0/x1`, `f0/f1`, `y0/y1`, optional `ramp` or
+`pit` (`obstacles.js:33-114`, 411-481). The new forms: `{ type: 'gap', lane, d, len }` and
+`{ type: 'gate', lane, d, len }` (all three lanes, `lane` unused), `{ type: 'girder', lane, d, len, open }`
+(`open` = the free outer lane, 0 or 2) and `{ type: 'event', kind, d, len }`.
 
 ## 6 Pattern generator
 
@@ -287,48 +306,61 @@ Pure logic, no Three.js (`patterns.js:1-2`), so node tests can run it.
 | `speedAt(d)` | 66 | expected speed from the three acceleration phases |
 | `difficultyAt(d)` | 80 | 0→1→`difficultyMax`, then logarithmic endless growth |
 | `endlessK(diff)` | 90 | endless share 0→1 |
-| `descLength(desc)` | 96 | track length of a descriptor |
-| `trainSpawnD(meetD, speed)` | 111 | where an oncoming train appears |
-| `PatternGenerator` | 135 | `reset`, `addExtra`, `generateUntil`, `_block`, route/coin helpers |
+| `descLength(desc)` | 96 | track length of a descriptor (`gap`/`gate`/`girder` use `len`) |
+| `trainSpawnD(meetD, speed)` | 115 | where an oncoming train appears |
+| `descLanes(desc)` | 128 | lanes a row covers: gap/gate `[0,1,2]`, girder `[1, 2 - open]`, else `[lane]` |
+| `girderOffset(tau, open)` | 136 | signed x of the girder's swing (art only; parks at `lockTime`) |
+| `PatternGenerator` | 157 | `reset`, `addExtra`, `generateUntil`, `_block`, route/coin helpers |
 
-`_block` (166-302) is the unit of generation:
+`_block` (192-343) generates a block. Safe-start blocks have only coins. Once a row or zone
+is due, all lanes drain in calm blocks, then a row or zone is placed; the block stretches to its end.
+Ordinary blocks retain route changes, route obstacles/combos, side obstacles/trains and coin rows.
+Extras run once on **every** block, including safe-start, calm, row and zone blocks (330-342).
+They receive `{rng, A, B, speed, difficulty, route, routeFree, pickups, farFromPickup, push}`;
+`routeFree` is null on special/calm blocks and within `events.pickupClear` of a due zone.
+Pickup extras still consume their one roll before early return; tracer records all block routes.
 
-1. Compute block start `A`, speed, difficulty, endless `k`, block length `B`; advance cursor (166-177).
-2. Safe start: no obstacles before `safeStart`, optional coin row (179-182).
-3. Maybe move the route one lane, only when both lanes are free; zigzag coins may lead across (188-201).
-4. Route lane gets at most one passable obstacle (jump/slide/ramp/car); `routeFree` is the free stretch used by pickups (203-222).
-5. Other lanes get weighted `low/high/car/wagons/ramp`, plus `train` after `trainStart`; endless adds second obstacles and faster trains (224-270).
-6. Second/third-lane coin rows are ranked by free space (272-287).
-7. Extras run once per block in registration order (289-301).
+`_row` (345) selects unlocked gap/gate/girder types without consecutive repeats; endless adds
+gap/gate combos, with a full 0.6 s run-up for each partner. `_placeRow` (361) places all-lane
+jump/slide rows or a parked two-lane girder, with two lane-change windows to its open outer lane.
+`_eventZone` (387) alternates Venom/Goblin zones from 1200 m, keeps all lanes empty, suppresses
+pickups before zones and rows for 120 m afterwards. Zone hooks remain no-ops until task 13.
 
-Extras receive `{rng, A, B, speed, difficulty, route, routeFree, pickups, farFromPickup, push}` (291-299). `push` increments `pickups` and updates `lastPickupD` for pickup descriptors (295-297). Every registered `_place` consumes exactly one `ctx.rng()` before any early return (e.g. `magnet.js:62-65`, `swing.js:108-111`); this keeps the shared track identical when pickups are skipped.
+`tools/check-patterns.mjs` checks C1-C14: lane-expanded cells, coin profiles, gap jump timing
+(including 20 FPS swept-tail viability), row approach/landing, girder swing/locked clearance,
+zone emptiness/length/spacing/pickup clearance, owner-counted art and patch lifetime capacities,
+all old invariants and the unchanged route search/per-minute reaction margin.
 
-Invariants stated in the header and checked by `tools/check-patterns.mjs`: always a route lane; at most one route obstacle per block (two in endless); route moves one lane only when both are free; trains never occupy the route; coins never inside obstacles/train sweeps (16-30, 1-20 of the test).
+## 7 Chaser / Venom and road events
 
-## 7 Chaser / Venom
-
-`Chaser` owns Venom's model, shadow, gap, catch camera and the stumble escalation (`chaser.js:43-62`).
+`Chaser` (chaser.js:43) owns the chase and catch camera; its original modes are away, intro,
+near, catch, lunge, caught. Constructor installs side-stumble/crash hooks (57-58); decoy wraps
+side-stumble later. RoadEvents uses `obstacles.eventHit` and leaves this chain intact.
 
 | Concern | Facts |
 |---|---|
-| Hooks | sets `obstacles.hooks.onSideStumble` and `onCrash` (57-58) |
-| Own hook | `hooks.absorbCatch()` lets a hero special cancel a catch (47, 131-136) |
-| Start | listens to `start` and plays the intro pose (59, 121-124) |
-| Modes | `away`, `intro`, `near`, `catch`, `lunge`, `caught` (switch 217-262) |
-| Reset | away, far gap, lane/height follows player, scale `nearScale`, clears camera shot (76-89) |
-| `isNear` | mode `near` or any catching mode (91-93) |
-| First stumble | mode → `near`, timer `nearTime`, `arrived = false` (128-141) |
-| Second stumble in `near` | `catchPlayer()` unless a hero special absorbs it (130-137) |
-| Drop back | after swing take-off and after absorbed catch; emits `venomFar` if arrived (143-147) |
-| Catch start | `game.halt()`, lock player, `caught` pose, emit `venomNear` if needed, mode `catch`, pick shot side (150-161) |
-| Catch cam side | outer lane: that side; center: neighbour lane without a nearby obstacle (165-177) |
-| Shot aim | beside/ahead, above roof height, looks at Venom's head; `cameraRig.setShot` (180-188) |
-| Near gap | bisection using real camera projection to keep Venom's head just below player's feet (194-211) |
-| Approach/retreat | damped rates `approachRate`/`retreatRate`; lane/height `followRate` (config 181-205) |
-| Catch timing | `catchSpeed`, `catchGap`, `lungeTime`, `afterCaught`, then `game.gameOver()` (240-262) |
-| Intro pose | `clipPose` and `continueFromClip` used by `intro.js` (96-119) |
+| Reset | clears spare/hunting/pose; normal away/hidden state (76-91) |
+| Hunt | near, infinite timer, one spare hit, hunting=true (131-137) |
+| End hunt | clear spare/hunting/pose; if still near, drop back when clean or nearTime when hit (139-147); never replaces catch mode |
+| Stumble | catching guard, then consume hunt spare; otherwise existing near -> absorbCatch or catch (149-163) |
+| Catch | halt/lock player, choose shot side, knockback (172-199); shot aim (202-210) |
+| Near gap | camera projection, current root scale, hunting screenShare from events.venom (216-233) |
+| Update | existing chase/catch machine, forced pose except while catching, hunting scale target (235-324) |
+| Placement | model/shadow follow player/floor (326-337) |
 
-Venom model is created once in `main.js:88`, never swapped.
+`RoadEvents` (road-events.js:10) is registered after tracer (main.js:163-165). It owns eventKind,
+eventTime, eventBonusTime and mult.event, and has its own RNG derived from the obstacle seed.
+Only `game.roadEvents.start('venom')` starts events: running, >=1200 m, chaser away, no flight,
+special, zip, tracer, speed override or locked controls. No onEventZone hook is installed yet.
+Venom starts with one spare, then aimed rows use pure nextRow warnings and nearestSafe for sense.
+Hits go through the shared side-hit path, with one hit per strike; a halt aborts immediately.
+Finish grants silent coins and +3 clean / +1 survived for 12 s, then ends the hunt. The closing
+pose starts at 8.8 s; reward/end happen at 10 s (S.2); an early zone boundary finishes before any
+new slam. Pause/hit-stop freeze dt; restart/menu/gameover clear event state and reward clocks.
+
+Art is optional and injected; the director imports no art module and reset/end hide supplied
+objects. Task 8 must add warnings/tendrils and camera dolly ownership; task 9 adds Goblin logic;
+task 13 connects zone scheduling. The gameover listener aborts without reward and resets (18-21).
 
 ## 8 Power-up recipe
 
@@ -337,7 +369,7 @@ A **timed ground pickup** needs all of the following touch points. `magnet.js` a
 | # | Touch point | Evidence / required edit |
 |---|---|---|
 | 1 | `CONFIG` group | Add a group like `magnet` (config.js:271-284) or `swing` (305-321): `duration`, `pickupChance`, `pickupMinGap`, `pickupY`, `pickupScale`. Global spacing is `CONFIG.pickups.minGapAny` (207-210). |
-| 2 | Game state | Add a timer/flag beside `state.magnetTime` / `state.swingTime` (game.js:25-32). `_resetRun` zeroes only some timers (242-245); each system's `reset()` owns its own. |
+| 2 | Game state | Add a timer/flag beside `state.magnetTime` / `state.swingTime` (game.js:25-35). `_resetRun` zeroes only some timers (248-251); each system's `reset()` owns its own. |
 | 3 | Timer source | Use `getEffectiveSkillDuration('<key>')` (shop.js:88-93), never the raw config duration. |
 | 4 | New `src/powerups/<name>.js` | Constructor: `obstacles.registerPickup(kind, {create, onCollect})` (magnet.js:35-42, swing.js:50-57), then `obstacles.generator.addExtra(ctx => this._place(ctx))` (magnet.js:43, swing.js:58), then `this.reset()`. |
 | 5 | Reset | Return flying objects to pools, emit `<kind>Off {reset:true}` only if active, zero timer (magnet.js:47-52). |
@@ -354,8 +386,8 @@ A **timed ground pickup** needs all of the following touch points. `magnet.js` a
 | 16 | Audio (optional) | Add a `SOUNDS.<event>()` function (`audio.js:306-541`); the auto-listener at `audio.js:589-592` then subscribes it, so the name must not start with `i_`. Music ducking goes in `DUCK_SFX` (`audio-logic.js:40`), a fanfare in `ST` (`music.js:420-448`). |
 | 17 | Missions | Add the event to `COUNTED` (missions.js:162-173); the `pickup` counter is automatic (177-182). Per-frame metrics go in `MEASURED` (187-192). |
 | 18 | Shop upgrade | Add a key to `SKILL_UPGRADE_CONFIG` (shop.js:12-23) and to `defaults().upgrades` (35); market lists keys automatically (ui.js:337-359). |
-| 19 | Tests | Extend `tools/test-skills.mjs` (powers/swing) and, if it changes generation, `tools/check-patterns.mjs`. Headless imports may need stubs in `tools/stub-hooks.mjs:41-56`. |
-| 20 | Pickup collision shape | No edit needed, but know the box: origin at bottom, ~1 m tall, half-size 0.55 (obstacles.js:329-334). |
+| 19 | Tests | Extend `tools/test-skills.mjs` (powers/swing) and, if it changes generation, `tools/check-patterns.mjs`. Headless imports may need stubs in `tools/stub-hooks.mjs:41-66`. |
+| 20 | Pickup collision shape | No edit needed, but know the box: origin at bottom, ~1 m tall, half-size 0.55 (obstacles.js:398-403). |
 
 Existing timed/ground and charge power-ups:
 
@@ -363,7 +395,7 @@ Existing timed/ground and charge power-ups:
 |---|---|---|---|
 | web cartridge | `powerups/web.js` | config.js:212-233 | up to 3 charges; not timed; zip/glide |
 | iron core | `powerups/ironspider.js` | 235-252 | persistent inventory; 12 s suit; save on hit |
-| sense | `powerups/sense.js` | 254-269 | 5 s auto-dodge |
+| sense | `powerups/sense.js` | 257-288 | 5 s auto-dodge; pit jump, gate slide, girder lane escape; two-lane fallback 329-345 |
 | magnet | `powerups/magnet.js` | 271-284 | 5 s coin pull |
 | bugle | `powerups/bugle.js` | 286-293 | 10 s score factor 2 |
 | spring | `powerups/spring.js` | 295-303 | 10 s jump ×2.2 |
@@ -372,7 +404,7 @@ Existing timed/ground and charge power-ups:
 | wall | `powerups/wall.js` | 333-348 | 6 s wall run |
 | tracer | `powerups/tracer.js` | 350-365 | 10 s drone + temp multiplier up to +3 |
 
-Hero specials are **not pickups**: they are activated with a web charge on a hero skin (`main.js:119-125`; `game.web.tryActivate()`).
+Hero specials are **not pickups**: they are activated with a web charge on a hero skin (`main.js:120-126`; `game.web.tryActivate()`).
 
 | Skin | Mode | Duration | Extra |
 |---|---|---|---|
@@ -381,7 +413,7 @@ Hero specials are **not pickups**: they are activated with a web charge on a her
 | Miles | `miles` | 7.0 s | venom blast |
 | Hello Kitty | `kitty` | 8.0 s | flying heart |
 | Batman | `batman` | 8.0 s | glide/cloak |
-| Raimi Spider-Man | `raimi` | 3.0 s | slingshot, 2 charges |
+| Raimi Spider-Man | `raimi` | 3.0 s | slingshot, capacity 2; one charge per activation |
 | Iron Man | `ironman` | 2.2 s | unibeam |
 | Black Panther | `panther` | 5.5 s | vibranium shock |
 
@@ -394,7 +426,7 @@ Durations and labels: `hero-specials.js:300-308`; `HERO_SKINS` at 34; activation
 | Area | DOM | Behaviour |
 |---|---|---|
 | Loader | `#loading` inline markup/CSS (index.html:17-43) | removed when `game.ready` (ui.js:877-889) |
-| Canvas | `#game` (51) | renderer target (main.js:54-55) |
+| Canvas | `#game` (51) | renderer target (main.js:55-56) |
 | HUD | `#hud` (69-144) | score/coins/mult (71-73), pause (74), web gauge (77-84), iron badge/bar (86-94), 8 power gauges (98-129), repulsor (132-135), flash (138-141) |
 | Menu | `#scr-menu` (146-171) | name, best, play, help, character, market, missions, sound row (163) |
 | Skin | `#scr-skin` (173-192) | skin cards |
@@ -489,19 +521,19 @@ Power-ups without a `SOUNDS` entry (bugle, spring, swing, decoy, wall, tracer, f
 | vfx stickers | keys `smash,krak,bam,bzzt,zzap,whoom,thwip,gong,yay,boing,kapow,bwoom,fwoosh` (86-100) |
 | Ghost/shatter | `ghostLayer` 797, `ghostMaterial` 850, `shatterObstacle` 884, compatibility camera/light helpers 906-935 |
 | `pickup-art.js` | icon switch 811-840; builders: web 247, iron 251, sense 959, magnet 994, bugle 1121, spring 1156, swing 1238, decoy 1788, wall 1821, tracer 1854; props: dummy 1914, drone 1946, wall panel 1978, ribbon 2006 |
-| `obstacle-art.js` | one InstancedMesh + outline per kind; `ShapeBuilder` 38-83; `createObstacleArt` 346; kinds `low,high,carBody,carDetail,wagon,ramp,coin` 352-360; capacities 24/24/24/24/64/16/256 |
-| Obstacle art API | `begin/add(kind,x,y,z,colorIndex)/addCoin/end(time)` 365-393; coin spin from `end(time)` |
+| `obstacle-art.js` | one InstancedMesh + optional outline per kind; `ShapeBuilder` 40-86; `createObstacleArt` 474; old kinds capacities 24/24/24/24/64/16/256 (481-487); row kinds `gapHole/gapEnds/gapPatch/gateFrame/gateShutter/girderBeam/girderJib/girderPad/girderGo`, caps 3/3/3/3/3/3/3/6/3 (488-496) |
+| Obstacle art API | `begin/add(kind,x,y,z,colorIndex)/addRow(type,z,len,open,tau)/addPatch(z,len)/addCoin/end(time)` 505-553; gap/patch z scale, gate CONFIG smoothstep, girder high pivot + static pads/arrows; all built at load and included in warm-up's scene traversal |
 | `toon.js` | 3-step gradient 20-29, soft vinyl ramp 34-49, `toonMaterial` 58, outline shell 119-171, canvas texture 176, lathe/sphere grids 220-271, `flatPicture` 277, `smoothLathe` 349, `facePatch` 373, `roundCube`/`boxify` 414-438, `TubeShape` 477, `PoseBlend` 561 |
 | `heroKit.js` | merged sculpted extras with hidden swatch UVs 1-7, `attach` 89, `rangeToggle` 117, `headPoint`/`headRing` 143-168 |
 | Models | every hero is a Funko-style vinyl figure on `createSpiderCharacter`; `spiderman.js:558`; Iron Spider adds four arms `ironspider.js:456`; Venom `venom.js:399`; skins listed in §1 |
 
 ## 13 Persistence
 
-All storage access is guarded; a broken save falls back to defaults.
+Storage access is generally guarded; a broken save falls back to defaults. See the 11.2 verification addendum for raw upgrade-read limits.
 
 | Key | Writer | Reader | Shape |
 |---|---|---|---|
-| `spidey.skin` | ui.js:495 (skin button) | main.js:72-75; ui.js:28 | skin id string |
+| `spidey.skin` | ui.js:495 (skin button) | main.js:73-76; ui.js:28 | skin id string |
 | `spidey.name` | ui.js:113, 454 | ui.js:111 | string, max 12 |
 | `spidey.scores` | ui.js:568 | ui.js:40 | array of `{n,s,t}`, top 5 |
 | `spidey.helpSeen` | ui.js:465 | ui.js:456 | `'1'` |
@@ -531,24 +563,25 @@ Defaults: shop starts with 250 coins and 10 upgrade levels at 0 (`shop.js:32-40`
 | render | 114-134 | pixel ratio 2, adaptive steps, sky/fog |
 | lights | 136-143 | hemi 1.6, sun 2.2 |
 | dtCap | 145 | 1/20 s |
-| obstacles | 147-161 | stepUp 0.4, stumble 0.6, cooldown 0.35, sizes, train speeds, spawn/release |
-| coins | 163-177 | spacing 3.4, height 0.6, pickup 0.4, row/zigzag/roof/trap chances |
-| coinScore | 178 | 10 |
-| chaser | 180-205 | intro 1.3, near 4.5, far 30, min 2.6, catch speeds/gaps/camera |
-| pickups | 207-210 | global min gap 300 m |
-| web | 212-233 | 3 charges, chances/gaps, hang/roof/zip/line/anchor |
-| iron | 235-252 | 12 s, 5 cores, chances, clear/grace, storage key, grab reach |
-| sense | 254-269 | 5 s, chance 0.4, gap 900, look-ahead/sim step |
-| magnet | 271-284 | 5 s, chance 0.15, gap 400, ahead 22/side 5/fly 0.32/arc 0.9 |
-| bugle | 286-293 | 10 s, chance 0.15, gap 400 |
-| spring | 295-303 | 10 s, jump ×2.2, chance 0.15 |
-| swing | 305-321 | 8 s, height 6±1.2, arc 0.7, takeoff 0.5, landing 0.8, anchors, coin ribbon |
-| decoy | 323-331 | 20 s, chance 0.16, gap 600, behind 20 |
-| wall | 333-348 | 6 s, height 3.2, x 3.5, lift/landing, camera back, coin row |
-| tracer | 350-365 | 10 s, step 3 s, max temp 3, drone/ribbon geometry |
-| intro | 367-399 | 3 swings, phase times, swing geometry, Venom lag, reverse camera, fog |
-| seed | 401-402 | null = random run, number = same track |
-| patterns | 403-430 | safe start 60, block times, difficulty curve, endless knobs, train start, reaction limits |
+| obstacles | 147-166 | stepUp 0.4, stumble 0.6, cooldown 0.35, sizes, train speeds, spawn/release; 11.5 rows: `gap`/`gate`/`girder`/`rowWarnTime` (162-166) |
+| coins | 168-182 | spacing 3.4, height 0.6, pickup 0.4, row/zigzag/roof/trap chances |
+| coinScore | 183 | 10 |
+| chaser | 185-210 | intro 1.3, near 4.5, far 30, min 2.6, catch speeds/gaps/camera |
+| pickups | 212-215 | global min gap 300 m |
+| web | 217-238 | 3 charges, chances/gaps, hang/roof/zip/line/anchor |
+| iron | 240-257 | 12 s, 5 cores, chances, clear/grace, storage key, grab reach |
+| sense | 259-274 | 5 s, chance 0.4, gap 900, look-ahead/sim step |
+| magnet | 276-289 | 5 s, chance 0.15, gap 400, ahead 22/side 5/fly 0.32/arc 0.9 |
+| bugle | 291-298 | 10 s, chance 0.15, gap 400 |
+| spring | 300-308 | 10 s, jump ×2.2, chance 0.15 |
+| swing | 310-326 | 8 s, height 6±1.2, arc 0.7, takeoff 0.5, landing 0.8, anchors, coin ribbon |
+| decoy | 328-336 | 20 s, chance 0.16, gap 600, behind 20 |
+| wall | 338-353 | 6 s, height 3.2, x 3.5, lift/landing, camera back, coin row |
+| tracer | 355-370 | 10 s, step 3 s, max temp 3, drone/ribbon geometry |
+| events | 372-395 | 11.5 road events: firstAt 1200, zone gaps/tail/margins, warn/rest curves, `senseActTime` 0.45, bonus +3/+1 for 12 s, `venom`/`goblin` timings |
+| intro | 397-429 | 3 swings, phase times, swing geometry, Venom lag, reverse camera, fog |
+| seed | 432 | null = random run, number = same track |
+| patterns | 433-470 | safe start 60, block times, difficulty curve, endless knobs, train start, reaction limits; `rows` schedule (461-469) |
 
 ## 15 Tools and tests
 
@@ -559,12 +592,12 @@ No `package.json` and no `node_modules` at the repo root (root glob). Browser im
 | `python tools/serve.py` | serves the game at `http://localhost:5173` with `Cache-Control: no-store` (serve.py:1-12) |
 | `node tools/check-patterns.mjs [seeds] [metres] [marginSeeds]` | independent solvability model, 20-minute speed curve, reaction margin, static/train overlap, coin placement, pool capacity (1-20) |
 | `node tools/check-quality.mjs` | adaptive ratio steps down/up, locks, hidden-tab gaps, failed probe backoff (1-23) |
-| `node tools/test-skills.mjs` | missions, multiplier, new powers, web swing, audio maths/settings/pool/tiers, then runs `test-audio.mjs` in-process; stubbed `localStorage`; node assert (1-16, 976-1057) |
+| `node tools/test-skills.mjs` | missions, powers, audio; 11.5 generation, pure event rows/timing, real Player/Obstacles/Chaser/RoadEvents lifecycle, sense at 120/60/30/20 FPS, recipe/capacity/matrix assertions; then `test-audio.mjs` |
 | `node tools/test-audio.mjs` | audio only: a fake `AudioContext` proves gesture gating, hidden-tab silence, per-bus mute, ladder/coalescing behaviour, stinger timing, voice caps and a simulated 20-minute leak soak (1-208) |
 | `node tools/test-ui-hud-qa.mjs` | HUD/market/shop integration for 8 heroes with a DOM mock (1-2) |
 | `node tools/test-hero-specials-qa.mjs` | simulation/verification of 8 hero specials with DOM mock (1-2) |
 | `node tools/test-qa-deep-audit.mjs` | regression suite for 3 critical hero fixes and global integrity (1-2) |
-| `tools/stub-hooks.mjs` | node resolver hooks: stubs `three`, `world.js` (`laneX`), `curve.js`, `pickup-art.js` so `player.js` and power-ups import headless (1-57) |
+| `tools/stub-hooks.mjs` | node resolver hooks: stubs `three`, `world.js` (`laneX`), `curve.js`, `pickup-art.js`, `obstacle-art.js` (no-op drawing) so real obstacles/player/power-ups import headless (1-67) |
 
 These are assertion scripts, not a test runner: they print `OK` / `FAIL` and set `process.exitCode` (e.g. check-patterns.mjs:41-44). Visual output is not tested; there are no browser-automation tests in `tools/`.
 
@@ -573,18 +606,18 @@ These are assertion scripts, not a test runner: they print `OK` / `FAIL` and set
 **Architecture**
 
 - The event bus is the only cross-system channel (`events.js:1-6`). UI reads `game.state` and calls the game API; it never writes state (`game.js:1-2`).
-- Systems implement optional `beforePlayer(dt)`, `update(dt)`, `reset()` and are run in registration order (`game.js:5-9, 210, 216, 249`).
-- Extension hooks are plain objects: player (45-48), obstacles (129-138), chaser (47). Plug in by assignment, do not edit the core (`obstacles.js:9-16`).
+- Systems implement optional `beforePlayer(dt)`, `update(dt)`, `reset()` and are run in registration order (`game.js:5-9, 215, 221, 255`).
+- Extension hooks are plain objects: player (45-48), obstacles (149-160), chaser (47). Plug in by assignment; reaction wrappers chain the previous hook (`obstacles.js:9-16`, decoy.js:56-63).
 - All tunables live in `CONFIG`; section owners add keys there (`config.js:1`).
-- Pools are preallocated and reused: obstacles/coins/pickups (obstacles.js:117-123), fx particles/text (fx.js:6-12), vfxCore (vfxCore.js:451+), instanced art (obstacle-art.js:293-360).
+- Pools are preallocated and reused: obstacles/coins/pickups (obstacles.js:136-143), fx particles/text (fx.js:6-12), vfxCore (vfxCore.js:451+), instanced art (obstacle-art.js:421-498).
 - The generator is one seeded stream; extras must consume their roll unconditionally to keep tracks deterministic (`patterns.js:32`, `magnet.js:62-65`).
-- Models are built once in `main.js`; skins are hidden children, not rebuilt (main.js:70-77). Iron Spider and Venom are also single instances (88, 96).
+- Models are built once in `main.js`; skins are hidden children, not rebuilt (main.js:71-78). Iron Spider and Venom are also single instances (88, 96).
 - UI strings are Turkish; code comments are mixed Turkish/English. Keep the local style.
 
 **Known limits**
 
-- `dt` is capped at 1/20 s; longer frames are not simulated (config.js:145, main.js:206).
-- Collision processes at most one hit per frame (`obstacles.js:408-409`); grace periods are the escape hatch.
+- `dt` is capped at 1/20 s; longer frames are not simulated (config.js:145, main.js:210).
+- Collision processes at most one hit per frame (`obstacles.js:480-481`); grace periods are the escape hatch.
 - The pattern generator assumes the speed curve in `game.js`; `tools/check-patterns.mjs` is the guard (patterns.js:64-76).
 - Toon shading is a 3-step or soft ramp; no shadow maps (`lights.js:1-2`). Outlines are inverted hulls (toon.js:111-171).
 - `prefers-reduced-motion` weakens shake/flash and removes speed lines (`fx.js:24-26`).
@@ -597,3 +630,22 @@ These are assertion scripts, not a test runner: they print `OK` / `FAIL` and set
 - The market upgrade list is driven by object key order; adding a key changes both menu order and save validation (`shop.js:12-23, 54-59`; `ui.js:337`).
 - `PLAN.md` §11.3-11.6 describes city/day-cycle/road-event roadmaps; this map only covers code that exists in `src/` (PLAN.md:213-266).
 - Not mapped in this pass: `README.md`, `AGENTS.md`, `viewer.html`, `tasarim/11-1-ses-muzik.md`, `tasarim/proto/*`, and the exact line ranges of `pickup-art.js` intermediate builders (247-810 were skimmed in the earlier pass, not re-read here).
+
+## 17 11.2 source verification addendum (2026-11-10)
+
+This section is current code evidence, not implementation of the proposed 11.2 design.
+
+| Correction / clarification | Verified source |
+|---|---|
+| Three costume-only skins (spider/gwen/mcu) retain common web zip, capacity3. Eight unique heroes replace web with a special; Raimi capacity2, cost1, others capacity1. A cartridge fills to the selected cap. | web.js:46–55,82–86,99–138; skillSpiderman2002.js:198–205 |
+| Double action prioritizes a charged unique hero ability; only otherwise Iron Spider. Existing help's unconditional “Çift dokun: Iron Spider” is misleading. Explicit h-iron click always calls iron.activate. | main.js:120–126; index.html:216; ui.js:531–533 |
+| Iron Spider duration upgrades ARE read: 12 s + level×0.5. Raw read checks finite positive level but does not clamp the direct saved value to shop max20. | ironspider.js:116–122 |
+| Hero duration upgrade is read in web.js, then partly lost at delegated skill entry: Iron Man fixed2.2, Panther fixed5.5, Raimi fixed phase clocks. Kitty/Batman receive dur; Hulk/Cap/Miles use parent dur. Parent Raimi remaining is not decremented in its mode branch. | web.js:107–137; hero-specials.js:401–435,493–503; skillIronMan.js:200–205; skillBlackPanther.js:115–122; skillSpiderman2002.js:198–218 |
+| shop.start transfers banked charge after run reset and clears ALL bank stock; no per-hero first-run gift currently exists. 11.2 proposes preserving untransferred paid stock. | shop.js:204–216; game.js:94–105,226–249 |
+| h-web empty tap silently attempts activation and does nothing today; no ready/empty explanatory state. | ui.js:514–523; web.js:99–105 |
+| OYNA currently opens help before first run if helpSeen!=1. Proposed opt-in comic is a behaviour change. | ui.js:450–466 |
+| Menu/skin are full-screen overlays on the chase scene; no dedicated selection stage camera exists. All11 roots are already built and reused. game.scene/camera/cameraRig are assigned. | main.js:71–79,127–137,176–178; camera.js:76–171 |
+| Existing index contains a repulsor img URL ironman-icon.png, contrary to the file-free art direction; 11.2 must replace this reference with existing drawn icon, not add an image. | index.html:133 |
+| Final narrow recheck during concurrent11.5 work: rowWarn/rowPass emitters now exist, and eventKind/eventTime/eventBonusTime plus mult.event are defined. No full event-director integration is claimed by11.2. Shared spidey.seen/component remain proposed11.2 work. | obstacles.js:342–351; game.js:33–45; tasarim/11-5-olaylar.md:D.4–D.6 |
+
+The duration values in §8 are nominal bases. They are not proof that every delegated clock consumes upgrades. §8's generic recipe “use getEffectiveSkillDuration” is a rule for new ground powers; current web/iron code instead reads saved levels directly.

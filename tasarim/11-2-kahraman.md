@@ -1,15 +1,15 @@
 # 11.2 — The ability button tells the truth
 
-Keep `#h-web`, its label/slots/hint IDs and current activation API. Reposition into the bottom-right action dock; do not implement a second skill. It is **112×64 px** portrait, **112×52** landscape; label17/18 Bangers, icon22, count12/12 Baloo; padding3, gap0. Content52 + padding6 + borders6 =64. Landscape padding2, icon16h, label16/16, count10/10:42+4+6=52. Border 3 ink, radius 18, shadow 3px 4px. Count is `charges / cap`, cap from `game.web.getMaxCharges()` (costumes 3, Raimi 2, other heroes 1). A use costs **one**, including Raimi; cartridge fills to cap. Iron Spider is a separate core button, never consumes this counter.
+Keep `#h-web`, its label/slots/hint IDs and current activation API. Reposition into the bottom-right action dock; do not implement a second skill. It is **112×64 px** portrait, **112×52** landscape (100px wide at280); label17/18 Bangers, icon20, count12/12 Baloo; padding3, gap0. Content50 + padding6 + inherited .btn borders8 =64. Landscape padding2, icon12h, label16/16, count12/12:40+4+8=52. Existing game .btn border4 ink, radius14, shadow0 6. Count is `charges / cap`, cap from `game.web.getMaxCharges()` (costumes 3, Raimi 2, other heroes 1). A use costs **one**, including Raimi; cartridge fills to cap. Iron Spider is a separate core button, never consumes this counter.
 
 | Priority / state | Predicate | Look / exact copy | Tap / accessibility |
 |---|---|---|---|
 | 1 active | heroSpecials.active or costume web.zipping | selected colour, icon, timer ring 4 px; `AKTİF`, remaining ceil seconds | no second use; aria-label `Yetenek aktif, {n} saniye kaldı`; ring uses actual skill clock |
-| 2 blocked | halted/controlsLocked/verticalLocked, not active | 60% colour, `BİRAZDAN`; retain count | no spend; label `Şimdi kullanılamıyor`; no misleading refill hint |
+| 2 blocked | halted/controlsLocked/verticalLocked, not active | fill #797b87, cream text with2px ink stroke, `BİRAZDAN`; retain count | no spend; label `Şimdi kullanılamıyor`; no misleading refill hint |
 | 3 empty | charges===0 | background #d5d5d9, icon grayscale(1), ink label; tilted red outlined `ŞARJ YOK` stamp 15/16 px at right -2/top 8, rotate(-12deg) | shake 180 ms x=[0,-3,3,-2,0], empty narration; button remains enabled/focusable, aria-label `Şarj yok. Yoldan kartuş al veya marketten 75 altına doldur.` |
 | 4 ready | charges>0 | yellow #ffd23a for costume; hero colours below; 2 px outer ink ring pulses scale(1→1.06→1), 1300 ms ease-in-out | call existing tryActivate once; aria-label `{ability}, {charges} şarj. Kullan.` |
 
-Order is deliberate: an active ability with zero remaining stock is **active**, never empty. A locked airborne player with charges is **blocked**, never empty. Pause hides the run dock. Costume web duration is not a fixed timer: while `web.zipping`, ring is a solid ink animated outline and `AĞDA`; no invented seconds. On failed ready activation do not decrement; map next state from the actual system. UI never changes game.state.
+Order is deliberate: an active ability with zero remaining stock is **active**, never empty. A locked airborne player with charges is **blocked**, never empty. Pause hides the run dock. Costume web duration is not a fixed timer: while `web.zipping`, ring is a solid ink solid outline and `AĞDA`; no invented seconds. On failed ready activation do not decrement; map next state from the actual system. UI never changes game.state.
 
 Special rings: read `hs.timeRemaining/hs.maxTime` only if it matches the delegated skill clock. Ring fraction clamp 0..1, update quantized to 1/200 like current gauges; after fixing durations, expose the real remaining/max for every delegated skill (including Raimi). Numeral ceil seconds changes at most once a second. SVG circle radius18, circumference113.097; dashoffset=`113.097*(1-fraction)`; rotate(-90deg). Ready pulses stop when hidden or reduced motion. Active timer must not double-appear as `#h-ironbar`; remove that bar after the ring migration. Iron suit timer appears in `#h-iron` ring concurrently with hero skill, not through the old mutually exclusive bar.
 
@@ -32,6 +32,8 @@ Then transfer `take = min(maxCharges-currentCharges, bankedHeroCharge)`, subtrac
 | Spider costume / 1 | 0 | 1 | 0 |
 
 `HEDİYE ŞARJ!` also appears as a 13/14 px yellow sticker on ability button for 4000 ms of playable run time; no tap target; full caption copy is in narration catalogue. Sticker top -13, right 0; dock leaves 16 px room above it. No gift for three costumes by default; director may extend explicitly with the same accounting, see tasks decisions.
+
+Claimed state: replace gift promise with12px **Hediyeni kullandın · Kartuş ya da market.** strip; costumes show **Kostüm · ortak ağ · hediye verilmez**. Prototype toggles demonstrate the strip without saved-data writes. Costume AĞDA has a solid full ring and no seconds. Active SVG r18/C113.097 uses actual fraction (prototype .6 in active example/.4 on activation), never a conic-gradient. Reduced motion:100ms opacity only for entry/exit, no ring pulse/shake/rotation tween; empty-shake has explicit0% and100% return endpoints.
 
 ## Iron Spider and double tap: truth in the help text
 
