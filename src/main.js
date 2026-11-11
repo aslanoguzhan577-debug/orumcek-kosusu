@@ -178,6 +178,7 @@ game.camera = camera;
 game.cameraRig = cameraRig;
 game.renderer = renderer;
 game.intro = new Intro({ scene, player, chaser, web, cameraRig });
+await document.fonts.ready;
 game.city = initCity(game);
 const fx = initFx(game);
 window.game = game; // handy in the console while developing
@@ -236,4 +237,4 @@ renderer.setAnimationLoop((now) => {
 });
 
 // Start-up warm-up (behind the loading screen): shaders, textures, pooled objects.
-warmUp(game, [...fx.textures, ...HERO_SPECIAL_TEXTURES, ...Object.values(skins).flatMap((m) => m.textures || [])]);
+warmUp(game, [...game.city.textures, ...fx.textures, ...HERO_SPECIAL_TEXTURES, ...Object.values(skins).flatMap((m) => m.textures || [])]);

@@ -1,4 +1,4 @@
-// city.js (G7) — sunny cartoon New York around the elevated track.
+// city.js — pooled comic city and distance-driven day around the elevated track.
 //
 //   import { initCity } from './city.js';  initCity(game);
 //
@@ -7,13 +7,13 @@
 //     street far below, steel portal frames under the deck, cars, brownstones, brick walk-ups
 //     with fire escapes, mid-rises with roof water tanks / billboards, glass towers and a back
 //     wall of tall buildings). Every variant is TWO merged geometries:
-//       - facade  : textured quads (one shared window-cell canvas texture, tiled by UV)
+//       - facade  : textured quads (shared district atlas pairs, tiled by UV)
 //       - plain   : everything else (vertex colours only)
 //   * Every world segment owns one small Group with TWO meshes (facade + plain). When the
 //     world recycles a segment (world.onRecycle) the meshes just swap to another variant
 //     and the group is mirrored left/right. No allocation while running.
-//   * One static, fog-free skyline + cloud backdrop far ahead (1 draw call).
-//   => draw calls added: 2 per segment (18 with 9 segments) + 1 skyline = 19.
+//   * One fog-free shader sky and skyline far ahead (1 draw call).
+//   => draw calls added: 2 per segment (26 with 13 segments) + 1 skyline = 27.
 //
 // Geometry rules: the deck (TRACK.halfWidth ~3.7 m) and its fences (~3.9 m) are never
 // touched; the nearest building face is at |x| >= CITY.frontMin (~7 m). The street is
@@ -24,8 +24,15 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from './config.js';
 import { toonMaterial } from './models/toon.js';
 import { TRACK } from './world.js';
+import { emit, events } from './events.js';
+import { createAnnouncer, districtInfo, districtAt, dressFor, segCentre, loopMetre, loopOf } from './city-logic.js';
+import { createCityPieces } from './city-pieces.js';
+import { createBoards } from './city-boards.js';
+import { createDayCycle } from './daycycle.js';
+import { drawMidtownAtlas, drawMidtownGlow, drawChinatownAtlas, drawChinatownGlow, drawNeonAtlas, drawNeonGlow,
+  drawTunnelAtlas, drawWater, drawTabela, drawSkylineMask, drawShore, facadeHook, SKY_VERT, BRIDGE_SKY_FRAG } from './city-tex.js';
 
-// Tunables (CONFIG.city, if someone adds it to config.js, overrides these).
+// Existing chunk dimensions; district/day numbers live in CONFIG.city.
 const CITY = {
   streetDrop: 11,      // m from running surface down to the street
   variants: 12,        // pre-built chunk variants
@@ -82,44 +89,6 @@ const PAL = {
   asphalt: 0x6d717a,
   sidewalk: 0xc9c3b7,
 };
-
-// ---------- window-cell texture (one cell = one window bay, tiled by UV) ----------
-function makeFacadeTexture(renderer) {
-  const S = 256;
-  const c = document.createElement('canvas');
-  c.width = c.height = S;
-  const g = c.getContext('2d');
-  g.fillStyle = '#ffffff';
-  g.fillRect(0, 0, S, S);
-  // faint brick / siding courses
-  g.fillStyle = '#e4e4e4';
-  for (let y = 6; y < S; y += 16) g.fillRect(0, y, S, 2);
-  // lintel + sill
-  g.fillStyle = '#d3cbc0';
-  g.fillRect(40, 34, 176, 18);
-  g.fillStyle = '#c9c0b3';
-  g.fillRect(40, 214, 176, 18);
-  // frame
-  g.fillStyle = '#efe9df';
-  g.fillRect(52, 50, 152, 166);
-  // glass
-  g.fillStyle = '#2b4562';
-  g.fillRect(64, 60, 128, 146);
-  // glare
-  g.fillStyle = '#5d86ad';
-  g.beginPath(); g.moveTo(64, 60); g.lineTo(104, 60); g.lineTo(64, 120); g.closePath(); g.fill();
-  g.beginPath(); g.moveTo(120, 60); g.lineTo(140, 60); g.lineTo(64, 170); g.lineTo(64, 150); g.closePath(); g.fill();
-  // mullions
-  g.fillStyle = '#efe9df';
-  g.fillRect(64, 128, 128, 7);
-  g.fillRect(125, 60, 6, 146);
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.anisotropy = Math.min(4, renderer && renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 1);
-  return tex;
-}
 
 // ---------- facade geometry builder (textured quads) ----------
 class Facade {
@@ -211,6 +180,9 @@ function addSolid(F, P, s, r0, depth, zA, zB, yA, yB, tint, cellW, floors, roofC
   pBox(P, s * (r0 + depth / 2), yB + 0.4, zA + 0.12, depth, 0.5, 0.24, par);
   pBox(P, s * (r0 + depth / 2), yB + 0.4, zB - 0.12, depth, 0.5, 0.24, par);
   pBox(P, s * (r0 - 0.22), yB - 0.15, zc, 0.55, 0.32, w, mulHex(tint, 1.25));
+  pBox(P, s * (r0 - 0.03), (yA + yB) / 2, zA + 0.06, 0.1, yB - yA, 0.12, 0x1c1016);
+  pBox(P, s * (r0 - 0.03), (yA + yB) / 2, zB - 0.06, 0.1, yB - yA, 0.12, 0x1c1016);
+  pBox(P, s * (r0 - 0.05), yB - 0.36, zc, 0.12, 0.1, w, 0x1c1016);
 }
 
 function addShop(P, s, r0, zA, zB, yA, h, rng) {
@@ -255,7 +227,7 @@ function addWaterTower(P, x, y, z) {
   pCyl(P, x, y + 3.75, z, 0.02, 1.1, 0.8, 10, 0x56463b);
 }
 
-function addBillboard(P, s, cx, y, cz, wB, rng) {
+function addBillboard(P, anchors, s, cx, y, cz, wB, rng) {
   const ry = -s * 0.5; // faces +z (towards the camera), turned a bit towards the track
   const cs = Math.cos(ry), sn = Math.sin(ry);
   const at = (lx, ly, lz) => [cx + lx * cs + lz * sn, y + ly, cz - lx * sn + lz * cs];
@@ -269,13 +241,8 @@ function addBillboard(P, s, cx, y, cz, wB, rng) {
   pBox(P, p[0], p[1], p[2], wB, hB, 0.24, 0x2f3036, 0, ry);
   p = at(0, 1.4 + hB / 2, 0.14);
   pBox(P, p[0], p[1], p[2], wB - 0.4, hB - 0.4, 0.06, base, 0, ry);
-  p = at(-wB * 0.2, 1.4 + hB / 2, 0.19);
-  pBox(P, p[0], p[1], p[2], wB * 0.4, hB * 0.62, 0.05, 0xf7f1e4, 0, ry);
-  const accent = pick(PAL.ad, rng);
-  for (let i = 0; i < 3; i++) {
-    p = at(wB * 0.2, 1.4 + hB / 2 + (i - 1) * 0.62, 0.19);
-    pBox(P, p[0], p[1], p[2], wB * (0.34 - i * 0.05), 0.3, 0.05, accent, 0, ry);
-  }
+  p = at(0, 1.4 + hB / 2, 0.2);
+  anchors.push({ kind: 'bugle', x: p[0], y: p[1], z: p[2], ry, w: 4.4, h: 2.2 });
 }
 
 function addBladeSign(P, s, r0, y, z, rng) {
@@ -307,7 +274,7 @@ const STY = {
   tower: { fl: [20, 32], floorH: 1.9, cellW: 1.7 },
 };
 
-function makeBuilding(F, P, s, type, zA, zB, front, rng) {
+function makeBuilding(F, P, anchors, s, type, zA, zB, front, rng) {
   const sty = STY[type];
   const depth = CITY.depth;
   const w = zB - zA;
@@ -344,11 +311,11 @@ function makeBuilding(F, P, s, type, zA, zB, front, rng) {
   if (type === 'mid' && rng() < 0.5) addBladeSign(P, s, front, SY + sty.floorH * 3.4, zA + 0.8 + rng() * (w - 1.6), rng);
 
   addRoofClutter(P, s, front, depth, zA, zB, yB, rng);
-  const wtChance = type === 'brown' ? 0.12 : 0.5;
+  const wtChance = type === 'brown' ? 0.25 : 0.5;
   if (w >= 5 && rng() < wtChance) addWaterTower(P, s * (front + 2.2 + rng() * 2), yB + 0.15, zA + 1.5 + rng() * (w - 3));
   const bbChance = type === 'mid' ? 0.4 : type === 'walk' ? 0.25 : 0;
   if (w >= 6.5 && rng() < bbChance) {
-    addBillboard(P, s, s * (front + depth * 0.35), yB + 0.15, zc, Math.min(6, w - 1.2), rng);
+    addBillboard(P, anchors, s, s * (front + depth * 0.35), yB + 0.15, zc, Math.min(6, w - 1.2), rng);
   }
 }
 
@@ -388,7 +355,7 @@ function addLamp(P, x, z, s) {
 }
 
 // ---------- one chunk variant ----------
-function layoutSide(F, P, s, rng, gap) {
+function layoutSide(F, P, anchors, s, rng, gap) {
   const ranges = gap
     ? [[-HALF_L, gap.c - gap.w / 2], [gap.c + gap.w / 2, HALF_L]]
     : [[-HALF_L, HALF_L]];
@@ -408,7 +375,7 @@ function layoutSide(F, P, s, rng, gap) {
       if (type === 'tower' && w < 7.5) type = 'mid';
       prev = type;
       const front = baseFront + (rng() < 0.35 ? rng() * 1.0 : 0);
-      makeBuilding(F, P, s, type, z, z + w, front, rng);
+      makeBuilding(F, P, anchors, s, type, z, z + w, front, rng);
       // sidewalk in front of the building
       pBox(P, s * (front - 1.25), SY + 0.1, z + w / 2, 2.5, 0.2, w, PAL.sidewalk);
       if (!lampDone && w > 5 && rng() < 0.6) {
@@ -437,7 +404,7 @@ function layoutSide(F, P, s, rng, gap) {
 function buildVariant(index) {
   const rng = mulberry32(7000 + index * 7919);
   const F = new Facade();
-  const P = [];
+  const P = [], anchors = [];
   const gap = CITY.crossStreetVariants.includes(index) ? { c: (rng() - 0.5) * 6, w: 7.5 } : null;
 
   // street + deck supports
@@ -446,8 +413,8 @@ function buildVariant(index) {
   addPortalFrame(P, 5);
   for (const x of [-3.6, 3.6]) pBox(P, x, TRACK.deckBottom - 0.35, 0, 0.3, 0.7, SEG_L, CITY_STEEL);
 
-  layoutSide(F, P, 1, rng, gap);
-  layoutSide(F, P, -1, rng, gap);
+  layoutSide(F, P, anchors, 1, rng, gap);
+  layoutSide(F, P, anchors, -1, rng, gap);
 
   // cars (kept away from the columns)
   const lanes = [-5.4, -1.7, 1.7, 5.4];
@@ -470,74 +437,22 @@ function buildVariant(index) {
   }
 
   const plain = mergeGeometries(P);
+  plain.computeBoundingSphere();
   for (const g of P) g.dispose();
-  return { facade: F.build(), plain };
+  const mirroredAnchors = anchors.map((a) => ({ ...a, x: -a.x, ry: -a.ry }));
+  return { facade: F.build(), plain, anchors, mirroredAnchors };
 }
 
-// ---------- distant skyline + clouds (one fog-free plane) ----------
-function makeSkyline() {
-  const W = 2048, H = 512;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const g = c.getContext('2d');
-  const rng = mulberry32(99);
-  const sky = '#' + new THREE.Color(CONFIG.render.skyColor).getHexString();
-
-  // clouds
-  g.fillStyle = 'rgba(255,255,255,0.9)';
-  for (let i = 0; i < 9; i++) {
-    const cx = rng() * W, cy = 40 + rng() * 120;
-    for (let k = 0; k < 5; k++) {
-      g.beginPath();
-      g.ellipse(cx + (k - 2) * 34 + rng() * 10, cy + (k % 2) * 8, 40 + rng() * 22, 22 + rng() * 10, 0, 0, Math.PI * 2);
-      g.fill();
-    }
-  }
-
-  const fade = (top) => {
-    const grad = g.createLinearGradient(0, H * 0.3, 0, H);
-    grad.addColorStop(0, top);
-    grad.addColorStop(1, sky);
-    return grad;
-  };
-  // faint window rows + a shaded right side, so the blocks read as buildings in the haze
-  const details = (x, y, w, h, win, side) => {
-    g.fillStyle = side;
-    g.fillRect(x + w * 0.72, y, w * 0.28, h);
-    g.fillStyle = win;
-    for (let wy = y + 8; wy < H - 30; wy += 10) {
-      for (let wx = x + 5; wx < x + w * 0.7 - 3; wx += 8) g.fillRect(wx, wy, 4, 5);
-    }
-  };
-  const layer = (top, win, side, minH, maxH, minW, maxW) => {
-    const fill = fade(top);
-    let x = -20;
-    while (x < W) {
-      const w = minW + rng() * (maxW - minW);
-      const h = minH + rng() * (maxH - minH);
-      g.fillStyle = fill;
-      g.fillRect(x, H - h, w, h);
-      if (rng() < 0.25) g.fillRect(x + w * 0.25, H - h - 30 - rng() * 40, w * 0.5, 60); // setback
-      if (rng() < 0.12) g.fillRect(x + w * 0.5 - 2, H - h - 70, 4, 70);              // antenna
-      details(x, H - h, w, h, win, side);
-      x += w + (rng() < 0.3 ? 8 : 0);
-    }
-  };
-  layer('#b4cde9', 'rgba(255,255,255,0.22)', 'rgba(60,90,140,0.10)', 90, 300, 40, 90);
-  layer('#97b8de', 'rgba(255,255,255,0.28)', 'rgba(50,80,130,0.14)', 70, 220, 50, 110);
-
-  // a stepped art-deco tower with a spire right at the end of the line (canvas centre =
-  // straight ahead), tall enough to show above the street canyon
-  const cx = W / 2;
-  g.fillStyle = fade('#88aad3');
-  const steps = [[64, 300], [46, 360], [30, 400], [16, 425]]; // [width, height]
-  for (const [w, h] of steps) g.fillRect(cx - w / 2, H - h, w, h);
-  g.fillRect(cx - 2, H - 470, 4, 50);
-  details(cx - 32, H - 300, 64, 300, 'rgba(255,255,255,0.3)', 'rgba(50,80,130,0.14)');
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, fog: false, depthWrite: false });
+// ---------- distant skyline: approved gradient, discs and two RGB masks ----------
+function makeSkyline(atlases) {
+  const col = () => ({ value: new THREE.Color() });
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uMask: { value: atlases.skyline }, uTop: col(), uMid: col(), uHorizon: col(),
+      uFar: col(), uNear: col(), uWin: col(), uWinOn: { value: 0 }, uSunCol: col(), uSun: { value: new THREE.Vector3() },
+      uStars: { value: 0 }, uDots: { value: 1 }, uDark: { value: 0 }, uCity: { value: 1 },
+      uShoreTex: { value: atlases.shore } },
+    vertexShader: SKY_VERT, fragmentShader: BRIDGE_SKY_FRAG, depthWrite: false, fog: false,
+  });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(700, 175), mat);
   mesh.position.set(0, -32 + 87.5, CITY.skylineZ);
   mesh.name = 'city-skyline';
@@ -549,10 +464,79 @@ function makeSkyline() {
 // ---------- public API ----------
 export function initCity(game) {
   const world = game.world;
+  const textures = [];
+  const rawShift = Number(new URLSearchParams(location.search).get('gun'));
+  const cityShift = Number.isFinite(rawShift) ? Math.round(rawShift / 20) * 20 : 0;
   const scene = game.scene;
 
-  const facadeMat = toonMaterial(0xffffff, { map: makeFacadeTexture(game.renderer), vertexColors: true });
+  const tex = (w, h, draw, repeat, srgb = true, scale = 1) => {
+    const canvas = document.createElement('canvas'); canvas.width = w * scale; canvas.height = h * scale;
+    const g = canvas.getContext('2d'); g.scale(scale, scale); draw(g, w, h);
+    const t = new THREE.CanvasTexture(canvas);
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+    textures.push(t);
+    return t;
+  };
+  const scale = CONFIG.city.texScale;
+  const atlases = {
+    midtown: tex(1024, 1024, drawMidtownAtlas, [0.25, 0.25], true, scale),
+    midtownGlow: tex(512, 512, drawMidtownGlow, [0.25, 0.25], true, scale),
+    chinatown: tex(1024, 1024, drawChinatownAtlas, [0.25, 0.25], true, scale),
+    chinatownGlow: tex(512, 512, drawChinatownGlow, [0.25, 0.25], true, scale),
+    neon: tex(1024, 1024, drawNeonAtlas, [0.25, 0.25], true, scale),
+    neonGlow: tex(512, 512, drawNeonGlow, [0.25, 0.25], true, scale),
+    tunnel: tex(1024, 512, drawTunnelAtlas, null, true, scale),
+    skyline: tex(2048, 512, drawSkylineMask, null, false),
+    shore: tex(1024, 64, drawShore, [1, 1], false),
+    water: tex(512, 512, drawWater, [9, 9]),
+    tabela: tex(1024, 1024, drawTabela, null, true, scale),
+  };
+  const anisotropy = Math.min(4, game.renderer.capabilities.getMaxAnisotropy());
+  for (const t of [atlases.midtown, atlases.chinatown, atlases.neon, atlases.tunnel]) t.anisotropy = anisotropy;
+  atlases.shore.generateMipmaps = false; atlases.shore.minFilter = THREE.LinearFilter;
+  const U = { uHalftone: { value: 1 }, uDotTint: { value: new THREE.Color() }, uBaseTone: { value: 0 }, uSunLum: { value: 1 }, uWinOn: { value: 0 } };
+  const facadeMat = (day, glow) => {
+    const m = toonMaterial(0xffffff, { map: day, emissiveMap: glow, emissive: 0xffffff, emissiveIntensity: 0, vertexColors: true });
+    m.onBeforeCompile = facadeHook(U);
+    return m;
+  };
+  const facades = { midtown: facadeMat(atlases.midtown, atlases.midtownGlow),
+    chinatown: facadeMat(atlases.chinatown, atlases.chinatownGlow), neon: facadeMat(atlases.neon, atlases.neonGlow) };
   const plainMat = toonMaterial(0xffffff, { vertexColors: true });
+  const materials = { plain: plainMat, glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
+    tunnel: new THREE.MeshBasicMaterial({ map: atlases.tunnel, vertexColors: true }) };
+  const pieces = createCityPieces();
+  const boards = { tabela: createBoards(atlases.tabela, CONFIG.city.boards.tabela) };
+  scene.add(boards.tabela.mesh);
+  const portals = {};
+  for (const name of ['tower', 'vapur', 'midtownSign', 'gate', 'mouth']) {
+    const group = portals[name] = new THREE.Group();
+    for (const kind of ['plain', 'glow', 'tunnel']) {
+      if (!pieces[name][kind]) continue;
+      const mesh = new THREE.Mesh(pieces[name][kind], materials[kind]);
+      mesh.matrixAutoUpdate = false; mesh.updateMatrix(); group.add(mesh);
+    }
+    group.visible = false;
+  }
+  // Cache district recipes and transformed portal anchors before recycling can run.
+  const planAt = (d) => {
+    const [id, k] = districtInfo(d), plan = dressFor(id, k, loopOf(d));
+    const dress = pieces[plan.dress], portal = plan.portal && pieces[plan.portal[0]];
+    const anchors = { tabela: [], ads: [], bugle: [] };
+    for (const kind in anchors) {
+      if (dress?.anchors?.[kind]) anchors[kind].push(...dress.anchors[kind]);
+      if (portal?.anchors[kind]) {
+        const [, z, ry] = plan.portal, co = Math.cos(ry), si = Math.sin(ry);
+        for (const a of portal.anchors[kind]) anchors[kind].push({ ...a,
+          x: a.x * co + a.z * si, z: -a.x * si + a.z * co + z, ry: a.ry + ry });
+      }
+    }
+    return { ...plan, dress, anchors };
+  };
+  const centreOffset = loopMetre(segCentre(0)) % SEG_L;
+  const plans = Array.from({ length: CONFIG.city.loop / SEG_L }, (_, i) => planAt(i * SEG_L + centreOffset));
+  const beforeStart = planAt(-1);
 
   const variants = [];
   for (let i = 0; i < CITY.variants; i++) variants.push(buildVariant(i));
@@ -560,47 +544,125 @@ export function initCity(game) {
   // Deterministic variant sequence per segment serial: never repeats within the last 3.
   const seqRng = mulberry32(424242);
   const seq = [];
-  const specFor = (serial) => {
-    while (seq.length <= serial) {
-      const recent = seq.slice(-3).map((q) => q.v);
-      let v;
-      do { v = Math.floor(seqRng() * variants.length); } while (recent.includes(v));
-      seq.push({ v, flip: seqRng() < 0.5 });
-    }
-    return seq[serial];
-  };
+  // Cache one complete city loop at load; recycle never grows the sequence.
+  while (seq.length < CONFIG.city.loop / SEG_L) {
+    const recent = seq.slice(-3).map((q) => q.v);
+    let v;
+    do { v = Math.floor(seqRng() * variants.length); } while (recent.includes(v));
+    seq.push({ v, flip: seqRng() < 0.5 });
+  }
+  const specFor = (serial) => seq[serial % seq.length];
 
   const assign = (seg) => {
     let c = seg.city;
     if (!c) {
       const group = new THREE.Group();
       group.name = 'city-chunk';
-      const facade = new THREE.Mesh(variants[0].facade, facadeMat);
+      const facade = new THREE.Mesh(variants[0].facade, facades.midtown);
       const plain = new THREE.Mesh(variants[0].plain, plainMat);
       for (const m of [facade, plain]) { m.matrixAutoUpdate = false; m.updateMatrix(); group.add(m); }
+      const dressPlain = new THREE.Mesh(new THREE.BufferGeometry(), materials.plain);
+      const dressGlow = new THREE.Mesh(new THREE.BufferGeometry(), materials.glow);
+      const shellMesh = new THREE.Mesh(new THREE.BufferGeometry(), materials.tunnel);
+      for (const m of [dressPlain, dressGlow, shellMesh]) {
+        m.visible = false; m.matrixAutoUpdate = false; m.updateMatrix(); seg.group.add(m);
+      }
       seg.group.add(group);
-      c = seg.city = { group, facade, plain };
+      c = seg.city = { group, facade, plain, dressPlain, dressGlow, shellMesh, portal: null };
     }
     const spec = specFor(seg.serial);
     c.facade.geometry = variants[spec.v].facade;
     c.plain.geometry = variants[spec.v].plain;
     c.group.scale.x = spec.flip ? -1 : 1;
+    c.anchors = spec.flip ? variants[spec.v].mirroredAnchors : variants[spec.v].anchors;
+    const d = segCentre(seg.serial) + cityShift;
+    const plan = d < 0 ? beforeStart : plans[Math.floor(loopMetre(d) / SEG_L)];
+    c.group.visible = plan.chunk;
+    c.facade.material = facades[plan.facade] || facades.midtown;
+    c.dressPlain.visible = !!plan.dress?.plain;
+    if (c.dressPlain.visible) c.dressPlain.geometry = plan.dress.plain;
+    c.dressGlow.visible = !!plan.dress?.glow;
+    if (c.dressGlow.visible) c.dressGlow.geometry = plan.dress.glow;
+    c.shellMesh.visible = !!plan.dress?.tunnel;
+    if (c.shellMesh.visible) c.shellMesh.geometry = plan.dress.tunnel;
+    for (const kind in boards) {
+      boards[kind].release(seg);
+      for (const a of plan.anchors[kind]) boards[kind].take(seg, a);
+    }
+    if (c.portal?.parent === seg.group) c.portal.visible = false;
+    c.portal = null;
+    if (plan.portal && portals[plan.portal[0]]) {
+      const [name, z, ry] = plan.portal, portal = portals[name];
+      seg.group.add(portal); portal.position.z = z; portal.rotation.y = ry; portal.visible = true;
+      c.portal = portal;
+    }
   };
 
   for (const seg of world.segments) assign(seg);
   const off = world.onRecycle((seg) => assign(seg));
 
-  const skyline = makeSkyline();
-  scene.add(skyline);
+  const skyline = makeSkyline(atlases);
+  const waterMat = new THREE.MeshBasicMaterial({ map: atlases.water, fog: true });
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(900, 900, 1, 60).rotateX(-Math.PI / 2), waterMat);
+  water.position.set(0, -40, -300); water.matrixAutoUpdate = false; water.updateMatrix();
+  scene.add(skyline, water);
+  const dayCycle = createDayCycle({ scene,
+    hemi: scene.children.find((o) => o.isHemisphereLight), sun: scene.children.find((o) => o.isDirectionalLight),
+    sky: skyline.material, tinted: [...Object.values(facades), plainMat], uniforms: U,
+    coin: game.obstacles.art.coinMaterial, rims: game.obstacles.art.rims,
+    glow: [materials.glow], boards: [boards.tabela.mesh.material], water: waterMat,
+  });
+  const announcer = createAnnouncer(emit);
+  const updateScenery = (d) => {
+    dayCycle.update(d);
+    water.visible = districtAt(d - 60) === 'bridge' || districtAt(d) === 'bridge' || districtAt(d + 120) === 'bridge';
+    for (const kind in boards) boards[kind].update();
+  };
+  const reset = () => { updateScenery(0); announcer.reset(); };
+  const onGameOver = () => {
+    for (const seg of world.segments) {
+      const c = seg.city;
+      for (const kind in boards) boards[kind].release(seg);
+      c.group.visible = true; c.facade.material = facades.midtown;
+      c.dressPlain.visible = c.dressGlow.visible = c.shellMesh.visible = false;
+      c.portal = null;
+    }
+    for (const name in portals) portals[name].visible = false;
+    reset();
+  };
+  const system = game.addSystem({
+    update() {
+      if (game.state.mode !== 'running' || game.halted) return;
+      const d = world.distance + cityShift;
+      updateScenery(d); announcer.update(d);
+    },
+    reset,
+  });
+  events.addEventListener('gameover', onGameOver);
+  updateScenery(cityShift);
 
   return {
+    textures,
+    atlases,
+    facades,
+    dayCycle,
+    cityShift,
     skyline,
     variants,
+    pieces, materials, boards, portals,
     dispose() {
       off();
-      scene.remove(skyline);
+      events.removeEventListener('gameover', onGameOver);
+      const i = game.systems.indexOf(system);
+      if (i >= 0) game.systems.splice(i, 1);
+      scene.remove(skyline, water);
+      for (const kind in boards) scene.remove(boards[kind].mesh);
+      for (const name in portals) portals[name].removeFromParent();
       for (const seg of world.segments) {
-        if (seg.city) { seg.group.remove(seg.city.group); seg.city = null; }
+        if (seg.city) {
+          const c = seg.city;
+          seg.group.remove(c.group, c.dressPlain, c.dressGlow, c.shellMesh); seg.city = null;
+        }
       }
     },
   };

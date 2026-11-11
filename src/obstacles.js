@@ -454,7 +454,10 @@ export class Obstacles {
       // (closing speed up to ~40 m/s; at 30 fps that is more than bar + player depth)
       if (fMax < 0 || pfMin > o.length) continue;
       for (const part of o.parts) {
-        if (part.pit && game.heroSpecials?.active && game.heroSpecials.mode === 'cap') continue;
+        const surf = game.heroSpecials;
+        // Dropping the surf hover may forgive a pit only, never a gate or girder.
+        if (part.pit && ((surf?.active && surf.mode === 'cap') ||
+          (surf?.cap?.exit >= 0 && p.lastY > p.floorY && p.vy <= 0))) continue;
         const ax0 = o.x + part.x0, ax1 = o.x + part.x1;
         if (fMax <= part.f0 || pfMin >= part.f1 || x1 <= ax0 || x0 >= ax1) continue;
         const top = part.ramp ? rampTop(part, Math.min(fMax, part.f1)) : part.y1;

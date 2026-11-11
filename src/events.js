@@ -2,6 +2,7 @@
 // Names (PLAN.md contract): start, pause, resume, menu, newRecord {score}, gameover {score, coins, distance},
 // jump, land, slide, lane {dir}, coin {position}, stumble, crash {position}, caught,
 // pickup {type}, web {from, to}, ironOn, ironOff, ironSave {positions}, venomNear, venomFar.
+// districtEnter {id, lap}: city announces each district 60 m before its border.
 //
 // Listen:  events.addEventListener('jump', (e) => { ... e.detail ... });
 

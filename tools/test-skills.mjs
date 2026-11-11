@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import { CONFIG } from '../src/config.js';
 import { PatternGenerator, createRng, speedAt, descLength, descLanes, girderOffset } from '../src/patterns.js';
 import { floorW, warnAt, restAt, doubleChance, nextRow, nearestSafe, rewardFor } from '../src/event-logic.js';
+import { districtAt, districtInfo, segCentre, phaseAt, discAt, tunnelAt, cityAt, mixHex, loopMetre, loopOf, dayPhaseAt, dressFor, districtEvent, createAnnouncer, ANCHOR_COUNTS } from '../src/city-logic.js';
+import * as cityTex from '../src/city-tex.js';
 
 const KEY = 'spidey.missions';
 const store = new Map();
@@ -18,6 +20,88 @@ let checks = 0;
 const eq = (a, b, msg) => { checks++; assert.equal(a, b, msg); };
 const ok = (c, msg) => { checks++; assert.ok(c, msg); };
 const json = (v) => JSON.stringify(v);
+
+// ---------- 11.3 task 1: route, linear colour clock, dressing and announcements ----------
+for (const [d, id] of [[0, 'midtown'], [1499, 'midtown'], [1500, 'chinatown'], [2539, 'chinatown'],
+  [2540, 'bridge'], [3339, 'bridge'], [3340, 'tunnel'], [3699, 'tunnel'], [3700, 'neon'],
+  [5199, 'neon'], [5200, 'dawn'], [5999, 'dawn'], [6000, 'midtown'], [9340, 'tunnel'], [-5, 'midtown']]) {
+  eq(districtAt(d), id, `district boundary ${d}`);
+}
+const segmentCounts = {};
+let previousDistrict = null;
+for (let serial = 0; serial <= 304; serial++) {
+  const d = segCentre(serial), [id, k] = districtInfo(d);
+  if (d < 0) continue;
+  if (id !== previousDistrict) eq(k, 0, `first ${id} segment`);
+  segmentCounts[id] = (segmentCounts[id] || 0) + 1;
+  previousDistrict = id;
+}
+eq(json(segmentCounts), json({ midtown: 75, chinatown: 52, bridge: 40, tunnel: 18, neon: 75, dawn: 40 }), 'segment counts');
+eq(json(districtInfo(segCentre(80))), json(['chinatown', 0, 1500]), 'first Chinatown segment');
+for (const [d, key, value] of [[0, 'fog', 0x9ad4ff], [2000, 'fog', 0xffcf96], [3000, 'tint', 0x8a4a6c],
+  [4000, 'fog', 0x1b1a4a], [5500, 'fog', 0xf4c4cc]]) eq(phaseAt(d)[key], value, `phase ${d}`);
+ok(Math.abs(phaseAt(1500).hemiI - 1.55) < 1e-9, 'golden blend midpoint');
+eq(json(phaseAt(8000)), json(phaseAt(2000)), 'phase repeats each loop');
+for (let d = 0; d <= 6000; d += 10) {
+  const p = phaseAt(d), t = tunnelAt(d), T = CONFIG.city.tunnelLook;
+  const hemiI = p.hemiI + (T.hemiI - p.hemiI) * t, sunI = p.sunI + (T.sunI - p.sunI) * t;
+  if (t === 0) ok(hemiI >= 1.4 && sunI >= 1.75, `outside light floor ${d}`);
+  else ok(hemiI >= T.hemiI && sunI >= T.sunI, `tunnel light floor ${d}`);
+  ok(p.fogNear >= 42 && p.fogFar >= 155, `fog floor ${d}`);
+  for (const hex of [mixHex(p.hemiSky, T.hemiSky, t), p.sun]) {
+    const rgb = [hex >> 16, (hex >> 8) & 255, hex & 255];
+    ok(Math.min(...rgb) >= 0.62 * Math.max(...rgb), `pale light ${d}`);
+  }
+}
+for (const [d, t] of [[3300, 0], [3345, 0.5], [3500, 1], [3685, 0.5], [3720, 0]]) eq(tunnelAt(d), t, `tunnel ${d}`);
+for (const [d, t] of [[2000, 1], [2530, 0.5], [3000, 0], [3410, 0.5], [4000, 1]]) eq(cityAt(d), t, `skyline ${d}`);
+eq(mixHex(0, 0xffffff, 0.5), 0xbcbcbc, 'linear RGB midpoint');
+eq(mixHex(0x3f9eee, 0x080a26, 0), 0x3f9eee, 'colour start');
+eq(mixHex(0x3f9eee, 0x080a26, 1), 0x080a26, 'colour end');
+eq(loopOf(5999), 1, 'first loop'); eq(loopOf(6000), 2, 'second loop');
+eq(dayPhaseAt(4000), 'night', 'Neon night'); eq(dayPhaseAt(3500), 'night', 'tunnel night');
+eq(dayPhaseAt(5300), 'dawn', 'dawn phase');
+for (const [id, k, expected] of [
+  ['bridge', 10, { chunk: false, facade: null, dress: 'cable10', portal: ['tower', 10, 0] }],
+  ['bridge', 24, { chunk: false, facade: null, dress: 'cable24', portal: ['vapur', 0, Math.PI] }],
+  ['tunnel', 0, { chunk: false, facade: null, dress: 'shell', portal: ['mouth', 10, 0] }],
+  ['tunnel', 17, { chunk: false, facade: null, dress: 'shell', portal: ['mouth', -10, Math.PI] }],
+  ['tunnel', 9, { chunk: false, facade: null, dress: 'station1', portal: null }],
+  ['neon', 0, { chunk: true, facade: 'neon', dress: null, portal: ['gantry', 0, 0] }],
+  ['chinatown', 0, { chunk: true, facade: 'chinatown', dress: 'ct0', portal: ['gate', 10, 0] }],
+  ['dawn', 0, { chunk: true, facade: 'midtown', dress: null, portal: ['midtownSign', 10, 0] }],
+]) eq(json(dressFor(id, k, 1)), json(expected), `${id} dressing ${k}`);
+for (let serial = 0; serial <= 700; serial++) {
+  const live = new Set();
+  for (let n = serial; n < serial + 13; n++) {
+    const d = segCentre(n), [id, k] = districtInfo(d), portal = dressFor(id, k, loopOf(d)).portal;
+    if (portal) { ok(!live.has(portal[0]), `portal ${portal[0]} reusable at ${serial}`); live.add(portal[0]); }
+  }
+}
+const announcements = [];
+let lastDistrict = null;
+for (let d = 0; d <= 13000; d++) {
+  const event = districtEvent(lastDistrict, d);
+  if (event) { announcements.push([d, event.id, event.lap]); lastDistrict = event.id; }
+}
+eq(json(announcements), json([[0, 'midtown', 1], [1440, 'chinatown', 1], [2480, 'bridge', 1],
+  [3280, 'tunnel', 1], [3640, 'neon', 1], [5140, 'dawn', 1], [5940, 'midtown', 2],
+  [7440, 'chinatown', 2], [8480, 'bridge', 2], [9280, 'tunnel', 2], [9640, 'neon', 2], [11140, 'dawn', 2], [11940, 'midtown', 3]]), 'exact district events');
+ok(announcements.every((e, i) => i === 0 || e[1] !== announcements[i - 1][1]), 'no repeated district');
+const phaseStorage = { sunPos: [0, 0, 0] }, discStorage = [0, 0, 0, 0];
+eq(phaseAt(1500, phaseStorage), phaseStorage, 'reused phase storage');
+eq(discAt(2700, discStorage), discStorage, 'reused disc storage');
+eq(json(discStorage), json([0.5, 0.27, 0.11, 0xfff0a0]), 'approved sunset disc');
+
+const cityEvents = [];
+const announcer = createAnnouncer((name, detail) => cityEvents.push([name, detail]));
+for (const d of [0, 1440, 1441, 2480]) announcer.update(d);
+eq(json(cityEvents), json(['midtown', 'chinatown', 'bridge'].map((id) => ['districtEnter', { id, lap: 1 }])), 'city announcer emits three entries');
+announcer.reset(); announcer.update(0);
+eq(json(cityEvents[3]), json(['districtEnter', { id: 'midtown', lap: 1 }]), 'reset announces Midtown again');
+for (const name of ['facadeHook', 'drawMidtownAtlas', 'drawMidtownGlow', 'drawChinatownAtlas', 'drawChinatownGlow',
+  'drawNeonAtlas', 'drawNeonGlow', 'drawTunnelAtlas', 'drawSkylineMask', 'drawShore', 'drawWater', 'drawTabela',
+  'drawBuglePage', 'drawRecordBoard', 'drawTopFive', 'glyph']) eq(typeof cityTex[name], 'function', `node-safe painter ${name}`);
 
 const { game, jumpScale } = await import('../src/game.js');
 game.world = { update() {}, reset() {} };
@@ -1296,10 +1380,26 @@ for (const speed of [19, 39]) for (const dt of [1 / 120, CONFIG.dtCap]) for (con
   h.run(0.6, null, dt);
   eq(rowCount('crash') + rowCount('stumble'), 0, 'Cap exit over a long gap never hits');
   eq(h.ob.patches.length, 0, 'Cap exit leaves the gap intact');
-  eq(h.ob.graced, false, 'Cap exit grace expires');
+  eq(h.ob.graced, false, 'Cap exit grants no general grace');
   h.spawn('gap', speed * 0.1);
   h.run(0.5, null, dt);
   eq(rowCount('crash'), 1, 'a later gap still hits after Cap exit');
+}
+
+for (const type of ['gap', 'gate', 'girder']) {
+  const h = rowHarness(39);
+  h.spawn(type, 0.4);
+  const surf = Object.assign(Object.create(HeroSpecials.prototype), {
+    player: h.player, obstacles: h.ob, active: true, mode: 'cap', skills: {}, cap: {},
+    shield: { root: { rotation: { set() {} } } },
+  });
+  game.heroSpecials = surf;
+  h.ob.beforePlayer(rowDT);
+  surf.beforePlayer(rowDT);
+  h.player.update(rowDT, true);
+  surf.deactivate(true);
+  h.ob.update(rowDT);
+  eq(h.crashes, type === 'gap' ? 0 : 1, `Cap exit forgives only the pit: ${type}`);
 }
 
 {
@@ -1363,6 +1463,228 @@ for (const blocked of ['beside', 'tooSoon', 'farLane']) {
 // ---------- 11.5 görev 3: M0–M3 parçaları, kapasite ve runtime matrisleri ----------
 const { readFile } = await import('node:fs/promises');
 const { runInNewContext } = await import('node:vm');
+const citySource = await readFile(new URL('../src/city.js', import.meta.url), 'utf8');
+const sharedFacade = runInNewContext(citySource.slice(citySource.indexOf('  const U ='), citySource.indexOf('  const plainMat =')) + '\n({ U, facades });', {
+  THREE: { Color: class {} }, toonMaterial: (colour, options) => ({ ...options }), facadeHook: cityTex.facadeHook, atlases: {},
+});
+for (const material of Object.values(sharedFacade.facades)) {
+  const shader = { uniforms: {}, fragmentShader: '' };
+  material.onBeforeCompile(shader);
+  for (const name in sharedFacade.U) eq(shader.uniforms[name], sharedFacade.U[name], `facades share ${name}`);
+}
+
+// ---------- 11.3 task 4: actual fixed board pool, UVs and two-loop recycle walk ----------
+{
+  class BoardVector {
+    constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  }
+  class BoardRotation { setFromAxisAngle(axis, angle) { this.angle = angle; return this; } }
+  class BoardMatrix {
+    constructor() { this.elements = new Float32Array(16); }
+    compose(p, q, s) {
+      const e = this.elements, c = Math.cos(q.angle), n = Math.sin(q.angle);
+      e.fill(0); e[0] = c * s.x; e[2] = -n * s.x; e[5] = s.y; e[8] = n * s.z; e[10] = c * s.z;
+      e[12] = p.x; e[13] = p.y; e[14] = p.z; e[15] = 1; return this;
+    }
+    copy(m) { this.elements.set(m.elements); return this; }
+  }
+  class BoardAttribute {
+    constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; }
+    setUsage() {}
+    setXYZW(i, ...v) { this.array.set(v, i * 4); }
+  }
+  class BoardPlane { setAttribute(k, a) { this[k] = a; } }
+  class BoardMesh {
+    constructor(geometry, material, n) {
+      this.geometry = geometry; this.material = material;
+      this.instanceMatrix = new BoardAttribute(new Float32Array(n * 16), 16);
+    }
+    setMatrixAt(i, m) { this.instanceMatrix.array.set(m.elements, i * 16); }
+  }
+  const THREE = { PlaneGeometry: BoardPlane, MeshBasicMaterial: class { constructor(o) { Object.assign(this, o); } },
+    InstancedBufferAttribute: BoardAttribute, InstancedMesh: BoardMesh, Matrix4: BoardMatrix, Vector3: BoardVector, Quaternion: BoardRotation };
+  const boardSource = await readFile(new URL('../src/city-boards.js', import.meta.url), 'utf8');
+  const createBoards = runInNewContext(boardSource.replace(/^import .*$/gm, '').replace('export ', '') + '\ncreateBoards;', { THREE });
+  const pools = Object.fromEntries(Object.entries(CONFIG.city.boards).map(([kind, n]) => [kind, createBoards({}, n)]));
+  const anchor = { x: 3, y: 7, z: -2, w: 8, h: 2, ry: Math.PI / 2, rect: [512, 128, 512, 128], W: 1024, H: 1024 };
+  const segA = { group: { position: { z: -100 } } }, segB = { group: { position: { z: -80 } } };
+  const p = pools.tabela;
+  p.take(segA, anchor); p.take(segB, { ...anchor, x: -6, rect: [0, 384, 512, 64] }); p.release(segA); p.update();
+  eq(p.mesh.count, 1, 'swap-remove keeps the other owner');
+  eq(p.mesh.instanceMatrix.array[12], -6, 'swap-remove preserves the local matrix');
+  eq(p.mesh.instanceMatrix.array[14], -82, 'board follows segment z');
+  eq(json([...p.mesh.geometry.aUv.array.slice(0, 4)]), json([0, 0.5625, 0.5, 0.0625]), 'swap-remove preserves atlas rectangle');
+  p.release(segB); p.take(segA, anchor); p.update();
+  ok(Math.abs(p.mesh.instanceMatrix.array[2] + 8) < 1e-6, 'board width follows its Y rotation');
+  eq(json([...p.mesh.geometry.aUv.array.slice(0, 4)]), json([0.5, 0.75, 0.5, 0.125]), 'pixel rectangle uses bottom-left UVs');
+  const beforeUnknown = json([...p.mesh.geometry.aUv.array]); p.release({}); p.update();
+  eq(p.mesh.count, 1, 'unknown segment release is a no-op');
+  eq(json([...p.mesh.geometry.aUv.array]), beforeUnknown, 'unknown release keeps UVs');
+  p.release(segA);
+  const shader = { vertexShader: '#include <common>\n#include <uv_vertex>' };
+  p.mesh.material.onBeforeCompile(shader);
+  ok(shader.vertexShader.includes('attribute vec4 aUv;') && shader.vertexShader.includes('vMapUv = aUv.xy + uv * aUv.zw;'), 'board hook overrides repeated facade map UVs');
+  const window = Array.from({ length: 13 }, () => ({ group: { position: { z: 0 } } }));
+  const peaks = { tabela: 0, ads: 0, bugle: 0 }, firstLoop = new Map();
+  for (let serial = 0; serial < 613; serial++) {
+    const seg = window[serial % 13];
+    for (const pool of Object.values(pools)) pool.release(seg);
+    const d = segCentre(serial), [id, k] = districtInfo(d), recipe = dressFor(id, k, loopOf(d));
+    for (const name of [recipe.dress, recipe.portal?.[0]]) {
+      const counts = ANCHOR_COUNTS[name];
+      for (const kind in pools) {
+        const n = typeof counts === 'number' ? (kind === 'tabela' ? counts : 0) : (counts?.[kind] || 0);
+        for (let i = 0; i < n; i++) pools[kind].take(seg, anchor);
+      }
+    }
+    for (const kind in pools) {
+      const pool = pools[kind]; pool.update(); peaks[kind] = Math.max(peaks[kind], pool.mesh.count);
+      ok(pool.mesh.count <= CONFIG.city.boards[kind], `board capacity ${kind} at ${serial}`);
+    }
+    const counts = json(Object.values(pools).map((pool) => pool.mesh.count));
+    if (serial >= 17 && serial < 300) firstLoop.set(serial, counts);
+    if (serial >= 317 && serial < 600) eq(counts, firstLoop.get(serial - 300), 'same loop position has the same live count');
+  }
+  eq(json(peaks), json({ tabela: 27, ads: 35, bugle: 18 }), 'full-stage board capacity peaks');
+  for (const seg of window) for (const pool of Object.values(pools)) pool.release(seg);
+  for (const pool of Object.values(pools)) { pool.update(); eq(pool.mesh.count, 0, 'reset releases every board'); }
+
+  class PieceAttribute {
+    constructor(array, itemSize) { this.array = new Float32Array(array); this.itemSize = itemSize; this.count = this.array.length / itemSize; }
+    getX(i) { return this.array[i * this.itemSize]; } getY(i) { return this.array[i * this.itemSize + 1]; }
+    setXY(i, x, y) { this.array[i * this.itemSize] = x; this.array[i * this.itemSize + 1] = y; }
+  }
+  class PieceGeometry {
+    constructor(triangles = 0) {
+      this.triangles = triangles;
+      this.attributes = { position: new PieceAttribute([], 3), normal: new PieceAttribute([], 3), uv: new PieceAttribute([], 2) };
+    }
+    rotateX() { return this; } rotateY() { return this; } rotateZ() { return this; }
+    translate() { return this; } scale() { return this; }
+    computeBoundingSphere() { this.boundsReady = true; }
+    deleteAttribute(k) { delete this.attributes[k]; } setAttribute(k, a) { this.attributes[k] = a; }
+    setIndex(idx) { this.index = idx; this.triangles = idx.length / 3; }
+    toNonIndexed() {
+      if (!this.index) return this;
+      const g = new PieceGeometry(this.triangles); g.attributes = {};
+      for (const [k, a] of Object.entries(this.attributes)) {
+        const values = this.index.flatMap((i) => [...a.array.slice(i * a.itemSize, (i + 1) * a.itemSize)]);
+        g.setAttribute(k, new PieceAttribute(values, a.itemSize));
+      }
+      return g;
+    }
+  }
+  class PiecePlane extends PieceGeometry {
+    constructor() {
+      super(2);
+      this.setAttribute('position', new PieceAttribute(new Float32Array(12), 3));
+      this.setAttribute('normal', new PieceAttribute(new Float32Array(12), 3));
+      this.setAttribute('uv', new PieceAttribute([0, 1, 1, 1, 0, 0, 1, 0], 2));
+      this.setIndex([0, 2, 1, 2, 3, 1]);
+    }
+  }
+  class PiecePath {
+    constructor() { this.holes = []; this.points = 0; this.curves = 0; }
+    moveTo() { this.points++; } lineTo() { this.points++; }
+    quadraticCurveTo() { this.curves++; } closePath() {}
+  }
+  const pieceSource = await readFile(new URL('../src/city-pieces.js', import.meta.url), 'utf8');
+  const pieceContext = { ANCHOR_COUNTS, rng: cityTex.rng, mergeGeometries: (list) => {
+    const g = new PieceGeometry(list.reduce((sum, p) => sum + p.triangles, 0)); g.attributes = {};
+    const keys = Object.keys(list[0].attributes).sort();
+    for (const p of list) eq(json(Object.keys(p.attributes).sort()), json(keys), 'merged piece attributes match');
+    for (const k of keys) g.setAttribute(k, new PieceAttribute(list.flatMap((p) => [...p.attributes[k].array]), list[0].attributes[k].itemSize));
+    return g;
+  }, THREE: {
+    Color: class { constructor() { this.r = this.g = this.b = 0; } setHex() {} copy() { return this; } lerp() { return this; } },
+    MathUtils: { clamp: (n, a, b) => Math.max(a, Math.min(b, n)) },
+    BufferGeometry: class extends PieceGeometry { constructor() { super(); this.attributes = {}; } },
+    BoxGeometry: class extends PieceGeometry { constructor(x, y, z, a = 1, b = 1, c = 1) { super(4 * (a * b + a * c + b * c)); } },
+    CylinderGeometry: class extends PieceGeometry { constructor(rt, rb, h, n) { super(n * (2 + (rt > 0 ? 1 : 0) + (rb > 0 ? 1 : 0))); } },
+    SphereGeometry: class extends PieceGeometry { constructor(r, w, h) { super(2 * w * (h - 1)); } }, PlaneGeometry: PiecePlane,
+    ExtrudeGeometry: class extends PieceGeometry {
+      constructor(shape, { curveSegments = 12 }) {
+        const points = [shape, ...shape.holes].reduce((n, p) => n + p.points + p.curves * curveSegments, 0);
+        super(4 * points + 4 * shape.holes.length - 4);
+      }
+    }, Shape: PiecePath, Path: PiecePath, BufferAttribute: PieceAttribute, Float32BufferAttribute: PieceAttribute,
+  } };
+  const recipe = runInNewContext(pieceSource.replace(/^import .*$/gm, '').replaceAll('export ', '') + '\n({ createCityPieces, SEC, shellGeo });', pieceContext);
+  const buildPieces = recipe.createCityPieces;
+  const pieces = buildPieces();
+  for (const piece of Object.values(pieces)) for (const kind of ['plain', 'glow', 'tunnel']) {
+    if (piece[kind]) ok(piece[kind].boundsReady, 'district geometry bounds exist before the run');
+  }
+  eq(Object.keys(pieces).filter((name) => name.startsWith('cable')).length, 40, 'all bridge cable geometries built at load');
+  eq(pieces.midtownSign.anchors.tabela.length, ANCHOR_COUNTS.midtownSign, 'dawn builder yields the prescribed anchors');
+  for (const name of ['ct0', 'ct1', 'ctFest', 'gate']) {
+    eq(pieces[name].anchors.tabela.length, ANCHOR_COUNTS[name], `Chinatown builder anchor contract ${name}`);
+  }
+  const prototype = await readFile(new URL('../tasarim/proto/11-3-kit.js', import.meta.url), 'utf8');
+  const ctRecipe = prototype.slice(prototype.indexOf('const RED ='), prototype.indexOf('// ------------------------------------------------------------------ BRIDGE'));
+  ok(pieceSource.includes(ctRecipe), 'approved Chinatown recipes ported unchanged');
+  ok(pieceSource.includes(prototype.slice(prototype.indexOf('const SEC ='), prototype.indexOf('function station(n)'))), 'approved tunnel section, light rhythm and shell copied unchanged');
+  ok(pieceSource.includes(prototype.slice(prototype.indexOf('function mouth()'), prototype.indexOf('// ------------------------------------------------------------------ NEON MEYDAN'))), 'approved metro mouth copied unchanged');
+  eq(pieces.mouth.anchors.tabela.length, ANCHOR_COUNTS.mouth, 'metro mouth builder anchor contract');
+  for (let f = 0; f < recipe.SEC.length - 1; f++) {
+    const [x0, y0] = recipe.SEC[f], [x1, y1] = recipe.SEC[f + 1];
+    ok((y1 - y0) * -(x0 + x1) - (x1 - x0) * -(y0 + y1) > 0, 'every shell face points inward');
+  }
+  eq(pieces.shell.tunnel.triangles, 112, 'closed tunnel shell has seven inward faces');
+  for (const name of ['station0', 'station1', 'station2']) {
+    const g = pieces[name].tunnel;
+    eq(g.triangles, 96, `${name}: open shell plus eight back-wall quads`);
+    eq(json(Object.keys(g.attributes).sort()), json(['color', 'position', 'uv']), `${name}: compatible shell/wall attributes`);
+    ok([...g.attributes.color.array.slice(-48 * 3)].every((n) => n === 1), `${name}: tile vertices stay white`);
+    ok(!pieces[name].tunnelFlat && !pieces[name].anchors, `${name}: no extra wall board mesh`);
+  }
+  const planSource = citySource.slice(citySource.indexOf('  const planAt ='), citySource.indexOf('  const variants =', citySource.indexOf('  const planAt =')));
+  const planned = runInNewContext(planSource + '\n({ plans, beforeStart });', {
+    pieces, CONFIG, SEG_L: 20, districtInfo, dressFor, loopOf, loopMetre, segCentre,
+  });
+  eq(planned.plans.length, 300, 'all district recipes cached before the run');
+  const exit = planned.plans.find((p) => p.portal?.[0] === 'mouth' && p.portal[2] === Math.PI);
+  ok(Math.abs(exit.anchors.tabela[0].z + 12.17) < 1e-9 && exit.anchors.tabela[0].ry === Math.PI, 'exit wall board follows its reused portal rotation');
+  eq(planned.plans[167].dress, pieces.shell, 'tunnel shell assigned without a city chunk');
+  const makeSegment = (serial) => ({ serial, group: { position: { z: -40 }, add(o) { o.parent = this; } },
+    city: { group: { scale: {} }, facade: {}, plain: {}, dressPlain: {}, dressGlow: {}, shellMesh: {}, portal: null } });
+  const mouth = { position: {}, rotation: {} }, facades = { midtown: {}, chinatown: {}, neon: {} };
+  const boardPools = { tabela: createBoards({}, CONFIG.city.boards.tabela) };
+  const assign = runInNewContext(citySource.slice(citySource.indexOf('  const assign ='), citySource.indexOf('  for (const seg of world.segments) assign(seg);')) + '\nassign;', {
+    variants: [{ facade: {}, plain: {}, anchors: [], mirroredAnchors: [] }], specFor: () => ({ v: 0, flip: true }),
+    plans: planned.plans, beforeStart: planned.beforeStart, SEG_L: 20, cityShift: 0,
+    segCentre, loopMetre, facades, boards: boardPools, portals: { mouth },
+  });
+  const entrySeg = makeSegment(172), exitSeg = makeSegment(189);
+  assign(entrySeg); assign(exitSeg); assign(Object.assign(entrySeg, { serial: 185 }));
+  ok(exitSeg.city.shellMesh.visible && !exitSeg.city.group.visible, 'tunnel shell replaces the city chunk');
+  eq(mouth.parent, exitSeg.group, 'one portal moves from entry to exit');
+  ok(mouth.visible && mouth.rotation.y === Math.PI, 'recycling the old owner cannot hide the reused exit wall');
+  eq(boardPools.tabela.mesh.count, 1, 'recycling removes only the old portal board');
+  assign(Object.assign(entrySeg, { serial: 140 }));
+  ok(!entrySeg.city.group.visible && entrySeg.city.dressPlain.visible && !entrySeg.city.shellMesh.visible, 'bridge replaces city with cables and clears the old shell');
+  assign(Object.assign(entrySeg, { serial: 90 }));
+  ok(entrySeg.city.group.visible && entrySeg.city.facade.material === facades.chinatown && entrySeg.city.dressGlow.visible, 'Chinatown uses its atlas and dress');
+  eq(entrySeg.city.group.scale.x, -1, 'only the chunk group mirrors');
+  let resetCount = 0;
+  const onGameOver = runInNewContext(citySource.slice(citySource.indexOf('  const onGameOver ='), citySource.indexOf('  const system =', citySource.indexOf('  const onGameOver ='))) + '\nonGameOver;', {
+    world: { segments: [entrySeg, exitSeg] }, boards: boardPools, facades, portals: { mouth }, reset: () => resetCount++,
+  });
+  onGameOver();
+  eq(boardPools.tabela.mesh.count, 0, 'game over empties district board pools');
+  ok(!mouth.visible && !exitSeg.city.shellMesh.visible && exitSeg.city.group.visible, 'game over clears portal and tunnel state');
+  eq(resetCount, 1, 'game over resets day and district announcer once');
+  assign(exitSeg);
+  ok(mouth.visible && exitSeg.city.shellMesh.visible, 'restart can dress the same segment again');
+  const primitiveCounts = Object.fromEntries(Object.entries(pieces).map(([name, p]) => [name,
+    (p.plain?.triangles || 0) + (p.glow?.triangles || 0) + (p.tunnel?.triangles || 0)]));
+  console.log('City primitive triangle accounting:', json({ bridgeMax: Math.max(...Object.entries(primitiveCounts).filter(([n]) => n.startsWith('cable')).map(([, n]) => n)),
+    tower: primitiveCounts.tower, vapur: primitiveCounts.vapur, chinatown: primitiveCounts.ct0, festival: primitiveCounts.ctFest,
+    gate: primitiveCounts.gate, shell: primitiveCounts.shell, stationMax: primitiveCounts.station1, mouth: primitiveCounts.mouth }));
+  pieceContext.ANCHOR_COUNTS = { ...ANCHOR_COUNTS, midtownSign: 2 };
+  checks++; assert.throws(buildPieces, /City anchor count: midtownSign.tabela/, 'builder count mismatch fails at load');
+}
 const artSource = await readFile(new URL('../src/obstacle-art.js', import.meta.url), 'utf8');
 class RecipeShape {
   constructor() { this.boxes = []; }

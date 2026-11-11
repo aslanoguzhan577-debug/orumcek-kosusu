@@ -40,6 +40,12 @@ export async function warmUp(game, textures = []) {
       for (const v of game.city.variants) {
         temp.push(new THREE.Mesh(v.facade, c0.facade.material), new THREE.Mesh(v.plain, c0.plain.material));
       }
+      for (const material of Object.values(game.city.facades)) temp.push(new THREE.Mesh(game.city.variants[0].facade, material));
+      for (const piece of Object.values(game.city.pieces)) {
+        for (const kind of ['plain', 'glow', 'tunnel']) {
+          if (piece[kind]) temp.push(new THREE.Mesh(piece[kind], game.city.materials[kind]));
+        }
+      }
       scene.add(...temp);
     }
 
@@ -53,6 +59,10 @@ export async function warmUp(game, textures = []) {
     // 2. one render with everything visible and culling off uploads every buffer / texture.
     // No await in here: other per-frame code (fx, obstacles) would hide things again.
     const saved = [];
+    const boardCounts = [];
+    for (const pool of Object.values(game.city?.boards || {})) {
+      boardCounts.push([pool.mesh, pool.mesh.count]); pool.mesh.count = Math.max(1, pool.mesh.count);
+    }
     scene.traverse((o) => {
       if (!o.visible || o.frustumCulled) saved.push([o, o.visible, o.frustumCulled]);
       o.visible = true;
@@ -63,6 +73,7 @@ export async function warmUp(game, textures = []) {
     } finally {
       scene.remove(...temp);
       for (const [o, v, c] of saved) { o.visible = v; o.frustumCulled = c; }
+      for (const [mesh, count] of boardCounts) mesh.count = count;
       for (const pk of made) { const i = ob.pickups.indexOf(pk); if (i >= 0) ob._releasePickup(i); }
     }
 
